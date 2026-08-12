@@ -40,10 +40,14 @@ openssl rand -base64 48   # COOKIE_SECRET
 ```
 
 ## 4 · Deploy the Medusa service
-**Railway (Nixpacks):** new service from the GitHub repo →
+Medusa lives in `backend/`, so it needs its **own** Railway service (separate
+from the frontend). Add a service from the same GitHub repo and set:
+- **Branch:** `main`
 - **Root Directory:** `backend`
 - **Build:** `npm install && npm run build`
 - **Start:** `npm run start`
+
+(Railway → service → Settings → Source sets the Branch and Root Directory.)
 
 **Any container host:** build `backend/Dockerfile` instead.
 
