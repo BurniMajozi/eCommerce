@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { CAGELI_PRODUCTS, MOCK_EMPLOYEES, MOCK_REQUESTS, MOCK_QUOTATIONS, MOCK_PLANTS, MOCK_TENANTS, MOCK_MODULES } from '../data/mockData';
+import { useAuthSession } from '../auth/AuthSessionContext';
+import { useTenantAccess } from '../tenant/TenantAccessContext';
 
 const AppContext = createContext();
 
@@ -12,6 +14,8 @@ const getInitialTheme = () => {
 };
 
 export const AppProvider = ({ children }) => {
+  const auth = useAuthSession();
+  const tenantAccess = useTenantAccess();
   const [theme, setTheme] = useState(getInitialTheme);
   const toggleTheme = () => setTheme(t => (t === 'dark' ? 'light' : 'dark'));
 
@@ -258,7 +262,12 @@ export const AppProvider = ({ children }) => {
       updateTenantBranding,
       provisionTenant,
       runScheduledReport,
-      modules: MOCK_MODULES
+      modules: MOCK_MODULES,
+      // Phase 1 integration state. Existing UI actions intentionally continue
+      // to use local mock state until their Medusa workflows are implemented.
+      auth,
+      tenantAccess,
+      integrationMode: tenantAccess.mode
     }}>
       {children}
     </AppContext.Provider>

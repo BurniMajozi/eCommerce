@@ -1,4 +1,40 @@
-# React + Vite
+# SightLive PPE Stock Platform
+
+This repository contains the React/Vite PPE operations frontend and the Phase 1
+foundation for a Medusa commerce backend plus Supabase identity and tenancy.
+The current UI still uses its original mock data and React Context actions by
+design; configuring Supabase activates session and tenant discovery only.
+
+## Repository layout
+
+```text
+./                    React 19 + Vite frontend (existing application)
+backend/              Medusa v2 application and tenant-scope middleware
+supabase/migrations/  Auth-linked tenancy, RBAC, RLS and projection schema
+docs/                 Architecture, security boundaries and local setup
+```
+
+## Quick start
+
+```bash
+npm install
+npm run dev
+```
+
+With no frontend environment file, the app remains in safe demo mode and all
+existing mock workflows behave as before. See [docs/phase-1-foundation.md](docs/phase-1-foundation.md)
+for Supabase and Medusa setup, migrations, environment variables and validation.
+
+## Architecture rule
+
+Medusa owns commerce and stock transactions. Supabase owns authentication,
+tenant membership/RBAC/RLS, private files and read-only Realtime projections.
+Tenant authorization is enforced again on the Medusa server; browser-selected
+tenant or role values are never trusted.
+
+---
+
+## Original Vite template notes
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
