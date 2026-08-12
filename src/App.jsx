@@ -9,7 +9,8 @@ import { InventoryAnalyticsPortal } from './components/InventoryAnalyticsPortal'
 import { TenantAdminPortal } from './components/TenantAdminPortal';
 import { PlatformOwnerPortal } from './components/PlatformOwnerPortal';
 import { MedusaAdminPortal } from './components/MedusaAdminPortal';
-import { Menu, ChevronDown, Sun, Moon, CheckCircle2, AlertTriangle, Info, XCircle } from 'lucide-react';
+import { LoginGate } from './auth/LoginGate';
+import { Menu, ChevronDown, Sun, Moon, CheckCircle2, AlertTriangle, Info, XCircle, LogOut } from 'lucide-react';
 
 const MED_VIEW = {
   MED_PRODUCTS: 'products', MED_INVENTORY: 'inventory', MED_ORDERS: 'orders', MED_PROMOS: 'promos',
@@ -25,7 +26,7 @@ const navTitle = (id) => {
 };
 
 const AppContent = () => {
-  const { activeRole, activePlant, setActivePlant, plants, theme, toggleTheme, pushNotification } = useApp();
+  const { activeRole, activePlant, setActivePlant, plants, theme, toggleTheme, pushNotification, auth } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const render = () => {
@@ -64,6 +65,11 @@ const AppContent = () => {
             <button className="icon-btn" onClick={toggleTheme} aria-label="Toggle theme" title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
+            {auth?.user && (
+              <button className="icon-btn" onClick={() => auth.signOut()} aria-label="Sign out" title={`Sign out (${auth.user.email})`}>
+                <LogOut size={18} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -89,8 +95,10 @@ const AppContent = () => {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <LoginGate>
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </LoginGate>
   );
 }
