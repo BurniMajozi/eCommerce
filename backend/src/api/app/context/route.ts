@@ -11,6 +11,7 @@ export async function GET(req: TenantScopedRequest, res: MedusaResponse): Promis
     site_id: scope?.siteId,
     roles: scope?.roles ?? [],
     capabilities: scope?.capabilities ?? [],
+    mfa_capabilities: scope?.mfaCapabilities ?? [],
     assurance_level: scope?.assuranceLevel,
   });
 }

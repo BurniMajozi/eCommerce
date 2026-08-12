@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   MOCK_SAVED_REPORTS, MOCK_CREW_CONSUMPTION, PERMISSION_MATRIX,
   MOCK_TENANT_USERS, MOCK_ENTITLEMENT_RULES
 } from '../data/mockData';
+import { fetchTenantMembers } from '../tenant/adminReads';
 import { FileBarChart, Plus, Play, Save, ArrowRight, Users, ListChecks, ShieldCheck, Trash2, PackageCheck, ClipboardList, GitBranch, ShieldQuestion } from 'lucide-react';
+
+const SourceBadge = ({ live }) => (
+  <span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live · RLS' : 'Demo data'}</span>
+);
 
 const ROLE_OPTS = ['Underground Driller', 'Electrical Tech', 'Storeman', 'Supervisor', 'Visitor', 'All roles'];
 const ITEM_OPTS = ['Safety boots', 'Gloves (nitrile)', 'Arc flash kit', 'Dust mask FFP2', 'Hi-vis workwear', 'Ear protection'];
@@ -17,11 +22,24 @@ const permCell = (v, hot) => {
 };
 
 export const TenantAdminPortal = () => {
-  const { activePlant, runScheduledReport, triggerNotification } = useApp();
+  const { activePlant, runScheduledReport, triggerNotification, integrationMode, tenantAccess } = useApp();
   const [activeReport, setActiveReport] = useState('consumption');
   const [groupBy, setGroupBy] = useState('crew');
   const [rules, setRules] = useState(MOCK_ENTITLEMENT_RULES);
   const [nr, setNr] = useState({ role: 'Underground Driller', itemClass: 'Safety boots', qty: 1, cycle: '6 months' });
+  const [liveMembers, setLiveMembers] = useState(null);
+
+  // Read-only live wiring for Users & roles. Demo mode keeps the mock roster.
+  const activeTenantId = tenantAccess?.activeTenantId;
+  useEffect(() => {
+    if (integrationMode !== 'supabase' || !activeTenantId) { setLiveMembers(null); return; }
+    let active = true;
+    fetchTenantMembers(activeTenantId).then(rows => { if (active) setLiveMembers(rows ?? []); }).catch(() => { if (active) setLiveMembers([]); });
+    return () => { active = false; };
+  }, [integrationMode, activeTenantId]);
+
+  const memberRows = liveMembers ?? MOCK_TENANT_USERS;
+  const membersLive = liveMembers !== null;
 
   const addRule = () => {
     setRules(prev => [...prev, { ...nr, threshold: 'auto' }]);
@@ -163,12 +181,15 @@ export const TenantAdminPortal = () => {
       {/* Users & roles */}
       <div>
         <div className="card">
-          <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Users size={17} style={{ color: 'var(--primary)' }} /><h3>Users &amp; roles</h3></div></div>
+          <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Users size={17} style={{ color: 'var(--primary)' }} /><h3>Users &amp; roles</h3><SourceBadge live={membersLive} /></div></div>
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>Name</th><th>Role</th><th>Dept</th><th className="center">State</th></tr></thead>
               <tbody>
-                {MOCK_TENANT_USERS.map(u => (
+                {memberRows.length === 0 && (
+                  <tr><td colSpan={4} className="muted" style={{ textAlign: 'center', padding: 24 }}>No members visible for this tenant.</td></tr>
+                )}
+                {memberRows.map(u => (
                   <tr key={u.id}>
                     <td><div style={{ fontWeight: 500 }}>{u.name}</div><div className="eyebrow">{u.id}</div></td>
                     <td>{u.role}</td>

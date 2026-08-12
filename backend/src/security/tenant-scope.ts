@@ -11,6 +11,7 @@ export type ResolvedAccess = {
   site_id: string | null;
   roles: string[];
   capabilities: string[];
+  mfa_capabilities?: string[];
 };
 
 export type TenantScope = Readonly<{
@@ -19,6 +20,7 @@ export type TenantScope = Readonly<{
   siteId: string | null;
   roles: readonly string[];
   capabilities: readonly string[];
+  mfaCapabilities: readonly string[];
   assuranceLevel: string;
 }>;
 
@@ -60,6 +62,7 @@ export function buildTenantScope(
     siteId,
     roles: Object.freeze([...new Set(resolved.roles ?? [])]),
     capabilities: Object.freeze([...new Set(resolved.capabilities ?? [])]),
+    mfaCapabilities: Object.freeze([...new Set(resolved.mfa_capabilities ?? [])]),
     assuranceLevel: typeof claims.aal === 'string' ? claims.aal : 'aal1',
   });
 }
@@ -68,7 +71,11 @@ export function assertCapability(scope: TenantScope, capability: string, require
   if (!scope.capabilities.includes(capability)) {
     throw new ScopeError(403, 'capability_required', `Capability ${capability} is required.`);
   }
-  if (requireMfa && scope.assuranceLevel !== 'aal2') {
+  // MFA is enforced when the route asks for it OR the capability itself is
+  // flagged requires_mfa in the database (surfaced via the resolved scope), so a
+  // privileged capability can never be guarded without step-up by mistake.
+  const needsMfa = requireMfa || scope.mfaCapabilities.includes(capability);
+  if (needsMfa && scope.assuranceLevel !== 'aal2') {
     throw new ScopeError(403, 'mfa_required', 'A multi-factor authenticated session is required.');
   }
 }
