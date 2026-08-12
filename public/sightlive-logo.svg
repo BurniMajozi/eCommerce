@@ -1,0 +1,28 @@
+<svg width="920" height="240" viewBox="0 0 920 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SightLive">
+  <defs>
+    <linearGradient id="wO" x1="40" y1="60" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff9a2e"/>
+      <stop offset="0.55" stop-color="#f5711a"/>
+      <stop offset="1" stop-color="#ec5108"/>
+    </linearGradient>
+  </defs>
+
+  <!-- mark -->
+  <g transform="translate(10,8) scale(0.44)">
+    <path d="M96 262 Q 256 396 420 268" fill="none" stroke="#b9bdc6" stroke-width="20" stroke-linecap="round" opacity="0.85"/>
+    <path d="M44 256 Q 256 96 468 250 Q 452 262 452 262 Q 256 414 44 256 Z" fill="none" stroke="url(#wO)" stroke-width="30" stroke-linejoin="round"/>
+    <path d="M44 256 Q 256 96 468 250" fill="none" stroke="url(#wO)" stroke-width="30" stroke-linecap="round"/>
+    <circle cx="236" cy="256" r="98" fill="url(#wO)"/>
+    <path d="M210 206 L210 306 L296 256 Z" fill="#ffffff"/>
+    <g fill="none" stroke="url(#wO)" stroke-width="22" stroke-linecap="round">
+      <path d="M372 150 Q 424 148 452 196"/>
+      <path d="M366 194 Q 398 192 414 222"/>
+    </g>
+    <circle cx="372" cy="226" r="15" fill="url(#wO)"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="252" y="158" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-weight="800" font-size="132" letter-spacing="-4">
+    <tspan fill="url(#wO)">Sight</tspan><tspan fill="#7a828e">Live</tspan>
+  </text>
+</svg>

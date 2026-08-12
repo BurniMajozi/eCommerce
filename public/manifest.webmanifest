@@ -1,0 +1,14 @@
+{
+  "name": "SightLive PPE Stock Platform",
+  "short_name": "SightLive",
+  "description": "White-label PPE stock, requests, approvals and B2B sales — one PWA, many tenants.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f4f5f7",
+  "theme_color": "#ef5b0a",
+  "icons": [
+    { "src": "/sightlive-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

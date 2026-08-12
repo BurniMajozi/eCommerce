@@ -1,0 +1,27 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SightLive">
+  <defs>
+    <linearGradient id="slO" x1="120" y1="120" x2="420" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff9a2e"/>
+      <stop offset="0.55" stop-color="#f5711a"/>
+      <stop offset="1" stop-color="#ec5108"/>
+    </linearGradient>
+  </defs>
+
+  <!-- lower grey lid / swoosh -->
+  <path d="M96 262 Q 256 396 420 268" fill="none" stroke="#b9bdc6" stroke-width="20" stroke-linecap="round" opacity="0.85"/>
+
+  <!-- eye almond outline -->
+  <path d="M44 256 Q 256 96 468 250 Q 452 262 452 262 Q 256 414 44 256 Z" fill="none" stroke="url(#slO)" stroke-width="30" stroke-linejoin="round"/>
+  <path d="M44 256 Q 256 96 468 250" fill="none" stroke="url(#slO)" stroke-width="30" stroke-linecap="round"/>
+
+  <!-- iris + play -->
+  <circle cx="236" cy="256" r="98" fill="url(#slO)"/>
+  <path d="M210 206 L210 306 L296 256 Z" fill="#ffffff"/>
+
+  <!-- wifi 'live' arcs top-right -->
+  <g fill="none" stroke="url(#slO)" stroke-width="22" stroke-linecap="round">
+    <path d="M372 150 Q 424 148 452 196"/>
+    <path d="M366 194 Q 398 192 414 222"/>
+  </g>
+  <circle cx="372" cy="226" r="15" fill="url(#slO)"/>
+</svg>
