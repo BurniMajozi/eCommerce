@@ -55,3 +55,31 @@ test('requires both a capability and aal2 for privileged actions', () => {
     (error: unknown) => error instanceof ScopeError && error.code === 'capability_required',
   );
 });
+
+test('auto-enforces MFA for capabilities the scope flags as requiring it', () => {
+  const aal1 = buildTenantScope(
+    { sub: userId, aal: 'aal1' }, tenantId, undefined,
+    {
+      user_id: userId, tenant_id: tenantId, site_id: null,
+      roles: ['merchant'], capabilities: ['commerce.read', 'commerce.manage'],
+      mfa_capabilities: ['commerce.manage'],
+    },
+  );
+  // No explicit mfa flag: the flagged capability still requires aal2.
+  assert.throws(
+    () => assertCapability(aal1, 'commerce.manage'),
+    (error: unknown) => error instanceof ScopeError && error.code === 'mfa_required',
+  );
+  // A non-flagged capability remains usable at aal1.
+  assert.doesNotThrow(() => assertCapability(aal1, 'commerce.read'));
+
+  const aal2 = buildTenantScope(
+    { sub: userId, aal: 'aal2' }, tenantId, undefined,
+    {
+      user_id: userId, tenant_id: tenantId, site_id: null,
+      roles: ['merchant'], capabilities: ['commerce.manage'],
+      mfa_capabilities: ['commerce.manage'],
+    },
+  );
+  assert.doesNotThrow(() => assertCapability(aal2, 'commerce.manage'));
+});
