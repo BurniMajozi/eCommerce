@@ -29,7 +29,10 @@ postgresql://medusa_app.ppkvrqdatjzriatudblw:<PASSWORD>@<POOLER_HOST>:5432/postg
 Use the **Session** pooler (persistent server), not Transaction.
 
 ## 2 · Provision Redis
-Create a Redis instance (Upstash free tier, or Railway Redis) and copy its
+On Railway: add a **Redis** service, then on the Medusa service set
+`REDIS_URL = ${{ Redis.REDIS_URL }}` (a Railway reference variable — no need to
+copy the string). Medusa uses it for the event bus, durable workflow engine and
+distributed locking. Off Railway (Upstash etc.), copy its
 `rediss://…` URL. Bind it only to the Medusa service.
 
 ## 3 · Generate secrets
@@ -97,7 +100,7 @@ Never cross them.
 ### Service B — Backend (Medusa)
 - **Root Directory:** `backend` · **Branch:** `main`
 - **Build:** `npm install && npm run build` · **Start:** `npm run start`
-- Add a **Redis** (New → Database → Redis) and reference it as `REDIS_URL`.
+- Add a **Redis** service, then set `REDIS_URL = ${{ Redis.REDIS_URL }}` here.
 
 Server-only vars (secret, runtime) — the full list is in step 4:
 `DATABASE_URL`, `DATABASE_SCHEMA=medusa`, `REDIS_URL`, `REDIS_PREFIX=sightlive:`,
