@@ -24,6 +24,10 @@ npm run dev
 With no frontend environment file, the app remains in safe demo mode and all
 existing mock workflows behave as before. See [docs/phase-1-foundation.md](docs/phase-1-foundation.md)
 for Supabase and Medusa setup, migrations, environment variables and validation.
+The protected catalogue read, profitability boundary and validation-only CSV
+workflow are described in [docs/phase-2-catalogue.md](docs/phase-2-catalogue.md).
+See [docs/railway-readiness.md](docs/railway-readiness.md) before configuring a
+future Railway deployment.
 
 ## Architecture rule
 

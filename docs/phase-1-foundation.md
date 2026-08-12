@@ -94,9 +94,14 @@ added once a disposable local Supabase stack is part of CI.
 
 ## Next implementation slice
 
-Seed tenant/site links and Medusa products/variants/prices/locations, then replace
-catalogue and inventory reads before implementing the PPE request workflow.
+The protected catalogue/inventory read contract and frontend demo fallback are
+documented in [phase-2-catalogue.md](phase-2-catalogue.md). The next runtime step
+is to configure the Medusa database and Redis, then create reviewed tenant/site
+links and import approved products/variants/prices/locations before implementing
+the PPE request workflow.
 
 Before bootstrap, review [first-tenant-bootstrap.md](first-tenant-bootstrap.md)
 and [medusa-supabase-runtime.md](medusa-supabase-runtime.md). They list the
 identity choices and server-only database/Redis credentials still required.
+For deployment inputs and launch gates, see
+[railway-readiness.md](railway-readiness.md).

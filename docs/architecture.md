@@ -53,11 +53,34 @@ allows authorized request creators to upload new objects; updates and deletes
 remain server-only. Signed downloads and retention rules are added with the PPE
 workflow, not in the demo UI.
 
-## Data intentionally not implemented in Phase 1
+## Phase 2 catalogue read boundary
+
+`GET /app/catalogue` is the first Medusa commerce read path. It requires the
+server-resolved `commerce.read` capability, an active tenant-to-sales-channel
+link, and (when a site is selected) an active site-to-stock-location link.
+Products are filtered by the linked sales channel and inventory levels are
+queried by the single linked stock location. Browser headers never become
+database filters until membership and links have been resolved server-side.
+
+The React client calls this endpoint only when the catalogue feature is
+explicitly enabled and Medusa, a Supabase session and an active tenant are all
+present. Unconfigured development remains on mock data. Once enabled, a failed
+live read is surfaced as `catalogue.source = 'error'` with an empty catalogue;
+mock records are never presented as live facts. This path is read-only and
+creates no Medusa records.
+
+Private cost and margin never appear in that generic response. The separate
+`GET /app/catalogue/profit` route requires `commerce.manage` plus MFA and derives
+profitability server-side from Medusa prices, private cost metadata and the
+site-filtered inventory level. CSV import endpoints are likewise privileged and
+validation-only until a reviewed transactional workflow is enabled.
+
+## Data intentionally not implemented
 
 - PPE request, approval, entitlement, custody, pickup, issue and return models.
 - Quote, quote version, credit limit and fiscal invoice models/workflows.
-- Live product, price, inventory or reporting reads in the React screens.
+- Product, variant, price, location and tenant-link bootstrap data.
+- Catalogue writes/imports and authoritative in-transit stock calculations.
 - Medusa-to-Supabase projection writers and external providers.
 - Offline mutation synchronization.
 

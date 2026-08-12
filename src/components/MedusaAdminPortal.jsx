@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { downloadProductImportTemplate, validateProductImport } from '../catalogue/catalogueClient';
 import {
   MEDUSA_ORDERS, MEDUSA_PROMOTIONS, MEDUSA_TAX_REGIONS, MEDUSA_CUSTOMERS,
   MEDUSA_WORKFLOWS, MEDUSA_EVENTS, MEDUSA_FULFILMENT, MEDUSA_CURRENCIES,
@@ -55,31 +56,94 @@ const Connector = () => (
 );
 
 export const MedusaAdminPortal = ({ view }) => {
-  const { products, taxEnabled, setTaxEnabled, triggerNotification } = useApp();
-  const [importDone, setImportDone] = useState(false);
+  const { products, catalogue, profitability, auth, tenantAccess, taxEnabled, setTaxEnabled, triggerNotification } = useApp();
+  const importInputRef = useRef(null);
+  const [importResult, setImportResult] = useState(null);
+  const [importError, setImportError] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
   const [expandedSku, setExpandedSku] = useState(null);
   const [selectedWf, setSelectedWf] = useState(MEDUSA_WORKFLOWS[0].id);
   const [eventLog, setEventLog] = useState([]);
   const [firing, setFiring] = useState(null);
 
+  const medusaScope = {
+    accessToken: auth.session?.access_token,
+    tenantId: tenantAccess.activeTenantId,
+    siteId: tenantAccess.activeSiteId,
+  };
+
+  const validateImportFile = async (file) => {
+    setImportError(null);
+    setImportResult(null);
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setImportError(new Error('Choose a .csv file. XLSX conversion is not enabled in this validation-only phase.'));
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setImportError(new Error('CSV exceeds the 5 MB validation limit.'));
+      return;
+    }
+    setImportLoading(true);
+    try {
+      setImportResult(await validateProductImport(await file.text(), medusaScope));
+    } catch (error) {
+      setImportError(error);
+    } finally {
+      setImportLoading(false);
+      if (importInputRef.current) importInputRef.current.value = '';
+    }
+  };
+
+  const downloadImportTemplate = async () => {
+    setImportError(null);
+    try {
+      const blob = await downloadProductImportTemplate(medusaScope);
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = href;
+      anchor.download = 'sightlive-product-import-template.csv';
+      anchor.click();
+      URL.revokeObjectURL(href);
+    } catch (error) {
+      setImportError(error);
+    }
+  };
+
   /* ---------------- Products & Pricing (+ variants) ---------------- */
   if (view === 'products') {
+    const liveProfitBySku = new Map((profitability.items ?? []).map(item => [item.sku, item]));
+    const liveCatalogue = catalogue.source === 'medusa';
     const rows = products.map(p => {
+      if (liveCatalogue) {
+        const financial = liveProfitBySku.get(p.sku);
+        return {
+          ...p,
+          costPrice: financial?.averageCost ?? null,
+          sellingPrice: financial?.averageSellingPrice ?? p.sellingPrice,
+          margin: financial?.marginPercent ?? null,
+          profit: financial?.averageCost == null || financial?.averageSellingPrice == null
+            ? null : financial.averageSellingPrice - financial.averageCost,
+        };
+      }
       const margin = p.sellingPrice ? ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100 : 0;
       return { ...p, margin, profit: p.sellingPrice - p.costPrice };
     });
-    const avgMargin = rows.reduce((a, r) => a + r.margin, 0) / rows.length;
-    const stockValue = rows.reduce((a, r) => a + r.costPrice * r.stockOnHand, 0);
-    const retailValue = rows.reduce((a, r) => a + r.sellingPrice * r.stockOnHand, 0);
+    const valuedMargins = rows.map(row => row.margin).filter(value => value !== null);
+    const avgMargin = valuedMargins.length ? valuedMargins.reduce((a, value) => a + value, 0) / valuedMargins.length : null;
+    const stockValue = liveCatalogue ? profitability.totals?.stockCostValue ?? null : rows.reduce((a, r) => a + r.costPrice * r.stockOnHand, 0);
+    const retailValue = liveCatalogue ? profitability.totals?.stockRetailValue ?? null : rows.reduce((a, r) => a + r.sellingPrice * r.stockOnHand, 0);
+    const potentialProfit = liveCatalogue ? profitability.totals?.potentialProfit ?? null : retailValue - stockValue;
     return (
       <Wrap>
         <Head icon={Tag} title="Products & Pricing" sub="Cost, contract price and margin per SKU — with size/colour variants as the lowest stock-keeping level."
           action={<button className="btn btn-primary"><Plus size={16} /> New product</button>} />
         <div className="cols cols-3">
-          <div className="card"><div className="card-bd"><div className="kpi-label">Avg margin</div><div className="kpi-value" style={{ color: 'var(--primary)' }}>{avgMargin.toFixed(1)}%</div><div className="kpi-sub">across {rows.length} SKUs</div></div></div>
-          <div className="card"><div className="card-bd"><div className="kpi-label">Stock at cost</div><div className="kpi-value">R {(stockValue / 1e6).toFixed(2)}m</div><div className="kpi-sub">what you paid</div></div></div>
-          <div className="card"><div className="card-bd"><div className="kpi-label">Stock at retail</div><div className="kpi-value">R {(retailValue / 1e6).toFixed(2)}m</div><div className="kpi-sub up">R {((retailValue - stockValue) / 1e3).toFixed(0)}k potential profit</div></div></div>
+          <div className="card"><div className="card-bd"><div className="kpi-label">Avg margin</div><div className="kpi-value" style={{ color: 'var(--primary)' }}>{avgMargin === null ? 'Restricted' : `${avgMargin.toFixed(1)}%`}</div><div className="kpi-sub">server-authoritative when live</div></div></div>
+          <div className="card"><div className="card-bd"><div className="kpi-label">Stock at cost</div><div className="kpi-value">{stockValue === null ? 'Restricted' : `R ${(stockValue / 1e6).toFixed(2)}m`}</div><div className="kpi-sub">requires commerce management + MFA</div></div></div>
+          <div className="card"><div className="card-bd"><div className="kpi-label">Stock at retail</div><div className="kpi-value">{retailValue === null ? 'Restricted' : `R ${(retailValue / 1e6).toFixed(2)}m`}</div><div className="kpi-sub up">{potentialProfit === null ? 'Profit data unavailable' : `R ${(potentialProfit / 1e3).toFixed(0)}k potential profit`}</div></div></div>
         </div>
+        {liveCatalogue && profitability.error && <div className="card"><div className="card-bd" style={{ color: 'var(--danger)' }}>Profit and cost data is unavailable: {profitability.error.message}</div></div>}
         <div className="card">
           <div className="card-hd"><h3>Price list · Contract B</h3><span className="badge badge-neutral">{rows.length} products · click a row for variants</span></div>
           <div className="table-wrap">
@@ -96,10 +160,10 @@ export const MedusaAdminPortal = ({ view }) => {
                         <td style={{ width: 28 }}>{open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</td>
                         <td className="muted">{r.sku}</td>
                         <td style={{ fontWeight: 500 }}>{r.name}<div className="eyebrow" style={{ marginTop: 2 }}>{opt.sizes.length} sizes · {opt.colors[0] === '—' ? 'single colour' : `${opt.colors.length} colours`}</div></td>
-                        <td className="num">R {r.costPrice.toFixed(2)}</td>
+                        <td className="num">{r.costPrice === null ? 'Restricted' : `R ${r.costPrice.toFixed(2)}`}</td>
                         <td className="num">R {r.sellingPrice.toFixed(2)}</td>
-                        <td className="num" style={{ color: 'var(--success)', fontWeight: 600 }}>R {r.profit.toFixed(2)}</td>
-                        <td className="num"><span className={`badge ${r.margin >= 30 ? 'badge-success' : r.margin >= 18 ? 'badge-warning' : 'badge-danger'}`}>{r.margin.toFixed(0)}%</span></td>
+                        <td className="num" style={{ color: 'var(--success)', fontWeight: 600 }}>{r.profit === null ? 'Restricted' : `R ${r.profit.toFixed(2)}`}</td>
+                        <td className="num">{r.margin === null ? 'Restricted' : <span className={`badge ${r.margin >= 30 ? 'badge-success' : r.margin >= 18 ? 'badge-warning' : 'badge-danger'}`}>{r.margin.toFixed(0)}%</span>}</td>
                         <td className="num">{r.stockOnHand}</td>
                       </tr>
                       {open && (
@@ -307,34 +371,37 @@ export const MedusaAdminPortal = ({ view }) => {
   if (view === 'import') {
     return (
       <Wrap>
-        <Head icon={Upload} title="CSV Product Import" sub="Bulk-load the catalogue and price list. Maps to your CageLi 2026 Prices sheet." />
+        <Head icon={Upload} title="CSV Product Import" sub="Validate a future Medusa catalogue import without writing products, prices or inventory." />
         <div className="card">
           <div className="card-bd">
             <div className="thumb" style={{ flexDirection: 'column', gap: 10, padding: '34px 20px', borderStyle: 'dashed', borderColor: 'var(--border-strong)', color: 'var(--text-muted)' }}>
               <FileSpreadsheet size={34} style={{ color: 'var(--primary)' }} />
               <div style={{ fontWeight: 600, color: 'var(--text)' }}>Drop CageLi 2026 Prices.csv here</div>
-              <div style={{ fontSize: 12.5 }}>or click to browse · .csv / .xlsx up to 5MB</div>
-              <button className="btn btn-secondary btn-sm" onClick={() => setImportDone(true)}>Choose file</button>
+              <div style={{ fontSize: 12.5 }}>validation only · .csv up to 5 MB · no product writes</div>
+              <input ref={importInputRef} type="file" accept=".csv,text/csv" hidden onChange={(event) => validateImportFile(event.target.files?.[0])} />
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button className="btn btn-secondary btn-sm" onClick={downloadImportTemplate}>Download template</button>
+                <button className="btn btn-primary btn-sm" disabled={importLoading} onClick={() => importInputRef.current?.click()}>{importLoading ? 'Validating…' : 'Choose CSV for dry run'}</button>
+              </div>
             </div>
           </div>
         </div>
-        {importDone && (
+        {importError && <div className="card"><div className="card-bd" style={{ color: 'var(--danger)' }}>{importError.message}</div></div>}
+        {importResult && (
           <div className="card">
-            <div className="card-hd"><h3>Column mapping</h3><span className="badge badge-success"><CheckCircle2 size={13} /> 24 rows detected</span></div>
+            <div className="card-hd"><h3>Dry-run validation</h3><span className={`badge ${importResult.status === 'validated' ? 'badge-success' : 'badge-danger'}`}><CheckCircle2 size={13} /> {importResult.validRowCount}/{importResult.rowCount} rows valid</span></div>
             <div className="table-wrap">
               <table className="table">
-                <thead><tr><th>CSV column</th><th>→ field</th><th>Sample</th></tr></thead>
+                <thead><tr><th>Row</th><th>Column</th><th>Status</th><th>Message</th></tr></thead>
                 <tbody>
-                  {[['Stock Code', 'sku', 'DW-ARC40-WJ'], ['Description', 'title', 'DROMEX ARC 40 Cal Winter Jacket'], ['Cost Excl', 'cost_price', 'R 1 700.00'], ['Sell Excl', 'price (list B)', 'R 2 900.00'], ['On Hand', 'inventory_quantity', '14']].map((r, i) => (
-                    <tr key={i}><td className="muted">{r[0]}</td><td style={{ fontWeight: 500 }}>{r[1]}</td><td className="muted">{r[2]}</td></tr>
+                  {[...(importResult.errors ?? []).map(issue => ({ ...issue, severity: 'Error' })), ...(importResult.warnings ?? []).map(issue => ({ ...issue, severity: 'Warning' }))].map((issue, index) => (
+                    <tr key={`${issue.code}-${issue.row}-${index}`}><td>{issue.row || 'File'}</td><td className="muted">{issue.column ?? '—'}</td><td><span className={`badge ${issue.severity === 'Error' ? 'badge-danger' : 'badge-warning'}`}>{issue.severity}</span></td><td>{issue.message}</td></tr>
                   ))}
+                  {!(importResult.errors?.length || importResult.warnings?.length) && <tr><td colSpan={4} style={{ color: 'var(--success)' }}>All rows passed validation. No data was written.</td></tr>}
                 </tbody>
               </table>
             </div>
-            <div className="card-bd" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button className="btn btn-secondary" onClick={() => setImportDone(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => { setImportDone(false); triggerNotification('Import complete', '24 products imported / updated on price list B.', 'success'); }}>Import 24 products</button>
-            </div>
+            <div className="card-bd muted" style={{ fontSize: 13 }}>{importResult.message}</div>
           </div>
         )}
       </Wrap>

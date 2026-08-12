@@ -57,9 +57,24 @@ export const TenantAccessProvider = ({ children }) => {
 
     const memberships = membershipResult.data ?? [];
     const globalRoles = globalRoleResult.data ?? [];
-    const tenants = memberships.map((membership) => membership.tenant).filter(Boolean);
-    const sites = memberships.flatMap((membership) =>
+    const isPlatformOwner = globalRoles.some((entry) => entry.role?.key === 'platform_owner');
+    let tenants = memberships.map((membership) => membership.tenant).filter(Boolean);
+    let sites = memberships.flatMap((membership) =>
       (membership.membership_sites ?? []).map((entry) => entry.site).filter(Boolean));
+    if (isPlatformOwner) {
+      const [tenantResult, siteResult] = await Promise.all([
+        supabase.from('tenants').select('id, name, slug, status').in('status', ['setup', 'active']).order('name'),
+        supabase.from('sites').select('id, tenant_id, name, code, status').eq('status', 'active').order('name'),
+      ]);
+      const ownerQueryError = tenantResult.error ?? siteResult.error;
+      if (ownerQueryError) {
+        setError(ownerQueryError);
+        setLoading(false);
+        return;
+      }
+      tenants = tenantResult.data ?? [];
+      sites = siteResult.data ?? [];
+    }
     const roles = [...new Set([
       ...memberships.flatMap((membership) =>
         (membership.membership_roles ?? []).map((entry) => entry.role?.key).filter(Boolean)),
@@ -82,6 +97,12 @@ export const TenantAccessProvider = ({ children }) => {
 
   useEffect(() => { loadAccess(); }, [loadAccess]);
 
+  useEffect(() => {
+    if (!auth.configured) return;
+    const tenantSites = access.sites.filter((site) => site.tenant_id === activeTenantId);
+    setActiveSiteId((current) => tenantSites.some((site) => site.id === current) ? current : tenantSites[0]?.id ?? null);
+  }, [access.sites, activeTenantId, auth.configured]);
+
   const value = useMemo(() => ({
     ...access,
     mode: auth.configured ? 'supabase' : 'demo',
@@ -90,7 +111,7 @@ export const TenantAccessProvider = ({ children }) => {
     activeTenantId,
     activeSiteId,
     activeTenant: access.tenants.find((tenant) => tenant.id === activeTenantId) ?? null,
-    activeSite: access.sites.find((site) => site.id === activeSiteId) ?? null,
+    activeSite: access.sites.find((site) => site.id === activeSiteId && site.tenant_id === activeTenantId) ?? null,
     setActiveTenantId,
     setActiveSiteId,
     hasCapability: (capability) => access.capabilities.includes(capability),
