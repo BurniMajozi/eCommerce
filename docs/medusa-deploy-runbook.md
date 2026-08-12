@@ -74,6 +74,44 @@ Validate the env shape before deploying (no network calls):
 npm --prefix backend run config:check
 ```
 
+## Railway: two services (no Vercel needed)
+Railway hosts both. Create **two services from the same repo, branch `main`** —
+they differ only in root directory, start command, and which vars they get.
+The golden rule: **`VITE_*` are build-time and public** (baked into the browser
+bundle); **backend vars are runtime and secret** (DB password, service-role key).
+Never cross them.
+
+### Service A — Frontend (Vite SPA)
+- **Root Directory:** `/` (repo root) · **Branch:** `main`
+- **Build:** `npm install && npm run build`
+- **Start:** `npx serve -s dist -l $PORT` (static server with SPA fallback; or `npx vite preview --host 0.0.0.0 --port $PORT`)
+
+| Variable (public, build-time) | Value |
+|---|---|
+| `VITE_SUPABASE_URL` | `https://ppkvrqdatjzriatudblw.supabase.co` |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | the anon (publishable) key |
+| `VITE_MEDUSA_BASE_URL` | the **Backend service** public URL |
+| `VITE_MEDUSA_CATALOGUE_ENABLED` | `true` (only once links + catalogue data exist) |
+| `VITE_DEMO_MODE` | `false` |
+
+### Service B — Backend (Medusa)
+- **Root Directory:** `backend` · **Branch:** `main`
+- **Build:** `npm install && npm run build` · **Start:** `npm run start`
+- Add a **Redis** (New → Database → Redis) and reference it as `REDIS_URL`.
+
+Server-only vars (secret, runtime) — the full list is in step 4:
+`DATABASE_URL`, `DATABASE_SCHEMA=medusa`, `REDIS_URL`, `REDIS_PREFIX=sightlive:`,
+`MEDUSA_WORKER_MODE=shared`, `JWT_SECRET`, `COOKIE_SECRET`, `SUPABASE_URL`,
+`SUPABASE_JWKS_URL`, `SUPABASE_JWT_ISSUER`, `SUPABASE_JWT_AUDIENCE=authenticated`,
+`SUPABASE_SERVICE_ROLE_KEY`, and `STORE_CORS`/`ADMIN_CORS`/`AUTH_CORS` = the
+**Frontend service** URL.
+
+### Wiring order (the two services reference each other)
+1. Deploy **Backend** first → copy its public URL (e.g. `https://…backend.up.railway.app`).
+2. Set the Frontend's `VITE_MEDUSA_BASE_URL` to that URL, and the Backend's
+   `*_CORS` to the Frontend's URL.
+3. **Redeploy the Frontend** so the new `VITE_*` values are baked in.
+
 ## 5 · Run module migrations (release step)
 After the role/schema exist and env is set:
 ```bash
