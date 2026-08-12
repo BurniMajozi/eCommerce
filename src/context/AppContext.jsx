@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { CAGELI_PRODUCTS, MOCK_EMPLOYEES, MOCK_REQUESTS, MOCK_QUOTATIONS, MOCK_PLANTS, MOCK_TENANTS, MOCK_MODULES } from '../data/mockData';
+import { useAuthSession } from '../auth/AuthSessionContext';
+import { useTenantAccess } from '../tenant/TenantAccessContext';
+import { fetchCatalogue, fetchProfitability, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 
 const AppContext = createContext();
 
@@ -12,6 +15,9 @@ const getInitialTheme = () => {
 };
 
 export const AppProvider = ({ children }) => {
+  const auth = useAuthSession();
+  const tenantAccess = useTenantAccess();
+  const canManageCommerce = tenantAccess.capabilities.includes('commerce.manage');
   const [theme, setTheme] = useState(getInitialTheme);
   const toggleTheme = () => setTheme(t => (t === 'dark' ? 'light' : 'dark'));
 
@@ -21,6 +27,8 @@ export const AppProvider = ({ children }) => {
   }, [theme]);
 
   const [products, setProducts] = useState(CAGELI_PRODUCTS);
+  const [catalogue, setCatalogue] = useState({ source: 'demo', loading: false, error: null, dataQuality: null });
+  const [profitability, setProfitability] = useState({ source: 'demo', loading: false, error: null, items: [], totals: null });
   const [activePlant, setActivePlant] = useState(MOCK_PLANTS[1]); // Default to Kumba Plant Alpha
   // EMPLOYEE, MANAGER, STOREKEEPER, MERCHANT, EXECUTIVE, TENANT_ADMIN, OWNER
   const [activeRole, setActiveRole] = useState('EMPLOYEE');
@@ -32,6 +40,56 @@ export const AppProvider = ({ children }) => {
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [pushNotification, setPushNotification] = useState(null);
   const [taxEnabled, setTaxEnabled] = useState(true); // merchant setting: add VAT to quotes/invoices
+
+  useEffect(() => {
+    const accessToken = auth.session?.access_token;
+    const tenantId = tenantAccess.activeTenantId;
+    const siteId = tenantAccess.activeSiteId;
+    if (!isMedusaCatalogueEnabled || !accessToken || !tenantId) {
+      setProducts(CAGELI_PRODUCTS);
+      setCatalogue({ source: 'demo', loading: false, error: null, dataQuality: null });
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setCatalogue((current) => ({ ...current, loading: true, error: null }));
+    fetchCatalogue({ accessToken, tenantId, siteId, signal: controller.signal })
+      .then((response) => {
+        setProducts(response.items);
+        setCatalogue({ source: 'medusa', loading: false, error: null, dataQuality: response.dataQuality ?? null });
+      })
+      .catch((error) => {
+        if (error?.name === 'AbortError') return;
+        // Once the live path is explicitly enabled, never disguise an auth,
+        // scope or service failure as real catalogue data by showing mocks.
+        setProducts([]);
+        setCatalogue({ source: 'error', loading: false, error, dataQuality: null });
+      });
+
+    return () => controller.abort();
+  }, [auth.session?.access_token, tenantAccess.activeTenantId, tenantAccess.activeSiteId]);
+
+  useEffect(() => {
+    const accessToken = auth.session?.access_token;
+    const tenantId = tenantAccess.activeTenantId;
+    const siteId = tenantAccess.activeSiteId;
+    if (!isMedusaCatalogueEnabled || !accessToken || !tenantId || !canManageCommerce) {
+      setProfitability({ source: 'demo', loading: false, error: null, items: [], totals: null });
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setProfitability((current) => ({ ...current, loading: true, error: null }));
+    fetchProfitability({ accessToken, tenantId, siteId, signal: controller.signal })
+      .then((response) => setProfitability({
+        source: 'medusa', loading: false, error: null, items: response.items ?? [], totals: response.totals ?? null,
+      }))
+      .catch((error) => {
+        if (error?.name === 'AbortError') return;
+        setProfitability({ source: 'error', loading: false, error, items: [], totals: null });
+      });
+    return () => controller.abort();
+  }, [auth.session?.access_token, tenantAccess.activeTenantId, tenantAccess.activeSiteId, canManageCommerce]);
 
   const triggerNotification = (title, message, type = 'info') => {
     setPushNotification({ title, message, type, id: Date.now() });
@@ -231,6 +289,8 @@ export const AppProvider = ({ children }) => {
       theme,
       toggleTheme,
       products,
+      catalogue,
+      profitability,
       activePlant,
       setActivePlant,
       activeRole,
@@ -258,7 +318,12 @@ export const AppProvider = ({ children }) => {
       updateTenantBranding,
       provisionTenant,
       runScheduledReport,
-      modules: MOCK_MODULES
+      modules: MOCK_MODULES,
+      // Phase 1 integration state. Existing UI actions intentionally continue
+      // to use local mock state until their Medusa workflows are implemented.
+      auth,
+      tenantAccess,
+      integrationMode: tenantAccess.mode
     }}>
       {children}
     </AppContext.Provider>

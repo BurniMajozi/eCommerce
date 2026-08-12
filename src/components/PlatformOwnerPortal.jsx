@@ -1,18 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { MOCK_AUDIT_LOG, ROLE_HOME_CARDS } from '../data/mockData';
+import { fetchPlatformTenants, fetchAuditEvents } from '../tenant/adminReads';
 import { Building2, Plus, Palette, Smartphone, Wallet, ScrollText, LayoutGrid, AlertTriangle } from 'lucide-react';
 
 const ACCENT_SWATCHES = ['#EC3013', '#2563EB', '#0891B2', '#7C3AED', '#059669', '#D97706'];
 
+const SourceBadge = ({ live }) => (
+  <span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live · RLS' : 'Demo data'}</span>
+);
+
 export const PlatformOwnerPortal = () => {
-  const { tenants, selectedTenantId, setSelectedTenantId, modules, toggleTenantModule, updateTenantBranding, provisionTenant } = useApp();
+  const { tenants, selectedTenantId, setSelectedTenantId, modules, toggleTenantModule, updateTenantBranding, provisionTenant, integrationMode } = useApp();
   const [newTenantName, setNewTenantName] = useState('');
+  const [liveTenants, setLiveTenants] = useState(null);
+  const [liveAudit, setLiveAudit] = useState(null);
   const tenant = tenants.find(t => t.id === selectedTenantId) || tenants[0];
 
-  const totalUsers = tenants.reduce((a, t) => a + t.users, 0);
-  const liveCount = tenants.filter(t => t.state === 'live').length;
-  const trialCount = tenants.filter(t => t.trial).length;
+  // Read-only live wiring. In demo mode the effect no-ops and the mock data
+  // below is used unchanged; writes (provision, branding, flags) stay local
+  // until their Medusa/Supabase workflows exist.
+  useEffect(() => {
+    if (integrationMode !== 'supabase') { setLiveTenants(null); setLiveAudit(null); return; }
+    let active = true;
+    fetchPlatformTenants().then(rows => { if (active) setLiveTenants(rows ?? []); }).catch(() => { if (active) setLiveTenants([]); });
+    fetchAuditEvents(null, 20).then(rows => { if (active) setLiveAudit(rows ?? []); }).catch(() => { if (active) setLiveAudit([]); });
+    return () => { active = false; };
+  }, [integrationMode]);
+
+  const tenantRows = liveTenants ?? tenants;
+  const auditRows = liveAudit ?? MOCK_AUDIT_LOG;
+  const tenantsLive = liveTenants !== null;
+  const auditLive = liveAudit !== null;
+
+  const totalUsers = tenantRows.reduce((a, t) => a + (t.users || 0), 0);
+  const liveCount = tenantRows.filter(t => t.state === 'live' || t.state === 'active').length;
+  const trialCount = tenantRows.filter(t => t.trial || t.plan === 'trial' || t.state === 'setup').length;
   const totalMrr = tenants.reduce((a, t) => a + (t.mrr || 0), 0);
 
   return (
@@ -44,7 +67,7 @@ export const PlatformOwnerPortal = () => {
       {/* Tenants + branding */}
       <div className="card">
         <div className="card-hd">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Building2 size={17} style={{ color: 'var(--primary)' }} /><h3>Tenants</h3></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Building2 size={17} style={{ color: 'var(--primary)' }} /><h3>Tenants</h3><SourceBadge live={tenantsLive} /></div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input className="input" value={newTenantName} onChange={e => setNewTenantName(e.target.value)} placeholder="New tenant name" style={{ width: 180 }} />
             <button className="btn btn-primary" onClick={() => { provisionTenant(newTenantName.trim()); setNewTenantName(''); }}><Plus size={16} /> Provision</button>
@@ -55,13 +78,19 @@ export const PlatformOwnerPortal = () => {
           <table className="table">
             <thead><tr><th>Tenant</th><th>Domain</th><th className="num">Users</th><th className="center">Plan</th><th className="num">MRR</th><th className="center">State</th></tr></thead>
             <tbody>
-              {tenants.map(t => {
+              {tenantRows.length === 0 && (
+                <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 24 }}>No tenants visible for your access.</td></tr>
+              )}
+              {tenantRows.map(t => {
                 const sel = t.id === selectedTenantId;
+                const accent = t.branding?.accent || 'var(--primary)';
+                const logo = t.branding?.logo || (t.name ? t.name.charAt(0).toUpperCase() : '?');
+                const liveState = t.state === 'live' || t.state === 'active';
                 return (
                   <tr key={t.id} onClick={() => setSelectedTenantId(t.id)} style={{ cursor: 'pointer' }} className={sel ? 'row-flag' : ''}>
                     <td>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9 }}>
-                        <span className="avatar" style={{ width: 26, height: 26, fontSize: 11, background: t.branding.accent }}>{t.branding.logo}</span>
+                        <span className="avatar" style={{ width: 26, height: 26, fontSize: 11, background: accent }}>{logo}</span>
                         <strong style={{ fontWeight: 600 }}>{t.name}</strong>
                       </span>
                     </td>
@@ -69,7 +98,7 @@ export const PlatformOwnerPortal = () => {
                     <td className="num">{t.users}</td>
                     <td className="center"><span className="badge badge-neutral">{t.plan}</span></td>
                     <td className="num">{t.mrr ? `R ${t.mrr.toLocaleString('en-ZA')}` : '—'}</td>
-                    <td className="center"><span className={`badge ${t.state === 'live' ? 'badge-success' : 'badge-warning'}`}>{t.state}</span></td>
+                    <td className="center"><span className={`badge ${liveState ? 'badge-success' : 'badge-warning'}`}>{t.state}</span></td>
                   </tr>
                 );
               })}
@@ -169,16 +198,23 @@ export const PlatformOwnerPortal = () => {
         </div>
 
         <div className="card">
-          <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ScrollText size={17} style={{ color: 'var(--primary)' }} /><h3>Platform audit log</h3></div></div>
+          <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ScrollText size={17} style={{ color: 'var(--primary)' }} /><h3>Platform audit log</h3><SourceBadge live={auditLive} /></div></div>
           <div className="card-bd" style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {MOCK_AUDIT_LOG.map((e, i) => (
-              <div key={i} style={{ padding: '10px 0', borderTop: i ? '1px solid var(--border)' : 'none' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 500, color: e.level === 'warn' ? 'var(--danger)' : 'var(--text)' }}>
-                  {e.level === 'warn' && <AlertTriangle size={14} />}{e.action}
+            {auditRows.length === 0 && <div className="muted" style={{ fontSize: 13 }}>No audit events yet.</div>}
+            {auditRows.map((e, i) => {
+              const warn = e.level === 'warn';
+              const meta = auditLive
+                ? `${(e.created_at || '').replace('T', ' ').slice(0, 16)} · ${e.target_type || ''} · ${e.source || ''}`
+                : `${e.ts} · ${e.tenant} · ${e.actor}`;
+              return (
+              <div key={e.id || i} style={{ padding: '10px 0', borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 500, color: warn ? 'var(--danger)' : 'var(--text)' }}>
+                  {warn && <AlertTriangle size={14} />}{e.action}
                 </div>
-                <div className="eyebrow" style={{ marginTop: 3 }}>{e.ts} · {e.tenant} · {e.actor}</div>
+                <div className="eyebrow" style={{ marginTop: 3 }}>{meta}</div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
