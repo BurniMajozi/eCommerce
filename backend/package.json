@@ -11,6 +11,7 @@
     "start": "medusa start",
     "db:migrate": "medusa db:migrate",
     "db:generate": "medusa db:generate tenantLink",
+    "bootstrap:commerce": "medusa exec ./src/scripts/bootstrap-commerce.ts",
     "bootstrap:links": "medusa exec ./src/scripts/bootstrap-links.ts",
     "config:check": "node scripts/check-config.mjs",
     "test": "tsx --test test/**/*.test.ts",

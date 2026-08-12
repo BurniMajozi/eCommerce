@@ -79,16 +79,22 @@ npm --prefix backend run db:migrate
 On Railway, run these as a one-off/release command against the deployed env.
 
 ## 6 · Create commerce resources
-Create the first Medusa admin user (one-off):
+**Automated (recommended):** creates a Region, Sales Channel and Stock Location
+idempotently and prints their IDs.
+```bash
+# defaults: Region "Southern Africa"/ZAR/za, "SightLive — Default" channel,
+# "Central Store" location. Override with REGION_NAME / SALES_CHANNEL_NAME / etc.
+npm --prefix backend run bootstrap:commerce
+```
+It prints the three IDs in the exact form step 7 needs.
+
+**Manual alternative:** create the first admin user, then make the three
+resources in the Medusa Admin UI:
 ```bash
 npm --prefix backend exec -- medusa user -e admin@sightlive -p <password>
 ```
-Open the Medusa Admin (`<medusa-url>/app`) and create:
-- a **Region** (currency ZAR, your countries),
-- a **Sales Channel** (e.g. "Kumba — Plant Alpha"),
-- a **Stock Location** (e.g. "Store 2").
-
-Copy each ID (`reg_…`, `sc_…`, `sloc_…`).
+Open `<medusa-url>/app` → create a Region (ZAR), a Sales Channel and a Stock
+Location, and copy each ID (`reg_…`, `sc_…`, `sloc_…`).
 
 ## 7 · Link tenant/site → commerce
 Use the `SUPA_TENANT_ID` / `SUPA_SITE_ID` printed by the Supabase seed and the
