@@ -43,6 +43,13 @@ export default defineConfig({
       cookieSecret: process.env.COOKIE_SECRET ?? 'development-only-change-me',
     },
   },
+  // Run headless: the SightLive React app is the UI and everything goes through
+  // the /app/* API. Skipping the admin build avoids the ".medusa/server" admin
+  // index.html lookup on start and speeds up builds. Re-enable if you want the
+  // built-in Medusa dashboard.
+  admin: {
+    disable: true,
+  },
   modules: [
     ...redisModules,
     {
