@@ -25,6 +25,13 @@ export default defineConfig({
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
     databaseSchema: process.env.DATABASE_SCHEMA ?? 'medusa',
+    // Supabase's pooler presents a cert chain Node doesn't trust by default
+    // ("self-signed certificate in certificate chain"). Keep TLS on but skip
+    // chain verification for managed (non-local) databases. Local dev DBs keep
+    // default (no SSL) so they aren't forced into a broken TLS handshake.
+    databaseDriverOptions: /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL ?? '')
+      ? {}
+      : { connection: { ssl: { rejectUnauthorized: false } } },
     redisUrl,
     redisPrefix: process.env.REDIS_PREFIX ?? 'sightlive:',
     workerMode: process.env.MEDUSA_WORKER_MODE as 'shared' | 'server' | 'worker' | undefined,
