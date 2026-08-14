@@ -137,7 +137,7 @@ export const MedusaAdminPortal = ({ view }) => {
     return (
       <Wrap>
         <Head icon={Tag} title="Products & Pricing" sub="Cost, contract price and margin per SKU — with size/colour variants as the lowest stock-keeping level."
-          action={<button className="btn btn-primary"><Plus size={16} /> New product</button>} />
+          action={<button className="btn btn-primary" onClick={() => triggerNotification('New product', 'Product creation writes to Medusa — being wired in the B2B/catalogue step. For now, products are seeded via the bootstrap script.', 'info')}><Plus size={16} /> New product</button>} />
         <div className="cols cols-3">
           <div className="card"><div className="card-bd"><div className="kpi-label">Avg margin</div><div className="kpi-value" style={{ color: 'var(--primary)' }}>{avgMargin === null ? 'Restricted' : `${avgMargin.toFixed(1)}%`}</div><div className="kpi-sub">server-authoritative when live</div></div></div>
           <div className="card"><div className="card-bd"><div className="kpi-label">Stock at cost</div><div className="kpi-value">{stockValue === null ? 'Restricted' : `R ${(stockValue / 1e6).toFixed(2)}m`}</div><div className="kpi-sub">requires commerce management + MFA</div></div></div>

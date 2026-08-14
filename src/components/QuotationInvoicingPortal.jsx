@@ -10,15 +10,19 @@ export const QuotationInvoicingPortal = () => {
   const [clientName, setClientName] = useState('Rand Colliery');
   const [vatNumber, setVatNumber] = useState('ZA4920194821');
   const [poNumber, setPoNumber] = useState('PO-88213');
-  const [items, setItems] = useState([
-    { sku: products[13].sku, name: products[13].name, qty: 20, unitCost: products[13].costPrice, unitPrice: products[13].sellingPrice },
-    { sku: products[22].sku, name: products[22].name, qty: 30, unitCost: products[22].costPrice, unitPrice: products[22].sellingPrice }
-  ]);
+  // Seed a couple of demo lines from whatever products exist. Guards against an
+  // empty/short catalogue (live mode before products are seeded) so the page
+  // never crashes on products[13]/[22].
+  const seedLine = (idx, qty) => {
+    const p = products[idx];
+    return p ? { sku: p.sku, name: p.name, qty, unitCost: p.costPrice ?? 0, unitPrice: p.sellingPrice ?? 0 } : null;
+  };
+  const [items, setItems] = useState(() => [seedLine(13, 20), seedLine(22, 30)].filter(Boolean));
 
   const addItem = (sku) => {
     const p = products.find(x => x.sku === sku);
     if (!p || items.some(i => i.sku === sku)) return;
-    setItems(prev => [...prev, { sku: p.sku, name: p.name, qty: 1, unitCost: p.costPrice, unitPrice: p.sellingPrice }]);
+    setItems(prev => [...prev, { sku: p.sku, name: p.name, qty: 1, unitCost: p.costPrice ?? 0, unitPrice: p.sellingPrice ?? 0 }]);
   };
   const setQty = (sku, q) => setItems(prev => prev.map(i => i.sku === sku ? { ...i, qty: Math.max(1, parseInt(q) || 1) } : i));
 
@@ -62,7 +66,7 @@ export const QuotationInvoicingPortal = () => {
               <label className="field-label">Add from catalogue</label>
               <select className="select" value="" onChange={e => { if (e.target.value) addItem(e.target.value); }}>
                 <option value="">Select a product (contract price)…</option>
-                {products.map(p => <option key={p.sku} value={p.sku}>{p.sku} · {p.name} (R{p.sellingPrice.toFixed(2)})</option>)}
+                {products.map(p => <option key={p.sku} value={p.sku}>{p.sku} · {p.name}{p.sellingPrice != null ? ` (R${p.sellingPrice.toFixed(2)})` : ''}</option>)}
               </select>
             </div>
 
