@@ -85,10 +85,24 @@ function handleFor(sku: string): string {
   return sku.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+// The first five extracted photos are JPEGs; the rest are PNGs. Used to build
+// the seeded product's thumbnail URL from the deployed frontend's /catalogue
+// assets (only when IMAGE_BASE_URL is set — the merchant's front-end origin).
+const JPEG_SKUS = new Set(['DW-ARC40-WJ', 'DW-ARC15-J', 'DW-ARC15-P', 'DW-ARC9.9-SST', 'DW-TSHIRTGY']);
+function thumbnailFor(sku: string, imageBase: string | undefined): string | undefined {
+  if (!imageBase) return undefined;
+  const ext = JPEG_SKUS.has(sku) ? 'jpeg' : 'png';
+  return `${imageBase.replace(/\/+$/, '')}/catalogue/${handleFor(sku)}.${ext}`;
+}
+
 export default async function bootstrapProducts({ container }: ExecArgs): Promise<void> {
   const salesChannelId = required('SALES_CHANNEL_ID');
   const stockLocationId = env('STOCK_LOCATION_ID');
   const currency = (env('CURRENCY') ?? 'zar').toLowerCase();
+  // Optional: the deployed frontend origin. When set, seeded products get a
+  // real Medusa thumbnail sourced from the front-end's /catalogue photos, so
+  // seeded and UI-added products both carry a data-driven imageUrl.
+  const imageBase = env('IMAGE_BASE_URL');
 
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
@@ -110,6 +124,8 @@ export default async function bootstrapProducts({ container }: ExecArgs): Promis
       title: c.name,
       handle: handleFor(c.sku),
       status: ProductStatus.PUBLISHED,
+      thumbnail: thumbnailFor(c.sku, imageBase),
+      images: thumbnailFor(c.sku, imageBase) ? [{ url: thumbnailFor(c.sku, imageBase) as string }] : undefined,
       sales_channels: [{ id: salesChannelId }],
       // planning + display metadata read by /app/catalogue
       metadata: {
