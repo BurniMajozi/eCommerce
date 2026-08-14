@@ -41,6 +41,12 @@ export default defineMiddlewares({
       bodyParser: { sizeLimit: '8mb' },
     },
     {
+      // Product photo uploads arrive as base64 JSON, so raise the body limit.
+      matcher: '/app/products/image',
+      methods: ['POST'],
+      bodyParser: { sizeLimit: '10mb' },
+    },
+    {
       matcher: '/app/*',
       // appCors must run before the auth middleware so preflight OPTIONS
       // (no bearer token) gets a 204 with CORS headers instead of a 401.

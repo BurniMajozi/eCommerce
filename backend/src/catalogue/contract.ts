@@ -26,6 +26,7 @@ export type MedusaProductRecord = {
   title?: string | null;
   description?: string | null;
   handle?: string | null;
+  thumbnail?: string | null;
   metadata?: Record<string, unknown> | null;
   categories?: Array<{ name?: string | null }> | null;
   type?: { value?: string | null } | null;
@@ -150,6 +151,7 @@ export function buildCatalogueContract(
       sku,
       name: product.title ?? sku,
       description: product.description ?? '',
+      imageUrl: product.thumbnail ?? null,
       category: product.categories?.[0]?.name ?? product.type?.value ?? metadataString(product.metadata, 'category') ?? '',
       sellingPrice: prices.length ? Math.min(...prices) : 0,
       stockOnHand: inventory.reduce((sum, variant) => sum + (variant.stockOnHand ?? 0), 0),
