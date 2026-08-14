@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { downloadProductImportTemplate, validateProductImport } from '../catalogue/catalogueClient';
+import { ProductThumb } from './ProductThumb';
 import {
   MEDUSA_ORDERS, MEDUSA_PROMOTIONS, MEDUSA_TAX_REGIONS, MEDUSA_CUSTOMERS,
   MEDUSA_WORKFLOWS, MEDUSA_EVENTS, MEDUSA_FULFILMENT, MEDUSA_CURRENCIES,
@@ -159,7 +160,12 @@ export const MedusaAdminPortal = ({ view }) => {
                       <tr onClick={() => setExpandedSku(open ? null : r.sku)} style={{ cursor: 'pointer' }}>
                         <td style={{ width: 28 }}>{open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</td>
                         <td className="muted">{r.sku}</td>
-                        <td style={{ fontWeight: 500 }}>{r.name}<div className="eyebrow" style={{ marginTop: 2 }}>{opt.sizes.length} sizes · {opt.colors[0] === '—' ? 'single colour' : `${opt.colors.length} colours`}</div></td>
+                        <td style={{ fontWeight: 500 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <ProductThumb sku={r.sku} name={r.name} size={38} style={{ width: 38, flex: '0 0 auto' }} />
+                            <div>{r.name}<div className="eyebrow" style={{ marginTop: 2 }}>{opt.sizes.length} sizes · {opt.colors[0] === '—' ? 'single colour' : `${opt.colors.length} colours`}</div></div>
+                          </div>
+                        </td>
                         <td className="num">{r.costPrice === null ? 'Restricted' : `R ${r.costPrice.toFixed(2)}`}</td>
                         <td className="num">R {r.sellingPrice.toFixed(2)}</td>
                         <td className="num" style={{ color: 'var(--success)', fontWeight: 600 }}>{r.profit === null ? 'Restricted' : `R ${r.profit.toFixed(2)}`}</td>
@@ -221,7 +227,12 @@ export const MedusaAdminPortal = ({ view }) => {
                   return (
                     <tr key={p.sku} className={lo ? 'row-flag' : ''}>
                       <td className="muted">{p.sku}</td>
-                      <td style={{ fontWeight: 500 }}>{p.name}</td>
+                      <td style={{ fontWeight: 500 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <ProductThumb sku={p.sku} name={p.name} size={34} style={{ width: 34, flex: '0 0 auto' }} />
+                          <span>{p.name}</span>
+                        </div>
+                      </td>
                       <td className="num">{p.stockOnHand}</td>
                       <td className="num muted">{res}</td>
                       <td className="num" style={{ fontWeight: 600 }}>{p.stockOnHand - res}</td>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { InvoiceModal } from './InvoiceModal';
+import { ProductThumb } from './ProductThumb';
 import { Receipt, Plus, FileText, ArrowRight, Store, TrendingUp } from 'lucide-react';
 
 export const QuotationInvoicingPortal = () => {
@@ -78,7 +79,12 @@ export const QuotationInvoicingPortal = () => {
                     const stock = stockFor(i.sku); const short = i.qty > stock;
                     return (
                       <tr key={i.sku}>
-                        <td><div style={{ fontWeight: 500 }}>{i.name}</div><div className="eyebrow">{i.sku}</div></td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                            <ProductThumb sku={i.sku} name={i.name} size={34} style={{ width: 34, flex: '0 0 auto' }} />
+                            <div><div style={{ fontWeight: 500 }}>{i.name}</div><div className="eyebrow">{i.sku}</div></div>
+                          </div>
+                        </td>
                         <td className="center"><span className={`badge ${short ? 'badge-danger' : 'badge-success'}`}>{stock}{short ? ' short' : ''}</span></td>
                         <td className="center"><input type="number" min="1" className="input" style={{ width: 64, textAlign: 'center', padding: '5px 6px' }} value={i.qty} onChange={e => setQty(i.sku, e.target.value)} /></td>
                         <td className="num" style={{ fontWeight: 600 }}>R {(i.unitPrice * i.qty).toFixed(2)}</td>
