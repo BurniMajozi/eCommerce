@@ -184,7 +184,7 @@ export const EmployeePortal = () => {
                     <span className="eyebrow">{p.sku}</span>
                     <span className="badge badge-neutral" style={{ fontSize: 10 }}>Cat {p.abcClass}</span>
                   </div>
-                  <ProductThumb sku={p.sku} name={p.name} size={92} />
+                  <ProductThumb sku={p.sku} name={p.name} imageUrl={p.imageUrl} size={92} />
                   <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.25 }}>{p.name}</div>
                   <div className="muted" style={{ fontSize: 12 }}>{p.stockOnHand > 0 ? 'In stock' : 'On order'} · {p.lifespanMonths}m life</div>
                   <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid var(--border)' }}>

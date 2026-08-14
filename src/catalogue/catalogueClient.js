@@ -81,6 +81,22 @@ async function scopedJson(path, { accessToken, tenantId, siteId = null, signal, 
 
 export const fetchProfitability = (scope) => scopedJson('/app/catalogue/profit', scope);
 
+// Uploads a product photo (base64) and returns its public URL.
+export const uploadProductImage = ({ sku, filename, contentType, dataBase64 }, scope) => scopedJson('/app/products/image', {
+  ...scope,
+  method: 'POST',
+  body: { sku, filename, contentType, dataBase64 },
+});
+
+// Creates a product in the tenant's catalogue. `product` carries name, sku,
+// category, cost/selling price, stock and (optionally) an imageUrl from a prior
+// uploadProductImage call.
+export const createProduct = (product, scope) => scopedJson('/app/products', {
+  ...scope,
+  method: 'POST',
+  body: product,
+});
+
 export const fetchImportStatus = (scope) => scopedJson('/app/catalogue/import/status', scope);
 
 export const validateProductImport = (csv, scope) => scopedJson('/app/catalogue/import/validate', {

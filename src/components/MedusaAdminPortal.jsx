@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { downloadProductImportTemplate, validateProductImport } from '../catalogue/catalogueClient';
 import { ProductThumb } from './ProductThumb';
+import { ProductFormModal } from './ProductFormModal';
 import {
   MEDUSA_ORDERS, MEDUSA_PROMOTIONS, MEDUSA_TAX_REGIONS, MEDUSA_CUSTOMERS,
   MEDUSA_WORKFLOWS, MEDUSA_EVENTS, MEDUSA_FULFILMENT, MEDUSA_CURRENCIES,
@@ -63,6 +64,7 @@ export const MedusaAdminPortal = ({ view }) => {
   const [importError, setImportError] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [expandedSku, setExpandedSku] = useState(null);
+  const [showProductForm, setShowProductForm] = useState(false);
   const [selectedWf, setSelectedWf] = useState(MEDUSA_WORKFLOWS[0].id);
   const [eventLog, setEventLog] = useState([]);
   const [firing, setFiring] = useState(null);
@@ -138,7 +140,7 @@ export const MedusaAdminPortal = ({ view }) => {
     return (
       <Wrap>
         <Head icon={Tag} title="Products & Pricing" sub="Cost, contract price and margin per SKU — with size/colour variants as the lowest stock-keeping level."
-          action={<button className="btn btn-primary" onClick={() => triggerNotification('New product', 'Product creation writes to Medusa — being wired in the B2B/catalogue step. For now, products are seeded via the bootstrap script.', 'info')}><Plus size={16} /> New product</button>} />
+          action={<button className="btn btn-primary" onClick={() => setShowProductForm(true)}><Plus size={16} /> New product</button>} />
         <div className="cols cols-3">
           <div className="card"><div className="card-bd"><div className="kpi-label">Avg margin</div><div className="kpi-value" style={{ color: 'var(--primary)' }}>{avgMargin === null ? 'Restricted' : `${avgMargin.toFixed(1)}%`}</div><div className="kpi-sub">server-authoritative when live</div></div></div>
           <div className="card"><div className="card-bd"><div className="kpi-label">Stock at cost</div><div className="kpi-value">{stockValue === null ? 'Restricted' : `R ${(stockValue / 1e6).toFixed(2)}m`}</div><div className="kpi-sub">requires commerce management + MFA</div></div></div>
@@ -162,7 +164,7 @@ export const MedusaAdminPortal = ({ view }) => {
                         <td className="muted">{r.sku}</td>
                         <td style={{ fontWeight: 500 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <ProductThumb sku={r.sku} name={r.name} size={38} style={{ width: 38, flex: '0 0 auto' }} />
+                            <ProductThumb sku={r.sku} name={r.name} imageUrl={r.imageUrl} size={38} style={{ width: 38, flex: '0 0 auto' }} />
                             <div>{r.name}<div className="eyebrow" style={{ marginTop: 2 }}>{opt.sizes.length} sizes · {opt.colors[0] === '—' ? 'single colour' : `${opt.colors.length} colours`}</div></div>
                           </div>
                         </td>
@@ -199,6 +201,7 @@ export const MedusaAdminPortal = ({ view }) => {
             </table>
           </div>
         </div>
+        {showProductForm && <ProductFormModal onClose={() => setShowProductForm(false)} />}
       </Wrap>
     );
   }
@@ -229,7 +232,7 @@ export const MedusaAdminPortal = ({ view }) => {
                       <td className="muted">{p.sku}</td>
                       <td style={{ fontWeight: 500 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <ProductThumb sku={p.sku} name={p.name} size={34} style={{ width: 34, flex: '0 0 auto' }} />
+                          <ProductThumb sku={p.sku} name={p.name} imageUrl={p.imageUrl} size={34} style={{ width: 34, flex: '0 0 auto' }} />
                           <span>{p.name}</span>
                         </div>
                       </td>

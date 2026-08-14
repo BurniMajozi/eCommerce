@@ -5,8 +5,10 @@ import { catalogueImage } from '../data/catalogueImages';
 // Renders a product's real catalogue photo (extracted from the merchant's
 // picture sheet, keyed by SKU) with a graceful icon fallback when no image is
 // mapped or the file fails to load. `size` is the box height in px.
-export const ProductThumb = ({ sku, name, size = 66, className = '', style = {} }) => {
-  const src = catalogueImage(sku);
+export const ProductThumb = ({ sku, name, imageUrl, size = 66, className = '', style = {} }) => {
+  // Prefer the live image from Medusa (covers products added through the app),
+  // then the bundled photo map (seeded catalogue), then the icon fallback.
+  const src = (imageUrl && imageUrl.trim()) || catalogueImage(sku);
   const [failed, setFailed] = useState(false);
 
   if (!src || failed) {

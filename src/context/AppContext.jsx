@@ -40,6 +40,9 @@ export const AppProvider = ({ children }) => {
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [pushNotification, setPushNotification] = useState(null);
   const [taxEnabled, setTaxEnabled] = useState(true); // merchant setting: add VAT to quotes/invoices
+  // Bumped after a catalogue write (new product) to re-run the live reads.
+  const [catalogueReloadKey, setCatalogueReloadKey] = useState(0);
+  const refreshCatalogue = () => setCatalogueReloadKey((k) => k + 1);
 
   useEffect(() => {
     const accessToken = auth.session?.access_token;
@@ -67,7 +70,7 @@ export const AppProvider = ({ children }) => {
       });
 
     return () => controller.abort();
-  }, [auth.session?.access_token, tenantAccess.activeTenantId, tenantAccess.activeSiteId]);
+  }, [auth.session?.access_token, tenantAccess.activeTenantId, tenantAccess.activeSiteId, catalogueReloadKey]);
 
   useEffect(() => {
     const accessToken = auth.session?.access_token;
@@ -89,7 +92,7 @@ export const AppProvider = ({ children }) => {
         setProfitability({ source: 'error', loading: false, error, items: [], totals: null });
       });
     return () => controller.abort();
-  }, [auth.session?.access_token, tenantAccess.activeTenantId, tenantAccess.activeSiteId, canManageCommerce]);
+  }, [auth.session?.access_token, tenantAccess.activeTenantId, tenantAccess.activeSiteId, canManageCommerce, catalogueReloadKey]);
 
   const triggerNotification = (title, message, type = 'info') => {
     setPushNotification({ title, message, type, id: Date.now() });
@@ -323,7 +326,9 @@ export const AppProvider = ({ children }) => {
       // to use local mock state until their Medusa workflows are implemented.
       auth,
       tenantAccess,
-      integrationMode: tenantAccess.mode
+      integrationMode: tenantAccess.mode,
+      canManageCommerce,
+      refreshCatalogue
     }}>
       {children}
     </AppContext.Provider>
