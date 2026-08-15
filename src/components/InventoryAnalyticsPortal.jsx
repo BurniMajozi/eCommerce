@@ -6,7 +6,8 @@ import { TrendingUp, AlertTriangle, FileDown, Boxes, Wallet, TriangleAlert, Pack
 export const InventoryAnalyticsPortal = () => {
   const { products, activePlant, triggerNotification } = useApp();
 
-  const stockValue = products.reduce((a, p) => a + p.costPrice * p.stockOnHand, 0);
+  // Live catalogue products have no costPrice (cost is MFA/profit-gated), so guard it.
+  const stockValue = products.reduce((a, p) => a + (p.costPrice ?? 0) * (p.stockOnHand ?? 0), 0);
   const cover = (p) => Math.round((p.stockOnHand + p.stockInTransit) / (p.dailyConsumption || 1));
   const belowMin = products.filter(p => cover(p) < 14);
   const critical = products.filter(p => cover(p) < 8).length;
@@ -115,9 +116,9 @@ export const InventoryAnalyticsPortal = () => {
                     <td className="muted">{p.sku}</td>
                     <td style={{ fontWeight: 500 }}>{p.name}</td>
                     <td className="center"><span className="badge badge-neutral" style={{ fontSize: 10 }}>{p.abcClass}</span></td>
-                    <td className="num">R {p.costPrice.toFixed(2)}</td>
-                    <td className="num">{p.stockOnHand}</td>
-                    <td className="num muted">+{p.stockInTransit}</td>
+                    <td className="num">{p.costPrice != null ? `R ${p.costPrice.toFixed(2)}` : '—'}</td>
+                    <td className="num">{p.stockOnHand ?? 0}</td>
+                    <td className="num muted">+{p.stockInTransit ?? 0}</td>
                     <td className="num" style={{ color: low ? 'var(--danger)' : 'var(--text)', fontWeight: low ? 600 : 400 }}>{cv}d</td>
                   </tr>
                 );
