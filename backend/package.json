@@ -9,7 +9,7 @@
     "dev": "medusa develop",
     "build": "medusa build",
     "start": "medusa start",
-    "db:migrate": "medusa db:migrate",
+    "db:migrate": "medusa db:migrate --yes",
     "db:generate": "medusa db:generate tenantLink",
     "bootstrap:commerce": "medusa exec ./src/scripts/bootstrap-commerce.ts",
     "bootstrap:links": "medusa exec ./src/scripts/bootstrap-links.ts",
