@@ -287,6 +287,35 @@ export const AppProvider = ({ children }) => {
     triggerNotification('Invoice Generated', `B2B Tax Invoice ${invoiceData.invoiceNumber} created!`, 'success');
   };
 
+  // Builds a tax invoice from a live Medusa draft order (same merchant details
+  // and layout as the quote path). Used by the B2B portal in live mode.
+  const convertOrderToInvoice = (order) => {
+    const items = (order.items ?? []).map(i => ({ sku: i.sku, name: i.name, qty: i.qty, unitPrice: i.unitPrice }));
+    const subtotal = items.reduce((acc, item) => acc + (item.unitPrice * item.qty), 0);
+    const taxRate = order.taxEnabled === false ? 0 : 0.15;
+    const vatAmount = subtotal * taxRate;
+    const invoiceData = {
+      invoiceNumber: order.displayId ? `INV-${order.displayId}` : `INV-${Date.now().toString().slice(-6)}`,
+      clientName: order.clientName || order.email || 'Customer',
+      vatNumber: order.vatNumber || '—',
+      poNumber: order.poNumber || '—',
+      date: new Date().toISOString().substring(0, 10),
+      dueDate: new Date(Date.now() + 30*24*60*60*1000).toISOString().substring(0, 10),
+      items,
+      subtotal,
+      vatAmount,
+      totalAmount: subtotal + vatAmount,
+      merchantName: "CageLi Safety Solutions (Pty) Ltd",
+      merchantTagline: "PROTECT • PERFORM • DELIVER",
+      merchantVat: "ZA4081928401",
+      merchantBank: "First National Bank (FNB)",
+      accountNumber: "62819402910",
+      branchCode: "250655"
+    };
+    setSelectedInvoice(invoiceData);
+    triggerNotification('Invoice Generated', `B2B Tax Invoice ${invoiceData.invoiceNumber} created!`, 'success');
+  };
+
   return (
     <AppContext.Provider value={{
       theme,
@@ -313,6 +342,7 @@ export const AppProvider = ({ children }) => {
       issueStockAndDeduct,
       saveQuotation,
       convertQuoteToInvoice,
+      convertOrderToInvoice,
       plants: MOCK_PLANTS,
       tenants,
       selectedTenantId,

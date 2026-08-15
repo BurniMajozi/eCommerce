@@ -1,12 +1,28 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { InvoiceModal } from './InvoiceModal';
 import { ProductThumb } from './ProductThumb';
-import { Receipt, Plus, FileText, ArrowRight, Store, TrendingUp } from 'lucide-react';
+import { createOrder, fetchOrders, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { Receipt, Plus, FileText, ArrowRight, Store, TrendingUp, Loader2 } from 'lucide-react';
 
 export const QuotationInvoicingPortal = () => {
-  const { products, quotations, saveQuotation, convertQuoteToInvoice, selectedInvoice, setSelectedInvoice, taxEnabled, setTaxEnabled } = useApp();
+  const { products, quotations, saveQuotation, convertQuoteToInvoice, convertOrderToInvoice, selectedInvoice, setSelectedInvoice, taxEnabled, setTaxEnabled, auth, tenantAccess, triggerNotification } = useApp();
   const stockFor = (sku) => products.find(p => p.sku === sku)?.stockOnHand ?? 0;
+
+  // Live mode writes real Medusa draft orders; demo mode uses local quotations.
+  const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
+  const live = isMedusaCatalogueEnabled && scope.accessToken && scope.tenantId;
+  const [orders, setOrders] = useState([]);
+  const [ordersError, setOrdersError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const loadOrders = () => {
+    if (!live) return;
+    fetchOrders(scope)
+      .then(res => { setOrders(res.orders ?? []); setOrdersError(null); })
+      .catch(err => setOrdersError(err?.message ?? 'Orders could not be loaded.'));
+  };
+  useEffect(() => { loadOrders(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [live, scope.accessToken, scope.tenantId, scope.siteId]);
 
   const [clientName, setClientName] = useState('Rand Colliery');
   const [vatNumber, setVatNumber] = useState('ZA4920194821');
@@ -33,9 +49,23 @@ export const QuotationInvoicingPortal = () => {
   const marginPct = subtotal ? (profit / subtotal) * 100 : 0;
   const vat = taxEnabled ? subtotal * 0.15 : 0;
 
-  const createQuote = (e) => {
+  const createQuote = async (e) => {
     e.preventDefault();
     if (!items.length) return;
+    if (live) {
+      setSubmitting(true);
+      try {
+        await createOrder({ clientName, vatNumber, poNumber, taxEnabled, items: items.map(i => ({ sku: i.sku, qty: i.qty })) }, scope);
+        triggerNotification('Order placed', `Draft order created for ${clientName}.`, 'success');
+        setItems([]);
+        loadOrders();
+      } catch (err) {
+        triggerNotification('Order failed', err?.message ?? 'The order could not be created.', 'error');
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
     saveQuotation({ id: `QT-2026-${Math.floor(100 + Math.random() * 900)}`, clientName, vatNumber, poNumber, date: '2026-08-11', validDays: 30, status: 'DRAFT', marginPercent: Math.round(marginPct), taxEnabled, items });
   };
 
@@ -121,16 +151,52 @@ export const QuotationInvoicingPortal = () => {
               </div>
             </div>
 
-            <button type="submit" className="btn btn-primary btn-block"><Plus size={16} /> Request quote / place order</button>
+            <button type="submit" className="btn btn-primary btn-block" disabled={submitting || !items.length}>
+              {submitting ? <><Loader2 size={16} className="spin" /> Placing order…</> : <><Plus size={16} /> Request quote / place order</>}
+            </button>
           </form>
         </div>
 
-        {/* Saved quotes */}
+        {/* Saved orders (live) / quotes (demo) */}
         <div className="card" style={{ alignSelf: 'flex-start' }}>
-          <div className="card-hd"><h3>Quotes → invoice</h3><span className="badge badge-neutral">{quotations.length} saved</span></div>
+          <div className="card-hd">
+            <h3>{live ? 'Orders → invoice' : 'Quotes → invoice'}</h3>
+            <span className="badge badge-neutral">{live ? `${orders.length} order${orders.length === 1 ? '' : 's'}` : `${quotations.length} saved`}</span>
+          </div>
           <div className="card-bd" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {quotations.length === 0 && <div className="muted" style={{ fontSize: 13 }}>No quotations yet — build one on the left.</div>}
-            {quotations.map(q => {
+            {ordersError && <div className="card" style={{ boxShadow: 'none', borderColor: 'var(--danger)' }}><div className="card-bd" style={{ padding: 12, color: 'var(--danger)', fontSize: 13 }}>{ordersError}</div></div>}
+
+            {/* Live orders */}
+            {live && orders.length === 0 && !ordersError && <div className="muted" style={{ fontSize: 13 }}>No orders yet — build one on the left.</div>}
+            {live && orders.map(o => {
+              const sub = (o.items ?? []).reduce((a, i) => a + i.unitPrice * i.qty, 0);
+              const oTotal = o.taxEnabled === false ? sub : sub * 1.15;
+              return (
+                <div key={o.id} className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
+                  <div className="card-bd" style={{ padding: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <span className="eyebrow">{o.displayId ? `#${o.displayId}` : o.id?.slice(0, 12)}</span>
+                        <div style={{ fontWeight: 600, fontSize: 14, marginTop: 2 }}>{o.clientName || o.email || 'Customer'}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>{(o.createdAt || '').substring(0, 10)} · PO {o.poNumber || '—'}</div>
+                      </div>
+                      <span className="badge badge-warning">{o.status || 'draft'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border)', marginTop: 10, paddingTop: 10 }}>
+                      <span className="muted" style={{ fontSize: 12.5 }}>Total {o.taxEnabled === false ? '(no VAT)' : 'incl VAT'}</span>
+                      <span style={{ fontWeight: 600 }} className="tabular">R {oTotal.toFixed(2)}</span>
+                    </div>
+                    <button className="btn btn-secondary btn-sm btn-block" style={{ marginTop: 10 }} onClick={() => convertOrderToInvoice(o)}>
+                      <FileText size={15} /> Issue tax invoice <ArrowRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Demo quotes */}
+            {!live && quotations.length === 0 && <div className="muted" style={{ fontSize: 13 }}>No quotations yet — build one on the left.</div>}
+            {!live && quotations.map(q => {
               const sub = q.items.reduce((a, i) => a + i.unitPrice * i.qty, 0);
               const qTotal = q.taxEnabled === false ? sub : sub * 1.15;
               const converted = q.status === 'CONVERTED_TO_INVOICE';
