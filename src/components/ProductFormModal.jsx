@@ -1,16 +1,19 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { createProduct, uploadProductImage, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { createProduct, updateProduct, uploadProductImage, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { catalogueImage } from '../data/catalogueImages';
 import { X, UploadCloud, Loader2, Save } from 'lucide-react';
 
 const ABC = ['A', 'B', 'C'];
 
-// Tenant-admin form to add a real product to the live catalogue: uploads the
-// photo to storage, then creates the product in Medusa under the tenant's sales
-// channel. On success it refreshes the live reads so the new product appears
-// everywhere. Demo mode has no server to write to, so the form explains that.
-export const ProductFormModal = ({ onClose }) => {
+// Tenant-admin form to add OR edit a product in the live catalogue: uploads the
+// photo to storage, then writes to Medusa under the tenant's sales channel. On
+// success it refreshes the live reads so the change shows everywhere. Pass
+// `product` to edit an existing one; omit it to create. Demo mode has no server
+// to write to, so the form explains that.
+export const ProductFormModal = ({ onClose, product = null }) => {
   const { products, auth, tenantAccess, refreshCatalogue, triggerNotification } = useApp();
+  const isEdit = Boolean(product);
   const scope = {
     accessToken: auth.session?.access_token,
     tenantId: tenantAccess.activeTenantId,
@@ -23,10 +26,18 @@ export const ProductFormModal = ({ onClose }) => {
     [products],
   );
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => (isEdit ? {
+    sku: product.sku ?? '', name: product.name ?? '', category: product.category ?? '',
+    costPrice: product.costPrice ?? '', sellingPrice: product.sellingPrice ?? '',
+    stockOnHand: product.stockOnHand ?? '', stockInTransit: product.stockInTransit ?? '',
+    abcClass: product.abcClass || 'C', lifespanMonths: product.lifespanMonths ?? '',
+    leadTimeDays: product.leadTimeDays ?? '', dailyConsumption: product.dailyConsumption ?? '',
+  } : {
     sku: '', name: '', category: '', costPrice: '', sellingPrice: '',
     stockOnHand: '', stockInTransit: '', abcClass: 'C', lifespanMonths: '', leadTimeDays: '', dailyConsumption: '',
-  });
+  }));
+  // Show the current photo (live imageUrl or bundled map) as the starting preview.
+  const existingImage = isEdit ? (product.imageUrl || catalogueImage(product.sku)) : null;
   const [imageData, setImageData] = useState(null); // { dataUrl, contentType, filename }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -54,7 +65,7 @@ export const ProductFormModal = ({ onClose }) => {
   const submit = async (e) => {
     e.preventDefault();
     setError(null);
-    if (!live) { setError('Adding products writes to the live catalogue, which is only available when signed in against the commerce backend.'); return; }
+    if (!live) { setError('Managing products writes to the live catalogue, which is only available when signed in against the commerce backend.'); return; }
     if (!form.sku.trim() || !form.name.trim()) { setError('Product code and name are required.'); return; }
 
     setBusy(true);
@@ -67,26 +78,31 @@ export const ProductFormModal = ({ onClose }) => {
         );
         imageUrl = up.url;
       }
-      await createProduct({
-        sku: form.sku.trim(),
+
+      const payload = {
         name: form.name.trim(),
         category: form.category.trim(),
         costPrice: Number(form.costPrice) || 0,
         sellingPrice: Number(form.sellingPrice) || 0,
         stockOnHand: Number(form.stockOnHand) || 0,
-        stockInTransit: Number(form.stockInTransit) || 0,
         abcClass: form.abcClass,
         lifespanMonths: Number(form.lifespanMonths) || 0,
         leadTimeDays: Number(form.leadTimeDays) || 0,
         dailyConsumption: Number(form.dailyConsumption) || 0,
-        imageUrl,
-      }, scope);
+        ...(imageUrl ? { imageUrl } : {}),
+      };
 
-      triggerNotification('Product added', `${form.name.trim()} is now live in the catalogue.`, 'success');
+      if (isEdit) {
+        await updateProduct(product.id, payload, scope);
+        triggerNotification('Product updated', `${form.name.trim()} has been updated.`, 'success');
+      } else {
+        await createProduct({ ...payload, sku: form.sku.trim(), stockInTransit: Number(form.stockInTransit) || 0 }, scope);
+        triggerNotification('Product added', `${form.name.trim()} is now live in the catalogue.`, 'success');
+      }
       refreshCatalogue();
       onClose();
     } catch (err) {
-      setError(err?.message ?? 'The product could not be created.');
+      setError(err?.message ?? 'The product could not be saved.');
     } finally {
       setBusy(false);
     }
@@ -97,7 +113,7 @@ export const ProductFormModal = ({ onClose }) => {
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
         <div className="modal-hd">
           <div>
-            <h3>Add product</h3>
+            <h3>{isEdit ? 'Edit product' : 'Add product'}</h3>
             <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>Writes to your live catalogue · Contract price list B</div>
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
@@ -119,7 +135,9 @@ export const ProductFormModal = ({ onClose }) => {
                 style={{ height: 132, width: 132, padding: 0, overflow: 'hidden', cursor: 'pointer', flexDirection: 'column', gap: 6, background: imageData ? '#fff' : 'var(--surface-2)' }}>
                 {imageData
                   ? <img src={imageData.dataUrl} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                  : <><UploadCloud size={22} /><span style={{ fontSize: 11 }}>Add photo</span></>}
+                  : existingImage
+                    ? <img src={existingImage} alt={form.name || 'product'} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    : <><UploadCloud size={22} /><span style={{ fontSize: 11 }}>Add photo</span></>}
               </button>
               <input ref={fileRef} type="file" accept="image/*" onChange={pickImage} style={{ display: 'none' }} />
               {imageData && <button type="button" className="btn btn-ghost btn-sm btn-block" style={{ marginTop: 6 }} onClick={() => setImageData(null)}>Remove</button>}
@@ -128,7 +146,7 @@ export const ProductFormModal = ({ onClose }) => {
             <div style={{ flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div className="field"><label className="field-label">Product name *</label><input className="input" value={form.name} onChange={set('name')} placeholder="DROMEX ARC 40 CAL WINTER JACKET" required /></div>
               <div className="cols cols-2">
-                <div className="field"><label className="field-label">Product code (SKU) *</label><input className="input" value={form.sku} onChange={set('sku')} placeholder="DW-ARC40-WJ" required /></div>
+                <div className="field"><label className="field-label">Product code (SKU) *</label><input className="input" value={form.sku} onChange={set('sku')} placeholder="DW-ARC40-WJ" required disabled={isEdit} title={isEdit ? 'SKU cannot be changed' : undefined} /></div>
                 <div className="field">
                   <label className="field-label">Category</label>
                   <input className="input" list="cat-list" value={form.category} onChange={set('category')} placeholder="Arc Flash Protection" />

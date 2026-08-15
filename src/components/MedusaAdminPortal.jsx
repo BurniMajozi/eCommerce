@@ -3,6 +3,8 @@ import { useApp } from '../context/AppContext';
 import { downloadProductImportTemplate, validateProductImport } from '../catalogue/catalogueClient';
 import { ProductThumb } from './ProductThumb';
 import { ProductFormModal } from './ProductFormModal';
+import { ConfirmDialog } from './ConfirmDialog';
+import { deleteProduct } from '../catalogue/catalogueClient';
 import {
   MEDUSA_ORDERS, MEDUSA_PROMOTIONS, MEDUSA_TAX_REGIONS, MEDUSA_CUSTOMERS,
   MEDUSA_WORKFLOWS, MEDUSA_EVENTS, MEDUSA_FULFILMENT, MEDUSA_CURRENCIES,
@@ -11,7 +13,7 @@ import {
 import {
   Tag, Boxes, ShoppingCart, BadgePercent, Percent, Truck, Upload, Wallet,
   Workflow, Radio, Plus, FileSpreadsheet, CheckCircle2, RotateCw, Globe2,
-  ChevronRight, ChevronDown, Zap, GitBranch, Play
+  ChevronRight, ChevronDown, Zap, GitBranch, Play, Pencil, Trash2
 } from 'lucide-react';
 
 const cur = (code) => MEDUSA_CURRENCIES.find(c => c.code === code) || MEDUSA_CURRENCIES[0];
@@ -58,13 +60,20 @@ const Connector = () => (
 );
 
 export const MedusaAdminPortal = ({ view }) => {
-  const { products, catalogue, profitability, auth, tenantAccess, taxEnabled, setTaxEnabled, triggerNotification } = useApp();
+  const { products, catalogue, profitability, auth, tenantAccess, taxEnabled, setTaxEnabled, triggerNotification, refreshCatalogue } = useApp();
   const importInputRef = useRef(null);
   const [importResult, setImportResult] = useState(null);
   const [importError, setImportError] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [expandedSku, setExpandedSku] = useState(null);
   const [showProductForm, setShowProductForm] = useState(false);
+  const [editProduct, setEditProduct] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const commerceScope = {
+    accessToken: auth.session?.access_token,
+    tenantId: tenantAccess.activeTenantId,
+    siteId: tenantAccess.activeSiteId,
+  };
   const [selectedWf, setSelectedWf] = useState(MEDUSA_WORKFLOWS[0].id);
   const [eventLog, setEventLog] = useState([]);
   const [firing, setFiring] = useState(null);
@@ -151,7 +160,7 @@ export const MedusaAdminPortal = ({ view }) => {
           <div className="card-hd"><h3>Price list · Contract B</h3><span className="badge badge-neutral">{rows.length} products · click a row for variants</span></div>
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th></th><th>SKU</th><th>Product</th><th className="num">Cost</th><th className="num">Price</th><th className="num">Profit/unit</th><th className="num">Margin</th><th className="num">Stock</th></tr></thead>
+              <thead><tr><th></th><th>SKU</th><th>Product</th><th className="num">Cost</th><th className="num">Price</th><th className="num">Profit/unit</th><th className="num">Margin</th><th className="num">Stock</th><th></th></tr></thead>
               <tbody>
                 {rows.map(r => {
                   const open = expandedSku === r.sku;
@@ -173,10 +182,14 @@ export const MedusaAdminPortal = ({ view }) => {
                         <td className="num" style={{ color: 'var(--success)', fontWeight: 600 }}>{r.profit === null ? 'Restricted' : `R ${r.profit.toFixed(2)}`}</td>
                         <td className="num">{r.margin === null ? 'Restricted' : <span className={`badge ${r.margin >= 30 ? 'badge-success' : r.margin >= 18 ? 'badge-warning' : 'badge-danger'}`}>{r.margin.toFixed(0)}%</span>}</td>
                         <td className="num">{r.stockOnHand}</td>
+                        <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                          <button className="btn-icon" title="Edit product" onClick={(e) => { e.stopPropagation(); setEditProduct(r); }}><Pencil size={15} /></button>
+                          <button className="btn-icon" title="Delete product" onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }} style={{ color: 'var(--danger)' }}><Trash2 size={15} /></button>
+                        </td>
                       </tr>
                       {open && (
                         <tr>
-                          <td colSpan={8} style={{ background: 'var(--surface-2)', padding: 0 }}>
+                          <td colSpan={9} style={{ background: 'var(--surface-2)', padding: 0 }}>
                             <div style={{ padding: '12px 16px' }}>
                               <div className="eyebrow" style={{ marginBottom: 8 }}>Variants — lowest SKU (size × colour)</div>
                               <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>
@@ -202,6 +215,20 @@ export const MedusaAdminPortal = ({ view }) => {
           </div>
         </div>
         {showProductForm && <ProductFormModal onClose={() => setShowProductForm(false)} />}
+        {editProduct && <ProductFormModal product={editProduct} onClose={() => setEditProduct(null)} />}
+        {deleteTarget && (
+          <ConfirmDialog
+            title="Delete product"
+            message={`Remove "${deleteTarget.name}" (${deleteTarget.sku}) from the catalogue? This cannot be undone.`}
+            confirmLabel="Delete product"
+            onConfirm={async () => {
+              await deleteProduct(deleteTarget.id, commerceScope);
+              triggerNotification('Product deleted', `${deleteTarget.name} was removed from the catalogue.`, 'success');
+              refreshCatalogue();
+            }}
+            onClose={() => setDeleteTarget(null)}
+          />
+        )}
       </Wrap>
     );
   }

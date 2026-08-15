@@ -97,6 +97,29 @@ export const createProduct = (product, scope) => scopedJson('/app/products', {
   body: product,
 });
 
+// Edits an existing product (only the fields present in `patch` are changed).
+export const updateProduct = (id, patch, scope) => scopedJson(`/app/products/${id}`, {
+  ...scope,
+  method: 'PATCH',
+  body: patch,
+});
+
+// Removes a product from the catalogue.
+export const deleteProduct = (id, scope) => scopedJson(`/app/products/${id}`, {
+  ...scope,
+  method: 'DELETE',
+});
+
+// Lists the tenant's B2B draft orders (quotes), newest first.
+export const fetchOrders = (scope) => scopedJson('/app/orders', scope);
+
+// Creates a real Medusa draft order from a B2B quote.
+export const createOrder = (order, scope) => scopedJson('/app/orders', {
+  ...scope,
+  method: 'POST',
+  body: order,
+});
+
 export const fetchImportStatus = (scope) => scopedJson('/app/catalogue/import/status', scope);
 
 export const validateProductImport = (csv, scope) => scopedJson('/app/catalogue/import/validate', {
