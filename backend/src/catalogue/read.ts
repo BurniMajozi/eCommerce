@@ -55,12 +55,12 @@ export async function readCatalogueData(req: MedusaRequest, scope: TenantScope, 
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const variantFields = [
-    'variants.id', 'variants.title', 'variants.sku', '*variants.prices', '*variants.inventory_items',
+    'variants.id', 'variants.title', 'variants.sku', 'variants.prices.*', 'variants.inventory_items.*',
   ];
   if (includePrivateCost) variantFields.push('variants.metadata');
   const result = await query.graph({
     entity: 'product',
-    fields: ['id', 'title', 'description', 'handle', 'thumbnail', 'metadata', '*type', '*categories', ...variantFields],
+    fields: ['id', 'title', 'description', 'handle', 'thumbnail', 'metadata', 'type.*', 'categories.*', ...variantFields],
     filters: { status: 'published', sales_channels: { id: tenantLink.sales_channel_id } },
     pagination: { skip: 0, take: 250, order: { title: 'ASC' } },
   } as Parameters<typeof query.graph>[0]);
