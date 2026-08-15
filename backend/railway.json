@@ -1,0 +1,6 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "deploy": {
+    "preDeployCommand": "echo 'pre-deploy skipped: migrations already applied; medusa db:migrate hangs on link-sync for this Supabase Postgres'"
+  }
+}
