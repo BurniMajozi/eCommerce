@@ -60,6 +60,13 @@ export const AuthSessionProvider = ({ children }) => {
       if (!supabase) throw new Error('Supabase is not configured.');
       return supabase.auth.mfa.challengeAndVerify({ factorId, code });
     },
+    mfaEnroll: () => {
+      if (!supabase) throw new Error('Supabase is not configured.');
+      return supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: `authenticator-${Date.now()}` });
+    },
+    mfaUnenroll: (factorId) => supabase
+      ? supabase.auth.mfa.unenroll({ factorId })
+      : Promise.resolve({ data: null, error: null }),
     signOut: () => supabase?.auth.signOut() ?? Promise.resolve(),
   }), [session, loading, error]);
 
