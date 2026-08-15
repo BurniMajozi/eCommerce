@@ -47,6 +47,19 @@ export const AuthSessionProvider = ({ children }) => {
       if (!supabase) throw new Error('Supabase is not configured; the app is running in demo mode.');
       return supabase.auth.signInWithPassword(credentials);
     },
+    // MFA step-up: after password sign-in, if the account has an enrolled TOTP
+    // factor the session is aal1 until the code is verified (→ aal2). aal2 is
+    // required for commerce.manage (cost/profit + product/order writes).
+    getAAL: () => supabase
+      ? supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+      : Promise.resolve({ data: null, error: null }),
+    listMfaFactors: () => supabase
+      ? supabase.auth.mfa.listFactors()
+      : Promise.resolve({ data: null, error: null }),
+    mfaChallengeVerify: ({ factorId, code }) => {
+      if (!supabase) throw new Error('Supabase is not configured.');
+      return supabase.auth.mfa.challengeAndVerify({ factorId, code });
+    },
     signOut: () => supabase?.auth.signOut() ?? Promise.resolve(),
   }), [session, loading, error]);
 
