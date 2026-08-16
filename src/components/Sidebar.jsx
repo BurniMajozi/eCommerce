@@ -23,17 +23,17 @@ export const NAV_GROUPS = [
   {
     label: 'Commerce',
     items: [
-      { id: 'MERCHANT', label: 'B2B Sales', icon: Receipt, cap: 'commerce.read' },
       { id: 'MED_PRODUCTS', label: 'Products & Pricing', icon: Tag, cap: 'commerce.read' },
       { id: 'MED_INVENTORY', label: 'Inventory & Stock', icon: Boxes, cap: 'commerce.read' },
+      { id: 'MED_PO', label: 'Purchase Orders', icon: ClipboardList, cap: 'commerce.manage' },
+      { id: 'MED_SUPPLIERS', label: 'Suppliers', icon: Factory, cap: 'commerce.manage' },
+      { id: 'MED_CUSTOMERS', label: 'Customers & Limits', icon: Wallet, cap: 'commerce.manage' },
       { id: 'MED_ORDERS', label: 'Orders', icon: ShoppingCart, cap: 'commerce.read' },
+      { id: 'MED_FULFIL', label: 'Fulfilment', icon: Truck, cap: 'commerce.manage' },
       { id: 'MED_PROMOS', label: 'Promotions', icon: BadgePercent, cap: 'commerce.manage' },
       { id: 'MED_TAX', label: 'Tax & VAT', icon: Percent, cap: 'commerce.manage' },
-      { id: 'MED_FULFIL', label: 'Fulfilment', icon: Truck, cap: 'commerce.manage' },
       { id: 'MED_IMPORT', label: 'CSV Import', icon: Upload, cap: 'commerce.manage' },
-      { id: 'MED_CUSTOMERS', label: 'Customers & Limits', icon: Wallet, cap: 'commerce.manage' },
-      { id: 'MED_SUPPLIERS', label: 'Suppliers', icon: Factory, cap: 'commerce.manage' },
-      { id: 'MED_PO', label: 'Purchase Orders', icon: ClipboardList, cap: 'commerce.manage' }
+      { id: 'MERCHANT', label: 'B2B Sales', icon: Receipt, cap: 'commerce.read' }
     ]
   },
   {
