@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, fetchCommerceConfig, fetchEngine, runEngineWorkflow, fetchParties, createParty, updateParty, deleteParty, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, fetchCommerceConfig, fetchEngine, runEngineWorkflow, fetchParties, createParty, updateParty, deleteParty, fetchPurchaseOrders, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { ProductThumb } from './ProductThumb';
 import { ProductFormModal } from './ProductFormModal';
@@ -14,7 +14,8 @@ import {
   Tag, Boxes, ShoppingCart, BadgePercent, Percent, Truck, Upload, Wallet,
   Workflow, Radio, Plus, FileSpreadsheet, CheckCircle2, RotateCw, Globe2,
   ChevronRight, ChevronDown, Zap, GitBranch, Play, Pencil, Trash2,
-  Factory, Loader2, X, ArrowDownLeft, ArrowUpRight, Download
+  Factory, Loader2, X, ArrowDownLeft, ArrowUpRight, Download,
+  ClipboardCheck, ClipboardList, Send, PackageCheck
 } from 'lucide-react';
 
 const cur = (code) => MEDUSA_CURRENCIES.find(c => c.code === code) || MEDUSA_CURRENCIES[0];
@@ -146,6 +147,103 @@ const PartyModal = ({ type, party, scope, onClose, onSaved, triggerNotification 
   );
 };
 
+/* ---- Create a supplier purchase order ---- */
+const PurchaseOrderModal = ({ suppliers, products, scope, onClose, onSaved, triggerNotification }) => {
+  const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? '');
+  const [reference, setReference] = useState('');
+  const [expectedDate, setExpectedDate] = useState('');
+  const [lines, setLines] = useState([]);
+  const [pick, setPick] = useState({ productId: products[0]?.id ?? '', qty: 1, unitCost: products[0]?.costPrice ?? 0 });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const total = lines.reduce((a, l) => a + l.qty * l.unitCost, 0);
+  const addLine = () => {
+    const p = products.find((x) => x.id === pick.productId);
+    if (!p || pick.qty <= 0) return;
+    setLines((prev) => [...prev.filter((l) => l.productId !== p.id), { productId: p.id, sku: p.sku, name: p.name, qty: Number(pick.qty), unitCost: Number(pick.unitCost) || 0 }]);
+    const next = products[0];
+    setPick({ productId: next?.id ?? '', qty: 1, unitCost: next?.costPrice ?? 0 });
+  };
+  const onPickProduct = (id) => { const p = products.find((x) => x.id === id); setPick({ productId: id, qty: 1, unitCost: p?.costPrice ?? 0 }); };
+
+  const submit = async () => {
+    if (!supplierId) { setError('Choose a supplier.'); return; }
+    if (!lines.length) { setError('Add at least one line item.'); return; }
+    setBusy(true); setError(null);
+    try {
+      const supplier = suppliers.find((s) => s.id === supplierId);
+      await createPurchaseOrder({ supplierId, supplierName: supplier?.company, currency: supplier?.currency || 'ZAR', reference, expectedDate: expectedDate || null, lines }, scope);
+      triggerNotification('Purchase order created', `PO to ${supplier?.company} · ${lines.length} line(s).`, 'success');
+      onSaved(); onClose();
+    } catch (err) { setError(err.message || 'Could not create the PO.'); setBusy(false); }
+  };
+
+  return (
+    <div className="overlay" onClick={busy ? undefined : onClose}>
+      <div className="modal" style={{ maxWidth: 620 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-hd" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><ClipboardCheck size={18} style={{ color: 'var(--primary)' }} /><h3>New purchase order</h3></div>
+          <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={17} /></button>
+        </div>
+        <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {suppliers.length === 0 && <div style={{ color: 'var(--warning)', fontSize: 13 }}>Add a supplier first (Suppliers tab).</div>}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div className="field" style={{ flex: '2 1 220px' }}><label className="field-label">Supplier</label>
+              <select className="select" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+                {suppliers.map((s) => <option key={s.id} value={s.id}>{s.company}</option>)}
+              </select></div>
+            <div className="field" style={{ flex: '1 1 130px' }}><label className="field-label">Expected date</label>
+              <input type="date" className="input" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} /></div>
+          </div>
+          <div className="field"><label className="field-label">Reference <span className="muted">(optional)</span></label>
+            <input className="input" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. Q3 boot restock" /></div>
+
+          {/* Line builder */}
+          <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
+            <div className="card-bd" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', padding: 12 }}>
+              <div className="field" style={{ flex: '2 1 200px', margin: 0 }}><label className="field-label">Product</label>
+                <select className="select" value={pick.productId} onChange={(e) => onPickProduct(e.target.value)}>
+                  {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select></div>
+              <div className="field" style={{ width: 70, margin: 0 }}><label className="field-label">Qty</label>
+                <input type="number" min="1" className="input" value={pick.qty} onChange={(e) => setPick({ ...pick, qty: parseInt(e.target.value) || 0 })} /></div>
+              <div className="field" style={{ width: 110, margin: 0 }}><label className="field-label">Unit cost</label>
+                <input type="number" min="0" step="0.01" className="input" value={pick.unitCost} onChange={(e) => setPick({ ...pick, unitCost: parseFloat(e.target.value) || 0 })} /></div>
+              <button className="btn btn-secondary" onClick={addLine} disabled={!products.length}><Plus size={15} /> Add</button>
+            </div>
+          </div>
+
+          {lines.length > 0 && (
+            <div className="table-wrap card" style={{ boxShadow: 'none' }}>
+              <table className="table">
+                <thead><tr><th>Product</th><th className="num">Qty</th><th className="num">Unit</th><th className="num">Line</th><th></th></tr></thead>
+                <tbody>
+                  {lines.map((l) => (
+                    <tr key={l.productId}>
+                      <td>{l.name}<div className="eyebrow">{l.sku}</div></td>
+                      <td className="num">{l.qty}</td>
+                      <td className="num">R {l.unitCost.toFixed(2)}</td>
+                      <td className="num" style={{ fontWeight: 600 }}>R {(l.qty * l.unitCost).toLocaleString('en-ZA')}</td>
+                      <td className="center"><button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => setLines((prev) => prev.filter((x) => x.productId !== l.productId))} aria-label="Remove line"><Trash2 size={14} /></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot><tr style={{ fontWeight: 700, borderTop: '2px solid var(--border-strong)' }}><td colSpan={3}>Total</td><td className="num">R {total.toLocaleString('en-ZA')}</td><td></td></tr></tfoot>
+              </table>
+            </div>
+          )}
+          {error && <div style={{ color: 'var(--danger)', fontSize: 13 }}>{error}</div>}
+        </div>
+        <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 18px', borderTop: '1px solid var(--border)' }}>
+          <button className="btn btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="btn btn-primary" onClick={submit} disabled={busy || !lines.length || !supplierId}>{busy ? <><Loader2 size={15} className="spin" /> Creating…</> : 'Create PO'}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const MedusaAdminPortal = ({ view }) => {
   const { products, catalogue, profitability, auth, tenantAccess, taxEnabled, setTaxEnabled, triggerNotification, refreshCatalogue } = useApp();
   const importInputRef = useRef(null);
@@ -223,6 +321,44 @@ export const MedusaAdminPortal = ({ view }) => {
     await deleteParty(p.id, commerceScope);
     triggerNotification('Removed', `${p.company} deleted.`, 'success');
     reloadParties();
+  };
+
+  // Supplier purchase orders.
+  const [purchaseOrders, setPurchaseOrders] = useState(null);
+  const [poReloadKey, setPoReloadKey] = useState(0);
+  const [showPoModal, setShowPoModal] = useState(false);
+  const [poDelete, setPoDelete] = useState(null);
+  const [poBusyId, setPoBusyId] = useState(null);
+  useEffect(() => {
+    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setPurchaseOrders(null); return undefined; }
+    let cancelled = false;
+    fetchPurchaseOrders(commerceScope)
+      .then((r) => { if (!cancelled) setPurchaseOrders(r.orders ?? []); })
+      .catch(() => { if (!cancelled) setPurchaseOrders(null); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, poReloadKey]);
+  const reloadPo = () => setPoReloadKey((k) => k + 1);
+  const setPoStatus = async (po, status) => {
+    setPoBusyId(po.id);
+    try {
+      const r = await updatePurchaseOrder(po.id, { status }, commerceScope);
+      if (status === 'received') {
+        const s = r.stock;
+        triggerNotification('Stock received', s?.located ? `${po.supplier}: ${s.updated} line(s) added to on-hand stock.` : `${po.supplier} marked received (no stock location linked).`, 'success');
+        refreshCatalogue();
+      } else {
+        triggerNotification('PO updated', `${po.supplier} marked ${status}.`, 'success');
+      }
+      reloadPo();
+    } catch (err) {
+      triggerNotification('Update failed', err.message || 'Could not update the PO.', 'danger');
+    } finally { setPoBusyId(null); }
+  };
+  const doDeletePo = async (po) => {
+    await deletePurchaseOrder(po.id, commerceScope);
+    triggerNotification('PO deleted', `${po.supplier} purchase order removed.`, 'success');
+    reloadPo();
   };
 
   const runWorkflow = async (fail) => {
@@ -811,6 +947,50 @@ export const MedusaAdminPortal = ({ view }) => {
         )}
         {partyModal && <PartyModal {...partyModal} scope={commerceScope} triggerNotification={triggerNotification} onClose={() => setPartyModal(null)} onSaved={reloadParties} />}
         {partyDelete && <ConfirmDialog title={`Remove ${partyDelete.company}?`} message="This deletes the supplier from the commerce engine." confirmLabel="Remove" onConfirm={() => doDeleteParty(partyDelete)} onClose={() => setPartyDelete(null)} />}
+      </Wrap>
+    );
+  }
+
+  /* ---------------- Purchase Orders (inbound procurement) ---------------- */
+  if (view === 'purchaseorders') {
+    const live = purchaseOrders !== null;
+    const suppliers = parties?.suppliers ?? [];
+    const rows = live ? purchaseOrders : [];
+    const stat = { draft: 'badge-neutral', sent: 'badge-info', received: 'badge-success', cancelled: 'badge-warning' };
+    const canCreate = live && suppliers.length > 0 && products.length > 0;
+    return (
+      <Wrap>
+        <Head icon={ClipboardList} title="Purchase Orders" sub="Order stock from your suppliers. Receiving a PO adds the quantities to on-hand inventory."
+          action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span><button className="btn btn-primary" onClick={() => setShowPoModal(true)} disabled={!canCreate}><Plus size={16} /> New PO</button></div>} />
+        {live && !canCreate && <div className="card"><div className="card-bd muted" style={{ padding: 18 }}>Add at least one supplier and one product before raising a purchase order.</div></div>}
+        <div className="card">
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Reference</th><th>Supplier</th><th className="num">Lines</th><th className="num">Total</th><th>Expected</th><th className="center">Status</th><th className="center">Actions</th></tr></thead>
+              <tbody>
+                {!live && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 22 }}>Connect the live backend to manage purchase orders.</td></tr>}
+                {live && rows.length === 0 && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 22 }}>No purchase orders yet — raise one with “New PO”.</td></tr>}
+                {rows.map((po) => (
+                  <tr key={po.id}>
+                    <td><div style={{ fontWeight: 500 }}>{po.reference || '—'}</div><div className="eyebrow">{(po.createdAt || '').slice(0, 10)}</div></td>
+                    <td>{po.supplier}</td>
+                    <td className="num">{po.lineCount}</td>
+                    <td className="num tabular">{money(po.total, po.currency)}</td>
+                    <td className="muted">{po.expectedDate || '—'}</td>
+                    <td className="center"><span className={`badge ${stat[po.status] || 'badge-neutral'}`}>{po.status}</span></td>
+                    <td className="center" style={{ whiteSpace: 'nowrap' }}>
+                      {po.status === 'draft' && <button className="btn btn-secondary btn-sm" disabled={poBusyId === po.id} onClick={() => setPoStatus(po, 'sent')}><Send size={13} /> Send</button>}
+                      {(po.status === 'draft' || po.status === 'sent') && <button className="btn btn-primary btn-sm" style={{ marginLeft: 6 }} disabled={poBusyId === po.id} onClick={() => setPoStatus(po, 'received')}>{poBusyId === po.id ? <Loader2 size={13} className="spin" /> : <PackageCheck size={13} />} Receive</button>}
+                      {po.status !== 'received' && <button className="icon-btn" style={{ width: 30, height: 30, marginLeft: 6 }} title="Delete" onClick={() => setPoDelete(po)}><Trash2 size={14} /></button>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {showPoModal && <PurchaseOrderModal suppliers={suppliers} products={products} scope={commerceScope} triggerNotification={triggerNotification} onClose={() => setShowPoModal(false)} onSaved={reloadPo} />}
+        {poDelete && <ConfirmDialog title="Delete purchase order" message={`Delete the ${poDelete.supplier} purchase order? This cannot be undone.`} confirmLabel="Delete" onConfirm={() => doDeletePo(poDelete)} onClose={() => setPoDelete(null)} />}
       </Wrap>
     );
   }

@@ -15,7 +15,7 @@ import { Menu, ChevronDown, Sun, Moon, CheckCircle2, AlertTriangle, Info, XCircl
 const MED_VIEW = {
   MED_PRODUCTS: 'products', MED_INVENTORY: 'inventory', MED_ORDERS: 'orders', MED_PROMOS: 'promos',
   MED_TAX: 'tax', MED_FULFIL: 'fulfil', MED_IMPORT: 'import', MED_CUSTOMERS: 'customers',
-  MED_SUPPLIERS: 'suppliers', MED_WORKFLOWS: 'workflows', MED_EVENTS: 'events'
+  MED_SUPPLIERS: 'suppliers', MED_PO: 'purchaseorders', MED_WORKFLOWS: 'workflows', MED_EVENTS: 'events'
 };
 const TOAST_ICON = { success: CheckCircle2, warning: AlertTriangle, error: XCircle, info: Info };
 const TOAST_CLASS = { success: 'badge-success', warning: 'badge-warning', error: 'badge-danger', info: 'badge-info' };

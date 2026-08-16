@@ -103,6 +103,21 @@ export const deleteParty = (id, scope) => scopedJson(`/app/commerce/parties/${id
   ...scope, method: 'DELETE',
 });
 
+// Supplier purchase orders (inbound procurement). Receiving a PO bumps stock.
+export const fetchPurchaseOrders = (scope) => scopedJson('/app/commerce/purchase-orders', scope);
+
+export const createPurchaseOrder = (po, scope) => scopedJson('/app/commerce/purchase-orders', {
+  ...scope, method: 'POST', body: po,
+});
+
+export const updatePurchaseOrder = (id, patch, scope) => scopedJson(`/app/commerce/purchase-orders/${id}`, {
+  ...scope, method: 'PATCH', body: patch,
+});
+
+export const deletePurchaseOrder = (id, scope) => scopedJson(`/app/commerce/purchase-orders/${id}`, {
+  ...scope, method: 'DELETE',
+});
+
 // Live workflow engine: registered workflows + recent executions.
 export const fetchEngine = (scope) => scopedJson('/app/engine', scope);
 
