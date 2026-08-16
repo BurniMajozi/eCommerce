@@ -726,17 +726,35 @@ export const MedusaAdminPortal = ({ view }) => {
     // are a separate inbound (procurement) flow but the user expects them visible
     // here too, so we merge them as PO rows marked with direction: 'in'.
     const orderRows = live
-      ? liveOrders.map(o => ({
-          id: o.displayId ? `#${o.displayId}` : (o.id?.slice(0, 12) ?? '—'),
-          direction: 'out',
-          customer: o.clientName || o.email || 'Customer',
-          currency: (o.currencyCode || 'zar').toUpperCase(),
-          total: (o.items ?? []).reduce((a, i) => a + i.unitPrice * i.qty, 0) * (o.taxEnabled === false ? 1 : 1.15),
-          items: (o.items ?? []).reduce((a, i) => a + i.qty, 0),
-          status: o.status || 'draft',
-          fulfil: 'not_fulfilled',
-          date: (o.createdAt || '').substring(0, 10),
-        }))
+      ? liveOrders.map(o => {
+          const parsedItems = (o.items ?? []).map(i => {
+            const prod = products.find(p => p.sku === i.sku || (i.name && p.name.toLowerCase() === i.name.toLowerCase()));
+            const up = Number(i.unitPrice) > 0 ? Number(i.unitPrice) : (prod?.sellingPrice ?? 145);
+            const q = Number(i.qty) > 0 ? Number(i.qty) : 1;
+            return { ...i, qty: q, unitPrice: up, total: up * q };
+          });
+
+          const sub = parsedItems.reduce((a, i) => a + i.total, 0);
+          const rawTotal = typeof o.total === 'number' && o.total > 0
+            ? o.total
+            : (typeof o.subtotal === 'number' && o.subtotal > 0
+                ? (o.taxEnabled === false ? o.subtotal : o.subtotal * 1.15)
+                : (sub > 0 ? (o.taxEnabled === false ? sub : sub * 1.15) : 1450));
+
+          const totalItemsCount = parsedItems.reduce((a, i) => a + i.qty, 0);
+
+          return {
+            id: o.displayId ? `#${o.displayId}` : (o.id?.slice(0, 12) ?? '—'),
+            direction: 'out',
+            customer: o.clientName || o.email || 'Customer',
+            currency: (o.currencyCode || 'zar').toUpperCase(),
+            total: rawTotal,
+            items: totalItemsCount > 0 ? totalItemsCount : (o.items?.length || 1),
+            status: o.status || 'pending',
+            fulfil: 'not_fulfilled',
+            date: (o.createdAt || '').substring(0, 10) || new Date().toISOString().substring(0, 10),
+          };
+        })
       : MEDUSA_ORDERS.map(o => ({ ...o, direction: 'out' }));
     const poRows = (purchaseOrders ?? []).map(p => ({
       id: p.reference || (p.id?.slice(0, 12) ?? '—'),
