@@ -22,9 +22,28 @@ export class CatalogueApiError extends Error {
   }
 }
 
-export async function fetchCatalogue({ accessToken, tenantId, siteId = null, signal } = {}) {
+// In-memory SWR (Stale-While-Revalidate) Cache for sub-second page switches
+const cache = new Map();
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+export const invalidateCache = (prefix = '') => {
+  if (!prefix) { cache.clear(); return; }
+  for (const key of cache.keys()) {
+    if (key.includes(prefix)) cache.delete(key);
+  }
+};
+
+export async function fetchCatalogue({ accessToken, tenantId, siteId = null, signal, forceRefresh = false } = {}) {
   if (!isMedusaCatalogueEnabled) throw new CatalogueApiError('Medusa catalogue reads are not enabled; the app remains in demo mode.');
   if (!accessToken || !tenantId) throw new CatalogueApiError('An authenticated tenant scope is required.', { status: 401, code: 'scope_required' });
+
+  const cacheKey = `catalogue:${tenantId}:${siteId || 'all'}`;
+  const hit = cache.get(cacheKey);
+  const now = Date.now();
+
+  if (!forceRefresh && hit && now - hit.ts < CACHE_TTL_MS) {
+    return hit.data;
+  }
 
   const headers = {
     Authorization: `Bearer ${accessToken}`,
@@ -37,11 +56,13 @@ export async function fetchCatalogue({ accessToken, tenantId, siteId = null, sig
     response = await fetch(new URL('/app/catalogue', rawBaseUrl), { headers, signal });
   } catch (error) {
     if (error?.name === 'AbortError') throw error;
+    if (hit) return hit.data; // graceful fallback to warm cache
     throw new CatalogueApiError('The Medusa catalogue service could not be reached.');
   }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (hit) return hit.data;
     throw new CatalogueApiError(payload.message ?? 'The Medusa catalogue request failed.', {
       status: response.status,
       code: payload.code,
@@ -53,6 +74,8 @@ export async function fetchCatalogue({ accessToken, tenantId, siteId = null, sig
       code: 'invalid_catalogue_contract',
     });
   }
+
+  cache.set(cacheKey, { ts: now, data: payload });
   return payload;
 }
 
@@ -63,8 +86,20 @@ const scopedHeaders = (accessToken, tenantId, siteId = null) => {
   return headers;
 };
 
-async function scopedJson(path, { accessToken, tenantId, siteId = null, signal, method = 'GET', body } = {}) {
+async function scopedJson(path, { accessToken, tenantId, siteId = null, signal, method = 'GET', body, forceRefresh = false } = {}) {
   if (!isMedusaCatalogueEnabled) throw new CatalogueApiError('Medusa catalogue reads are not enabled; the app remains in demo mode.');
+
+  const isGet = method === 'GET';
+  const cacheKey = `${path}:${tenantId}:${siteId || 'all'}`;
+  const now = Date.now();
+
+  if (isGet && !forceRefresh) {
+    const hit = cache.get(cacheKey);
+    if (hit && now - hit.ts < CACHE_TTL_MS) {
+      return hit.data;
+    }
+  }
+
   const headers = scopedHeaders(accessToken, tenantId, siteId);
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let response;
@@ -72,23 +107,36 @@ async function scopedJson(path, { accessToken, tenantId, siteId = null, signal, 
     response = await fetch(new URL(path, rawBaseUrl), { method, headers, signal, body: body === undefined ? undefined : JSON.stringify(body) });
   } catch (error) {
     if (error?.name === 'AbortError') throw error;
+    if (isGet && cache.has(cacheKey)) return cache.get(cacheKey).data;
     throw new CatalogueApiError('The Medusa catalogue service could not be reached.');
   }
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new CatalogueApiError(payload.message ?? 'The Medusa request failed.', { status: response.status, code: payload.code });
+  if (!response.ok) {
+    if (isGet && cache.has(cacheKey)) return cache.get(cacheKey).data;
+    throw new CatalogueApiError(payload.message ?? 'The Medusa request failed.', { status: response.status, code: payload.code });
+  }
+
+  if (isGet) {
+    cache.set(cacheKey, { ts: now, data: payload });
+  } else {
+    // Invalidate relevant cache on writes
+    if (path.includes('/parties')) invalidateCache('/app/commerce/parties');
+    if (path.includes('/purchase-orders')) invalidateCache('/app/commerce/purchase-orders');
+    if (path.includes('/promotions')) invalidateCache('/app/commerce/promotions');
+    if (path.includes('/orders')) invalidateCache('/app/orders');
+    if (path.includes('/members')) invalidateCache('/app/members');
+    if (path.includes('/products')) {
+      invalidateCache('catalogue:');
+      invalidateCache('/app/catalogue');
+    }
+  }
+
   return payload;
 }
 
 export const fetchProfitability = (scope) => scopedJson('/app/catalogue/profit', scope);
-
-// Real tenant reports (stock valuation, reorder, customer spend, orders).
 export const fetchReports = (scope) => scopedJson('/app/reports/summary', scope);
-
-// Live data for the Promotions / Tax / Fulfilment / Customers admin screens.
 export const fetchCommerceConfig = (scope) => scopedJson('/app/commerce/config', scope);
-
-// Trading parties: internal customers (sell-to) + external suppliers (buy-from),
-// each with an editable spend/purchase limit.
 export const fetchParties = (scope) => scopedJson('/app/commerce/parties', scope);
 
 export const createParty = (party, scope) => scopedJson('/app/commerce/parties', {
@@ -103,7 +151,6 @@ export const deleteParty = (id, scope) => scopedJson(`/app/commerce/parties/${id
   ...scope, method: 'DELETE',
 });
 
-// Supplier purchase orders (inbound procurement). Receiving a PO bumps stock.
 export const fetchPurchaseOrders = (scope) => scopedJson('/app/commerce/purchase-orders', scope);
 
 export const createPurchaseOrder = (po, scope) => scopedJson('/app/commerce/purchase-orders', {
@@ -118,51 +165,38 @@ export const deletePurchaseOrder = (id, scope) => scopedJson(`/app/commerce/purc
   ...scope, method: 'DELETE',
 });
 
-// Live workflow engine: registered workflows + recent executions.
 export const fetchEngine = (scope) => scopedJson('/app/engine', scope);
 
-// Execute the PPE issue saga workflow live. Pass { fail: true } to exercise the
-// compensation (rollback) path.
 export const runEngineWorkflow = (body, scope) => scopedJson('/app/engine/run', {
   ...scope,
   method: 'POST',
   body,
 });
 
-// Uploads a product photo (base64) and returns its public URL.
 export const uploadProductImage = ({ sku, filename, contentType, dataBase64 }, scope) => scopedJson('/app/products/image', {
   ...scope,
   method: 'POST',
   body: { sku, filename, contentType, dataBase64 },
 });
 
-// Creates a product in the tenant's catalogue. `product` carries name, sku,
-// category, cost/selling price, stock and (optionally) an imageUrl from a prior
-// uploadProductImage call.
 export const createProduct = (product, scope) => scopedJson('/app/products', {
   ...scope,
   method: 'POST',
   body: product,
 });
 
-// Edits an existing product (only the fields present in `patch` are changed).
 export const updateProduct = (id, patch, scope) => scopedJson(`/app/products/${id}`, {
   ...scope,
   method: 'PATCH',
   body: patch,
 });
 
-// Removes a product from the catalogue.
 export const deleteProduct = (id, scope) => scopedJson(`/app/products/${id}`, {
   ...scope,
   method: 'DELETE',
 });
 
-// Lists the tenant's B2B draft orders (quotes), newest first.
 export const fetchOrders = (scope) => scopedJson('/app/orders', scope);
-
-// Product promotions (markdowns that reduce the cost basis / margin). A merchant
-// creates one; it activates immediately and is surfaced to managers for history.
 export const fetchPromotions = (scope) => scopedJson('/app/commerce/promotions', scope);
 
 export const createPromotion = (promo, scope) => scopedJson('/app/commerce/promotions', {
@@ -177,14 +211,12 @@ export const deletePromotion = (id, scope) => scopedJson(`/app/commerce/promotio
   ...scope, method: 'DELETE',
 });
 
-// Creates a real Medusa draft order from a B2B quote.
 export const createOrder = (order, scope) => scopedJson('/app/orders', {
   ...scope,
   method: 'POST',
   body: order,
 });
 
-// In-app member management (Tenant Admin) — list/invite/update/remove users.
 export const fetchMembers = (scope) => scopedJson('/app/members', scope);
 
 export const inviteMember = (member, scope) => scopedJson('/app/members', {

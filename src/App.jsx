@@ -1,17 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Sidebar, NAV_GROUPS } from './components/Sidebar';
-import { EmployeePortal } from './components/EmployeePortal';
-import { ManagerApprovalPortal } from './components/ManagerApprovalPortal';
-import { StorekeeperPortal } from './components/StorekeeperPortal';
-import { QuotationInvoicingPortal } from './components/QuotationInvoicingPortal';
-import { InventoryAnalyticsPortal } from './components/InventoryAnalyticsPortal';
-import { TenantAdminPortal } from './components/TenantAdminPortal';
-import { PlatformOwnerPortal } from './components/PlatformOwnerPortal';
-import { MedusaAdminPortal } from './components/MedusaAdminPortal';
 import { LoginGate } from './auth/LoginGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { SkeletonPage } from './components/SkeletonLoader';
 import { Menu, ChevronDown, Sun, Moon, CheckCircle2, AlertTriangle, Info, XCircle, LogOut } from 'lucide-react';
+
+const EmployeePortal = lazy(() => import('./components/EmployeePortal').then(m => ({ default: m.EmployeePortal })));
+const ManagerApprovalPortal = lazy(() => import('./components/ManagerApprovalPortal').then(m => ({ default: m.ManagerApprovalPortal })));
+const StorekeeperPortal = lazy(() => import('./components/StorekeeperPortal').then(m => ({ default: m.StorekeeperPortal })));
+const QuotationInvoicingPortal = lazy(() => import('./components/QuotationInvoicingPortal').then(m => ({ default: m.QuotationInvoicingPortal })));
+const InventoryAnalyticsPortal = lazy(() => import('./components/InventoryAnalyticsPortal').then(m => ({ default: m.InventoryAnalyticsPortal })));
+const TenantAdminPortal = lazy(() => import('./components/TenantAdminPortal').then(m => ({ default: m.TenantAdminPortal })));
+const PlatformOwnerPortal = lazy(() => import('./components/PlatformOwnerPortal').then(m => ({ default: m.PlatformOwnerPortal })));
+const MedusaAdminPortal = lazy(() => import('./components/MedusaAdminPortal').then(m => ({ default: m.MedusaAdminPortal })));
 
 const MED_VIEW = {
   MED_PRODUCTS: 'products', MED_INVENTORY: 'inventory', MED_ORDERS: 'orders', MED_PROMOS: 'promos',
@@ -76,7 +78,9 @@ const AppContent = () => {
 
         <main style={{ flex: 1, width: '100%', maxWidth: 1240, margin: '0 auto', padding: '22px 20px 40px' }}>
           <ErrorBoundary key={activeRole}>
-            {render()}
+            <Suspense fallback={<SkeletonPage />}>
+              {render()}
+            </Suspense>
           </ErrorBoundary>
         </main>
       </div>
