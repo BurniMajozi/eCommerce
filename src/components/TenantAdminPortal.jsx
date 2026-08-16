@@ -441,6 +441,9 @@ export const TenantAdminPortal = () => {
         <span className="badge badge-neutral">M. van Wyk · Tenant Admin</span>
       </div>
 
+      {/* Users & roles — in-app member management (invite / role / suspend) */}
+      <MembersManager scope={commerceScope} triggerNotification={triggerNotification} fallbackRows={memberRows} />
+
       {/* Entitlement rules — journey + builder */}
       <div className="card">
         <div className="card-hd">
@@ -509,9 +512,6 @@ export const TenantAdminPortal = () => {
           <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Threshold rules feed the approval engine — e.g. boots over R750 force a Section-Manager co-sign, and a 2nd issue of the same item inside 30 days escalates automatically.</p>
         </div>
       </div>
-
-      {/* Users & roles — in-app member management (invite / role / suspend) */}
-      <MembersManager scope={commerceScope} triggerNotification={triggerNotification} fallbackRows={memberRows} />
 
       {/* Reports — live data, exportable to CSV / PDF & Employee Allocation */}
       <LiveReportBuilder scope={commerceScope} triggerNotification={triggerNotification} />
