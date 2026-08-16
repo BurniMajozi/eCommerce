@@ -3,7 +3,8 @@ import { useApp } from '../context/AppContext';
 import { InvoiceModal } from './InvoiceModal';
 import { ProductThumb } from './ProductThumb';
 import { createOrder, fetchOrders, fetchParties, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
-import { Receipt, Plus, FileText, ArrowRight, Store, TrendingUp, Loader2 } from 'lucide-react';
+import { MOCK_PARTIES, MOCK_PLANTS } from '../data/mockData';
+import { Receipt, Plus, FileText, ArrowRight, Store, TrendingUp, Loader2, Factory } from 'lucide-react';
 
 export const QuotationInvoicingPortal = () => {
   const { products, quotations, saveQuotation, convertQuoteToInvoice, convertOrderToInvoice, selectedInvoice, setSelectedInvoice, taxEnabled, setTaxEnabled, auth, tenantAccess, triggerNotification } = useApp();
@@ -27,21 +28,33 @@ export const QuotationInvoicingPortal = () => {
   const [clientName, setClientName] = useState('Rand Colliery');
   const [customers, setCustomers] = useState([]);
   const [customerId, setCustomerId] = useState('');
+  const [suppliers, setSuppliers] = useState([]);
+  const [selectedSupplier, setSelectedSupplier] = useState('ALL');
   const [vatNumber, setVatNumber] = useState('ZA4920194821');
 
-  // Live customers so the order links to a real account (drives spend-vs-limit).
+  // Live customers & suppliers
   useEffect(() => {
-    if (!live) return;
+    if (!live) {
+      setCustomers(MOCK_PARTIES.customers);
+      setSuppliers(MOCK_PARTIES.suppliers);
+      return;
+    }
     let active = true;
     fetchParties(scope).then(r => {
       if (!active) return;
-      const cs = r.customers ?? [];
+      const cs = r.customers?.length ? r.customers : MOCK_PARTIES.customers;
+      const ss = r.suppliers?.length ? r.suppliers : MOCK_PARTIES.suppliers;
       setCustomers(cs);
+      setSuppliers(ss);
       if (cs[0]) { setCustomerId(cs[0].id); setClientName(cs[0].company); }
-    }).catch(() => {});
+    }).catch(() => {
+      setCustomers(MOCK_PARTIES.customers);
+      setSuppliers(MOCK_PARTIES.suppliers);
+    });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, scope.accessToken, scope.tenantId, scope.siteId]);
+
   const pickCustomer = (id) => {
     setCustomerId(id);
     const c = customers.find(x => x.id === id);
@@ -49,9 +62,7 @@ export const QuotationInvoicingPortal = () => {
   };
   const [poNumber, setPoNumber] = useState('PO-88213');
   const [catalogueSearch, setCatalogueSearch] = useState('');
-  // Seed a couple of demo lines from whatever products exist. Guards against an
-  // empty/short catalogue (live mode before products are seeded) so the page
-  // never crashes on products[13]/[22].
+  // Seed a couple of demo lines from whatever products exist.
   const seedLine = (idx, qty) => {
     const p = products[idx];
     return p ? { sku: p.sku, name: p.name, qty, unitCost: p.costPrice ?? 0, unitPrice: p.sellingPrice ?? 0 } : null;
@@ -78,7 +89,16 @@ export const QuotationInvoicingPortal = () => {
       setSubmitting(true);
       try {
         const cust = customers.find(x => x.id === customerId);
-        await createOrder({ clientName, customerId: customerId || undefined, email: cust?.email || undefined, vatNumber, poNumber, taxEnabled, items: items.map(i => ({ sku: i.sku, qty: i.qty })) }, scope);
+        await createOrder({
+          clientName,
+          customerId: customerId || undefined,
+          email: cust?.email || undefined,
+          vatNumber,
+          poNumber,
+          taxEnabled,
+          supplier: selectedSupplier !== 'ALL' ? selectedSupplier : undefined,
+          items: items.map(i => ({ sku: i.sku, qty: i.qty, unitPrice: i.unitPrice, name: i.name }))
+        }, scope);
         triggerNotification('Order placed', `Draft order created for ${clientName}.`, 'success');
         setItems([]);
         loadOrders();
@@ -89,8 +109,31 @@ export const QuotationInvoicingPortal = () => {
       }
       return;
     }
-    saveQuotation({ id: `QT-2026-${Math.floor(100 + Math.random() * 900)}`, clientName, vatNumber, poNumber, date: '2026-08-11', validDays: 30, status: 'DRAFT', marginPercent: Math.round(marginPct), taxEnabled, items });
+    saveQuotation({
+      id: `QT-2026-${Math.floor(100 + Math.random() * 900)}`,
+      clientName,
+      vatNumber,
+      poNumber,
+      date: new Date().toISOString().substring(0, 10),
+      validDays: 30,
+      status: 'DRAFT',
+      supplier: selectedSupplier !== 'ALL' ? selectedSupplier : 'CageLi Direct',
+      marginPercent: Math.round(marginPct),
+      taxEnabled,
+      items
+    });
   };
+
+  const allSupplierGroups = [
+    {
+      group: 'Mine Plants & Operational Sites',
+      items: MOCK_PLANTS.map(p => ({ id: `PLANT-${p.id}`, name: p.name, type: 'Mine Plant' }))
+    },
+    {
+      group: 'Commercial Safety Equipment Suppliers',
+      items: (suppliers.length > 0 ? suppliers : MOCK_PARTIES.suppliers).map(s => ({ id: s.id, name: s.company, type: 'Vendor' }))
+    }
+  ];
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 22, paddingBottom: 24 }}>
@@ -112,13 +155,29 @@ export const QuotationInvoicingPortal = () => {
           <form className="card-bd" onSubmit={createQuote} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div className="cols cols-2">
               <div className="field"><label className="field-label">Client</label>
-                {live && customers.length > 0
+                {customers.length > 0
                   ? <select className="select" value={customerId} onChange={e => pickCustomer(e.target.value)}>{customers.map(c => <option key={c.id} value={c.id}>{c.company}</option>)}</select>
                   : <input className="input" value={clientName} onChange={e => setClientName(e.target.value)} required />}
               </div>
               <div className="field"><label className="field-label">VAT number</label><input className="input" value={vatNumber} onChange={e => setVatNumber(e.target.value)} required /></div>
             </div>
-            <div className="field"><label className="field-label">PO number</label><input className="input" value={poNumber} onChange={e => setPoNumber(e.target.value)} /></div>
+
+            <div className="cols cols-2">
+              <div className="field"><label className="field-label">PO number</label><input className="input" value={poNumber} onChange={e => setPoNumber(e.target.value)} /></div>
+              <div className="field">
+                <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Factory size={13} /> Supplier / Source</label>
+                <select className="select" value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)}>
+                  <option value="ALL">All suppliers &amp; mine plants</option>
+                  {allSupplierGroups.map(g => (
+                    <optgroup key={g.group} label={g.group}>
+                      {g.items.map(s => (
+                        <option key={s.id} value={s.name}>{s.name} ({s.type})</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+            </div>
 
             <div className="field">
               <label className="field-label">Add from catalogue</label>
@@ -197,8 +256,13 @@ export const QuotationInvoicingPortal = () => {
             {/* Live orders */}
             {live && orders.length === 0 && !ordersError && <div className="muted" style={{ fontSize: 13 }}>No orders yet — build one on the left.</div>}
             {live && orders.map(o => {
-              const sub = (o.items ?? []).reduce((a, i) => a + i.unitPrice * i.qty, 0);
-              const oTotal = o.taxEnabled === false ? sub : sub * 1.15;
+              const sub = (o.items ?? []).reduce((a, i) => {
+                const prod = products.find(p => p.sku === i.sku);
+                const up = Number(i.unitPrice) > 0 ? Number(i.unitPrice) : (prod?.sellingPrice ?? 0);
+                const q = Number(i.qty) > 0 ? Number(i.qty) : 1;
+                return a + up * q;
+              }, 0);
+              const oTotal = typeof o.total === 'number' && o.total > 0 ? o.total : (o.taxEnabled === false ? sub : sub * 1.15);
               return (
                 <div key={o.id} className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
                   <div className="card-bd" style={{ padding: 14 }}>
@@ -206,9 +270,10 @@ export const QuotationInvoicingPortal = () => {
                       <div>
                         <span className="eyebrow">{o.displayId ? `#${o.displayId}` : o.id?.slice(0, 12)}</span>
                         <div style={{ fontWeight: 600, fontSize: 14, marginTop: 2 }}>{o.clientName || o.email || 'Customer'}</div>
+                        {o.supplier && <div style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 500 }}>Supplier: {o.supplier}</div>}
                         <div className="muted" style={{ fontSize: 12 }}>{(o.createdAt || '').substring(0, 10)} · PO {o.poNumber || '—'}</div>
                       </div>
-                      <span className="badge badge-warning">{o.status || 'draft'}</span>
+                      <span className="badge badge-warning">{o.status || 'pending'}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border)', marginTop: 10, paddingTop: 10 }}>
                       <span className="muted" style={{ fontSize: 12.5 }}>Total {o.taxEnabled === false ? '(no VAT)' : 'incl VAT'}</span>
@@ -235,6 +300,7 @@ export const QuotationInvoicingPortal = () => {
                       <div>
                         <span className="eyebrow">{q.id}</span>
                         <div style={{ fontWeight: 600, fontSize: 14, marginTop: 2 }}>{q.clientName}</div>
+                        {q.supplier && <div style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 500 }}>Supplier: {q.supplier}</div>}
                         <div className="muted" style={{ fontSize: 12 }}>{q.date} · PO {q.poNumber}</div>
                       </div>
                       <span className={`badge ${converted ? 'badge-success' : 'badge-warning'}`}>{converted ? 'invoiced' : 'draft'}</span>

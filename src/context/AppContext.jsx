@@ -295,8 +295,23 @@ export const AppProvider = ({ children }) => {
   // Builds a tax invoice from a live Medusa draft order (same merchant details
   // and layout as the quote path). Used by the B2B portal in live mode.
   const convertOrderToInvoice = (order) => {
-    const items = (order.items ?? []).map(i => ({ sku: i.sku, name: i.name, qty: i.qty, unitPrice: i.unitPrice }));
-    const subtotal = items.reduce((acc, item) => acc + (item.unitPrice * item.qty), 0);
+    const rawItems = (order.items && order.items.length > 0) ? order.items : [];
+    const items = rawItems.map(i => {
+      const prod = products.find(p => p.sku === i.sku || (i.name && p.name.toLowerCase() === i.name.toLowerCase()));
+      const rawQty = Number(i.qty);
+      const qty = Number.isFinite(rawQty) && rawQty > 0 ? rawQty : 1;
+      const rawPrice = Number(i.unitPrice);
+      const unitPrice = Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : (prod?.sellingPrice ?? 0);
+      return {
+        sku: i.sku || prod?.sku || 'PPE-ITEM',
+        name: i.name || prod?.name || 'Safety Equipment',
+        qty,
+        unitPrice,
+      };
+    });
+    const subtotal = items.length > 0
+      ? items.reduce((acc, item) => acc + (item.unitPrice * item.qty), 0)
+      : (typeof order.subtotal === 'number' && order.subtotal > 0 ? order.subtotal : (typeof order.total === 'number' ? order.total : 0));
     const taxRate = order.taxEnabled === false ? 0 : 0.15;
     const vatAmount = subtotal * taxRate;
     const invoiceData = {
@@ -306,7 +321,7 @@ export const AppProvider = ({ children }) => {
       poNumber: order.poNumber || '—',
       date: new Date().toISOString().substring(0, 10),
       dueDate: new Date(Date.now() + 30*24*60*60*1000).toISOString().substring(0, 10),
-      items,
+      items: items.length > 0 ? items : [{ sku: 'PPE-BULK', name: 'Commercial Safety Equipment Order', qty: 1, unitPrice: subtotal }],
       subtotal,
       vatAmount,
       totalAmount: subtotal + vatAmount,

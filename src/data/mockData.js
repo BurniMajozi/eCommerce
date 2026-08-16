@@ -941,3 +941,20 @@ export const MEDUSA_FULFILMENT = [
   { provider: "DSV Road", regions: "SADC cross-border", rate: "quoted", eta: "3–7 days", enabled: true },
   { provider: "Aramex", regions: "International", rate: "quoted", eta: "5–10 days", enabled: false }
 ];
+
+export const MOCK_PARTIES = {
+  customers: [
+    { id: 'CUST-001', company: 'Rand Colliery', email: 'procurement@randcolliery.co.za', phone: '+27 11 839 2000', spendLimit: 500000, currentSpend: 142000, type: 'customer' },
+    { id: 'CUST-002', company: 'Kumba Mining Operations', email: 'orders@kumba.co.za', phone: '+27 12 345 6789', spendLimit: 750000, currentSpend: 310000, type: 'customer' },
+    { id: 'CUST-003', company: 'Tenke Fungurume Mining', email: 'ppe@tenke.cd', phone: '+243 81 555 0199', spendLimit: 1200000, currentSpend: 480000, type: 'customer' },
+  ],
+  suppliers: [
+    { id: 'SUP-001', company: 'Dromex Safety (Pty) Ltd', email: 'orders@dromex.co.za', phone: '+27 31 700 8000', spendLimit: 1000000, currentSpend: 420000, type: 'supplier' },
+    { id: 'SUP-002', company: 'Rebel Safety Gear', email: 'sales@rebelsafetygear.com', phone: '+27 11 663 2700', spendLimit: 500000, currentSpend: 180000, type: 'supplier' },
+    { id: 'SUP-003', company: 'Bova Safety Footwear (Beier)', email: 'info@bova.co.za', phone: '+27 31 710 0400', spendLimit: 800000, currentSpend: 290000, type: 'supplier' },
+    { id: 'SUP-004', company: '3M Industrial Safety South Africa', email: 'orders.za@3m.com', phone: '+27 11 922 2000', spendLimit: 600000, currentSpend: 150000, type: 'supplier' },
+    { id: 'SUP-005', company: 'Jonsson Workwear Pty Ltd', email: 'corporate@jonssonworkwear.com', phone: '+27 31 314 4000', spendLimit: 750000, currentSpend: 210000, type: 'supplier' },
+    { id: 'SUP-006', company: 'Honeywell Safety Products', email: 'africa.safety@honeywell.com', phone: '+27 11 695 8000', spendLimit: 450000, currentSpend: 95000, type: 'supplier' },
+    { id: 'SUP-007', company: 'Delta Plus Africa', email: 'sales@deltaplus.co.za', phone: '+27 11 608 0240', spendLimit: 400000, currentSpend: 75000, type: 'supplier' },
+  ],
+};

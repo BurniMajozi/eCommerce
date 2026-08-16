@@ -26,27 +26,41 @@ function qtyOf(line: LineInput): number {
 // Serialises a Medusa order into the shape the B2B portal renders.
 function toOrderSummary(order: Record<string, unknown>) {
   const meta = (order.metadata ?? {}) as Record<string, unknown>;
-  const items = (order.items as Array<Record<string, unknown>> | undefined) ?? [];
+  const metaItems = (meta.items as Array<Record<string, unknown>> | undefined) ?? [];
+  const rawItems = (order.items as Array<Record<string, unknown>> | undefined) ?? [];
+  const sourceItems = metaItems.length > 0 ? metaItems : rawItems;
+
+  const items = sourceItems.map((i) => {
+    const rawQty = i.qty ?? i.quantity ?? 1;
+    const rawPrice = i.unitPrice ?? i.unit_price ?? 0;
+    return {
+      sku: (i.sku ?? i.variant_sku ?? (i.variant as Record<string, unknown>)?.sku ?? '').toString(),
+      name: (i.name ?? i.title ?? '').toString(),
+      qty: typeof rawQty === 'number' && rawQty > 0 ? rawQty : (parseInt(String(rawQty), 10) || 1),
+      unitPrice: typeof rawPrice === 'number' ? rawPrice : (parseFloat(String(rawPrice)) || 0),
+    };
+  });
+
+  const calcSubtotal = items.reduce((a, b) => a + b.unitPrice * b.qty, 0);
+  const taxEnabled = meta.tax_enabled !== false;
+  const calcTotal = taxEnabled ? calcSubtotal * 1.15 : calcSubtotal;
+
   return {
     id: order.id,
     displayId: order.display_id ?? null,
     status: order.status ?? null,
     isDraft: order.is_draft_order ?? true,
-    currencyCode: order.currency_code ?? null,
+    currencyCode: order.currency_code ?? 'zar',
     email: order.email ?? null,
     clientName: meta.client_name ?? order.email ?? null,
+    supplier: meta.supplier ?? null,
     vatNumber: meta.vat_number ?? null,
     poNumber: meta.po_number ?? null,
-    taxEnabled: meta.tax_enabled !== false,
-    total: order.total ?? null,
-    subtotal: order.subtotal ?? order.item_subtotal ?? null,
+    taxEnabled,
+    total: typeof meta.total === 'number' && meta.total > 0 ? meta.total : (typeof order.total === 'number' && order.total > 0 ? order.total : calcTotal),
+    subtotal: typeof meta.subtotal === 'number' && meta.subtotal > 0 ? meta.subtotal : (typeof order.subtotal === 'number' && order.subtotal > 0 ? order.subtotal : calcSubtotal),
     createdAt: order.created_at ?? null,
-    items: items.map((i) => ({
-      sku: i.variant_sku ?? null,
-      name: i.title ?? '',
-      qty: i.quantity ?? 0,
-      unitPrice: i.unit_price ?? 0,
-    })),
+    items,
   };
 }
 
@@ -87,7 +101,7 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
     if (!scope) throw new ScopeError(401, 'scope_missing', 'Tenant scope was not resolved.');
     assertCapability(scope, 'commerce.manage', true);
 
-    const body = (req.body ?? {}) as Body;
+    const body = (req.body ?? {}) as Body & { supplier?: string };
     const lines = (body.items ?? []).map((l) => ({ sku: (l.sku ?? '').toString().trim(), qty: qtyOf(l) }))
       .filter((l) => l.sku && l.qty > 0);
     if (!lines.length) throw new ScopeError(400, 'no_items', 'At least one line item with a quantity is required.');
@@ -122,16 +136,27 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
     const unpriced = skus.filter((s) => bySku.get(s)?.price == null);
     if (unpriced.length) throw new ScopeError(400, 'missing_price', `No selling price is set for: ${unpriced.join(', ')}. Add a price on the product first.`);
 
-    const items = lines.map((l) => {
+    const enrichedLines = lines.map((l) => {
       const p = bySku.get(l.sku)!;
+      const unitPrice = p.price ?? 0;
       return {
         variant_id: p.variantId,
-        quantity: l.qty,
+        sku: l.sku,
+        name: p.title,
         title: p.title,
+        qty: l.qty,
+        quantity: l.qty,
+        unitPrice,
+        unit_price: unitPrice,
+        line_total: unitPrice * l.qty,
         ...(p.thumbnail ? { thumbnail: p.thumbnail } : {}),
-        ...(p.price != null ? { unit_price: p.price } : {}),
       };
     });
+
+    const subtotal = enrichedLines.reduce((a, b) => a + b.unit_price * b.quantity, 0);
+    const taxRate = body.taxEnabled !== false ? 0.15 : 0;
+    const vat = subtotal * taxRate;
+    const total = subtotal + vat;
 
     // Link the order to a customer so spend-vs-limit reporting works. Prefer the
     // explicit customerId; else match an existing customer by email.
@@ -150,18 +175,26 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
       currency_code: (process.env.CURRENCY ?? 'zar').toLowerCase(),
       email: body.email?.trim() || undefined,
       customer_id: customerId,
-      items,
+      items: enrichedLines.map((l) => ({
+        variant_id: l.variant_id,
+        quantity: l.quantity,
+        title: l.title,
+        unit_price: l.unit_price,
+        ...(l.thumbnail ? { thumbnail: l.thumbnail } : {}),
+      })),
       metadata: {
         client_name: body.clientName?.trim() || null,
+        supplier: body.supplier?.trim() || null,
         vat_number: body.vatNumber?.trim() || null,
         po_number: body.poNumber?.trim() || null,
         tax_enabled: body.taxEnabled !== false,
+        subtotal,
+        vat,
+        total,
+        items: enrichedLines,
       },
     };
-    // Boundary cast: framework/types' CreateOrderDTO alias omits is_draft_order,
-    // but the installed workflow accepts it (verified in @medusajs/types order
-    // mutations). All fields are constructed and validated above.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const { result } = await createOrderWorkflow(req.scope).run({ input: orderInput as any });
 
     res.status(201).json({ order: toOrderSummary(result as unknown as Record<string, unknown>) });

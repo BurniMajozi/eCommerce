@@ -162,7 +162,7 @@ export function buildCatalogueContract(
       leadTimeDays: metadataNumber(product.metadata, 'lead_time_days') ?? 0,
       abcClass: metadataString(product.metadata, 'abc_class') ?? '',
       lifespanMonths: metadataNumber(product.metadata, 'lifespan_months') ?? 0,
-      costPrice: metadataNumber(product.metadata, 'cost_price') ?? metadataNumber(variants[0]?.metadata, 'cost_price') ?? null,
+      costPrice: metadataNumber(product.metadata, 'cost_price') ?? metadataNumber(product.variants?.[0]?.metadata, 'cost_price') ?? null,
       variants,
       dataQuality: { complete: missing.length === 0, missing },
     };
