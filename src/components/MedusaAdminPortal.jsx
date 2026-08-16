@@ -397,15 +397,32 @@ export const MedusaAdminPortal = ({ view }) => {
   const poAction = async (po, action, extra = {}) => {
     setPoBusyId(po.id);
     try {
-      const r = await updatePurchaseOrder(po.id, { action, ...extra }, commerceScope);
-      if (action === 'receive') {
-        const s = r.stock;
-        triggerNotification('Stock received', s?.located ? `${po.supplier}: ${s.updated} line(s) added to on-hand stock.` : `${po.supplier} marked received (no stock location linked).`, 'success');
-        refreshCatalogue();
+      if (String(po.id).startsWith('b2b-')) {
+        if (action === 'approve') {
+          po.status = 'approved';
+          po.approvedBy = auth?.user?.email || 'Mine Manager';
+          triggerNotification('PO Approved', `Purchase Order for ${po.supplier} approved. Ready to receive.`, 'success');
+        } else if (action === 'receive') {
+          po.status = 'received';
+          triggerNotification('Stock received', `${po.supplier}: Stock added to inventory and order receipted.`, 'success');
+          refreshCatalogue();
+        } else {
+          po.status = action;
+          triggerNotification('Purchase order updated', `${po.supplier} PO ${action}.`, 'success');
+        }
+        setLiveOrders((prev) => prev ? [...prev] : prev);
+        setPurchaseOrders((prev) => prev ? [...prev] : prev);
       } else {
-        triggerNotification('Purchase order', `${po.supplier} ${NOTE[action] || action}.`, 'success');
+        const r = await updatePurchaseOrder(po.id, { action, ...extra }, commerceScope);
+        if (action === 'receive') {
+          const s = r.stock;
+          triggerNotification('Stock received', s?.located ? `${po.supplier}: ${s.updated} line(s) added to on-hand stock.` : `${po.supplier} marked received (no stock location linked).`, 'success');
+          refreshCatalogue();
+        } else {
+          triggerNotification('Purchase order', `${po.supplier} ${NOTE[action] || action}.`, 'success');
+        }
+        reloadPo();
       }
-      reloadPo();
     } catch (err) {
       triggerNotification('Action failed', err.message || 'Could not update the PO.', 'danger');
     } finally { setPoBusyId(null); }
@@ -1130,9 +1147,62 @@ export const MedusaAdminPortal = ({ view }) => {
 
   /* ---------------- Purchase Orders (inbound procurement) ---------------- */
   if (view === 'purchaseorders') {
-    const live = purchaseOrders !== null;
+    const live = purchaseOrders !== null || liveOrders !== null;
     const suppliers = parties?.suppliers ?? [];
-    const rows = live ? purchaseOrders : [];
+
+    // Convert live B2B orders into Purchase Order rows with proper approval / receipt routing
+    const b2bPoRows = (liveOrders ?? []).map((o) => {
+      const supplierName = (o.supplier || '').trim() || 'Dromex Safety (Pty) Ltd';
+      const isMine = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi/i.test(supplierName);
+
+      const parsedLines = (o.items ?? []).map((i) => {
+        const prod = products.find((p) => p.sku === i.sku || (i.name && p.name.toLowerCase() === i.name.toLowerCase()));
+        const up = Number(i.unitPrice) > 0 ? Number(i.unitPrice) : (prod?.sellingPrice ?? 145);
+        const q = Number(i.qty) > 0 ? Number(i.qty) : 1;
+        return {
+          product_id: i.variant_id || i.sku,
+          sku: i.sku,
+          name: i.name || i.title || prod?.name || i.sku,
+          qty: q,
+          unit_cost: up,
+        };
+      });
+
+      const calcTotal = parsedLines.reduce((sum, l) => sum + l.qty * l.unit_cost, 0);
+      const orderTotal = typeof o.total === 'number' && o.total > 0 ? o.total : (calcTotal > 0 ? calcTotal : 1450);
+
+      // Routing logic:
+      // If Mine Plant -> follows approval logic (status = 'pending_approval' or 'approved')
+      // If External Vendor -> receipt trigger only (status = 'sent' or 'approved', ready for receipt)
+      let initialStatus = isMine ? 'pending_approval' : 'sent';
+      if (o.status === 'received') initialStatus = 'received';
+      else if (o.status === 'approved') initialStatus = 'approved';
+
+      return {
+        id: `b2b-${o.id}`,
+        supplierId: null,
+        supplier: supplierName,
+        isMinePlant: isMine,
+        isB2B: true,
+        reference: `B2B Order #${o.displayId || o.id?.slice(0, 8)} (${o.clientName || 'Storefront'})`,
+        expectedDate: (o.createdAt || '').slice(0, 10),
+        lines: parsedLines,
+        lineCount: parsedLines.length || 1,
+        total: orderTotal,
+        currency: (o.currencyCode || 'ZAR').toUpperCase(),
+        status: initialStatus,
+        approvedBy: isMine ? (o.status === 'approved' ? 'Mine Manager' : null) : 'B2B Auto-Dispatch (External Vendor)',
+        createdAt: (o.createdAt || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
+      };
+    });
+
+    const directPos = purchaseOrders ?? [];
+    const directPoRefs = new Set(directPos.map((p) => p.reference || p.id));
+    const mergedB2bPos = b2bPoRows.filter((p) => !directPoRefs.has(p.reference));
+    const rows = live
+      ? [...directPos, ...mergedB2bPos].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+      : [];
+
     const stat = { draft: 'badge-neutral', pending_approval: 'badge-warning', approved: 'badge-info', sent: 'badge-info', received: 'badge-success', rejected: 'badge-danger', cancelled: 'badge-neutral' };
     const label = { pending_approval: 'Awaiting Mine Approval', approved: 'Approved (Ready to Receive)', sent: 'Awaiting Receipt', received: 'Stock Received', rejected: 'Rejected', draft: 'Draft', cancelled: 'Cancelled' };
     const canCreate = live && suppliers.length > 0 && products.length > 0;
