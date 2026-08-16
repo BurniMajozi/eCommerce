@@ -432,44 +432,6 @@ export const TenantAdminPortal = () => {
         <span className="badge badge-neutral">M. van Wyk · Tenant Admin</span>
       </div>
 
-      {/* Reports — live data, exportable to CSV / PDF */}
-      <LiveReportBuilder scope={commerceScope} triggerNotification={triggerNotification} />
-
-      {/* Permission matrix */}
-      <div className="card">
-        <div className="card-hd">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ShieldCheck size={17} style={{ color: 'var(--primary)' }} /><h3>Permission matrix — separation of duties</h3></div>
-        </div>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th style={{ minWidth: 190 }}>Capability</th>
-                {PERMISSION_MATRIX.roles.map(r => <th key={r} className="center" style={{ color: r === 'Owner' ? 'var(--primary)' : 'var(--text-subtle)' }}>{r}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {PERMISSION_MATRIX.rows.map(row => (
-                <tr key={row.cap}>
-                  <td style={{ fontWeight: 500, color: row.critical ? 'var(--danger)' : 'var(--text)' }}>{row.cap}</td>
-                  {row.vals.map((v, i) => {
-                    const isOwner = PERMISSION_MATRIX.roles[i] === 'Owner';
-                    const hot = (row.critical && v === 'yes') || (isOwner && v === 'yes');
-                    return <td key={i} className="center">{permCell(v, hot)}</td>;
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="card-bd" style={{ paddingTop: 0 }}>
-          <p className="muted" style={{ fontSize: 13, margin: 0 }}>Whoever <strong style={{ color: 'var(--text)' }}>issues</strong> can never <strong style={{ color: 'var(--text)' }}>approve</strong>, and neither can <strong style={{ color: 'var(--text)' }}>adjust</strong> stock without a manager co-sign. Every role change is itself logged.</p>
-        </div>
-      </div>
-
-      {/* Users & roles — in-app member management (invite / role / suspend) */}
-      <MembersManager scope={commerceScope} triggerNotification={triggerNotification} fallbackRows={memberRows} />
-
       {/* Entitlement rules — journey + builder */}
       <div className="card">
         <div className="card-hd">
@@ -538,6 +500,44 @@ export const TenantAdminPortal = () => {
           <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Threshold rules feed the approval engine — e.g. boots over R750 force a Section-Manager co-sign, and a 2nd issue of the same item inside 30 days escalates automatically.</p>
         </div>
       </div>
+
+      {/* Users & roles — in-app member management (invite / role / suspend) */}
+      <MembersManager scope={commerceScope} triggerNotification={triggerNotification} fallbackRows={memberRows} />
+
+      {/* Permission matrix */}
+      <div className="card">
+        <div className="card-hd">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ShieldCheck size={17} style={{ color: 'var(--primary)' }} /><h3>Permission matrix — separation of duties</h3></div>
+        </div>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th style={{ minWidth: 190 }}>Capability</th>
+                {PERMISSION_MATRIX.roles.map(r => <th key={r} className="center" style={{ color: r === 'Owner' ? 'var(--primary)' : 'var(--text-subtle)' }}>{r}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {PERMISSION_MATRIX.rows.map(row => (
+                <tr key={row.cap}>
+                  <td style={{ fontWeight: 500, color: row.critical ? 'var(--danger)' : 'var(--text)' }}>{row.cap}</td>
+                  {row.vals.map((v, i) => {
+                    const isOwner = PERMISSION_MATRIX.roles[i] === 'Owner';
+                    const hot = (row.critical && v === 'yes') || (isOwner && v === 'yes');
+                    return <td key={i} className="center">{permCell(v, hot)}</td>;
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="card-bd" style={{ paddingTop: 0 }}>
+          <p className="muted" style={{ fontSize: 13, margin: 0 }}>Whoever <strong style={{ color: 'var(--text)' }}>issues</strong> can never <strong style={{ color: 'var(--text)' }}>approve</strong>, and neither can <strong style={{ color: 'var(--text)' }}>adjust</strong> stock without a manager co-sign. Every role change is itself logged.</p>
+        </div>
+      </div>
+
+      {/* Reports — live data, exportable to CSV / PDF */}
+      <LiveReportBuilder scope={commerceScope} triggerNotification={triggerNotification} />
     </div>
   );
 };
