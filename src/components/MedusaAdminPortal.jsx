@@ -358,6 +358,8 @@ export const MedusaAdminPortal = ({ view }) => {
   const [poReloadKey, setPoReloadKey] = useState(0);
   const [showPoModal, setShowPoModal] = useState(false);
   const [showPromoModal, setShowPromoModal] = useState(false);
+  const [eventLog, setEventLog] = useState([]);
+  const [firing, setFiring] = useState(null);
   const [poDelete, setPoDelete] = useState(null);
   const [poBusyId, setPoBusyId] = useState(null);
   useEffect(() => {
