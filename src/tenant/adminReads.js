@@ -73,3 +73,36 @@ export async function fetchTenantMembers(tenantId) {
     status: m.status,
   }));
 }
+
+// Real RBAC map: every role with the capabilities it grants. Read-only — role
+// assignment is gated server-side (no client write policy yet). Selectable
+// because roles / capabilities / role_capabilities all have SELECT RLS.
+export async function fetchRolesCapabilities() {
+  if (!supabase) return null;
+  const [{ data: roles, error: rolesError }, { data: caps, error: capsError }, { data: links, error: linkError }] = await Promise.all([
+    supabase.from('roles').select('id, key, name, description, privileged').order('name'),
+    supabase.from('capabilities').select('key, description, requires_mfa').order('key'),
+    supabase.from('role_capabilities').select('role_id, capability_id'),
+  ]);
+  if (rolesError) throw rolesError;
+  if (capsError) throw capsError;
+  if (linkError) throw linkError;
+
+  const capById = new Map((caps ?? []).map((c) => [c.key, c]));
+  const capKeyById = new Map();
+  for (const c of caps ?? []) capKeyById.set(c.id ?? c.key, c.key);
+
+  return (roles ?? []).map((r) => ({
+    id: r.id,
+    key: r.key,
+    name: r.name,
+    description: r.description,
+    privileged: r.privileged,
+    capabilities: (links ?? [])
+      .filter((l) => l.role_id === r.id)
+      .map((l) => capKeyById.get(l.capability_id))
+      .filter(Boolean)
+      .map((k) => capById.get(k))
+      .filter(Boolean),
+  }));
+}

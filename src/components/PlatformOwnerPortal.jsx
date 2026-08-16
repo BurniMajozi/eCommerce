@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { MOCK_AUDIT_LOG, ROLE_HOME_CARDS } from '../data/mockData';
-import { fetchPlatformTenants, fetchAuditEvents } from '../tenant/adminReads';
-import { Building2, Plus, Palette, Smartphone, Wallet, ScrollText, LayoutGrid, AlertTriangle } from 'lucide-react';
+import { fetchPlatformTenants, fetchAuditEvents, fetchTenantMembers, fetchRolesCapabilities } from '../tenant/adminReads';
+import { Building2, Plus, Palette, Smartphone, Wallet, ScrollText, LayoutGrid, AlertTriangle, Users, ShieldCheck } from 'lucide-react';
 
 const ACCENT_SWATCHES = ['#EC3013', '#2563EB', '#0891B2', '#7C3AED', '#059669', '#D97706'];
 
@@ -15,18 +15,29 @@ export const PlatformOwnerPortal = () => {
   const [newTenantName, setNewTenantName] = useState('');
   const [liveTenants, setLiveTenants] = useState(null);
   const [liveAudit, setLiveAudit] = useState(null);
+  const [liveRbac, setLiveRbac] = useState(null);
   const tenant = tenants.find(t => t.id === selectedTenantId) || tenants[0];
 
   // Read-only live wiring. In demo mode the effect no-ops and the mock data
   // below is used unchanged; writes (provision, branding, flags) stay local
   // until their Medusa/Supabase workflows exist.
   useEffect(() => {
-    if (integrationMode !== 'supabase') { setLiveTenants(null); setLiveAudit(null); return; }
+    if (integrationMode !== 'supabase') { setLiveTenants(null); setLiveAudit(null); setLiveMembers(null); setLiveRbac(null); return; }
     let active = true;
     fetchPlatformTenants().then(rows => { if (active) setLiveTenants(rows ?? []); }).catch(() => { if (active) setLiveTenants([]); });
     fetchAuditEvents(null, 20).then(rows => { if (active) setLiveAudit(rows ?? []); }).catch(() => { if (active) setLiveAudit([]); });
+    fetchRolesCapabilities().then(rows => { if (active) setLiveRbac(rows ?? null); }).catch(() => { if (active) setLiveRbac(null); });
     return () => { active = false; };
   }, [integrationMode]);
+
+  // Members of the currently-selected tenant (real, RLS-scoped).
+  const [liveMembers, setLiveMembers] = useState(null);
+  useEffect(() => {
+    if (integrationMode !== 'supabase' || !tenant?.id) { setLiveMembers(null); return; }
+    let active = true;
+    fetchTenantMembers(tenant.id).then(rows => { if (active) setLiveMembers(rows ?? []); }).catch(() => { if (active) setLiveMembers([]); });
+    return () => { active = false; };
+  }, [integrationMode, tenant?.id]);
 
   const tenantRows = liveTenants ?? tenants;
   const auditRows = liveAudit ?? MOCK_AUDIT_LOG;
@@ -36,7 +47,9 @@ export const PlatformOwnerPortal = () => {
   const totalUsers = tenantRows.reduce((a, t) => a + (t.users || 0), 0);
   const liveCount = tenantRows.filter(t => t.state === 'live' || t.state === 'active').length;
   const trialCount = tenantRows.filter(t => t.trial || t.plan === 'trial' || t.state === 'setup').length;
-  const totalMrr = tenants.reduce((a, t) => a + (t.mrr || 0), 0);
+  // Honest platform billing: per-tenant plan + member counts are real; there is
+  // no charging engine yet, so MRR is intentionally NOT summed/invented.
+  const rbacLive = liveRbac !== null;
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 22, paddingBottom: 24 }}>
@@ -173,34 +186,94 @@ export const PlatformOwnerPortal = () => {
         </div>
       </div>
 
-      {/* Billing + audit */}
+      {/* Users & roles (real, RLS-scoped) */}
+      <div className="card">
+        <div className="card-hd">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Users size={17} style={{ color: 'var(--primary)' }} /><h3>Users &amp; roles — {tenant.name}</h3><SourceBadge live={liveMembers !== null} /></div>
+          <span className="badge badge-neutral">{liveMembers ? liveMembers.length : (tenant.users ?? 0)} members</span>
+        </div>
+        <div className="card-bd">
+          {liveMembers === null ? (
+            <div className="muted" style={{ fontSize: 13 }}>Connect to Supabase to list this tenant's members.</div>
+          ) : liveMembers.length === 0 ? (
+            <div className="muted" style={{ fontSize: 13 }}>No members yet for this tenant.</div>
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead><tr><th>Member</th><th>Role</th><th>Department</th><th className="center">Status</th></tr></thead>
+                <tbody>
+                  {liveMembers.map((m, i) => (
+                    <tr key={m.id || i}>
+                      <td style={{ fontWeight: 500 }}>{m.name}</td>
+                      <td>{m.role}</td>
+                      <td className="muted">{m.dept}</td>
+                      <td className="center"><span className={`badge ${m.status === 'active' ? 'badge-success' : 'badge-warning'}`}>{m.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="muted" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>Role assignment is enforced server-side — the owner cannot reassign roles from the browser yet (write policy lands with billing/invite work).</p>
+        </div>
+      </div>
+
+      {/* Access control — real RBAC map (read-only) */}
+      <div className="card">
+        <div className="card-hd">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ShieldCheck size={17} style={{ color: 'var(--primary)' }} /><h3>Access control — roles &amp; capabilities</h3><SourceBadge live={rbacLive} /></div>
+        </div>
+        <div className="card-bd" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {(liveRbac ?? []).map((r) => (
+            <div key={r.id || r.key} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <strong style={{ fontSize: 14 }}>{r.name}</strong>
+                <span className="badge badge-neutral" style={{ fontSize: 10 }}>{r.key}</span>
+                {r.privileged && <span className="badge badge-warning" style={{ fontSize: 10 }}>privileged</span>}
+              </div>
+              {r.description && <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{r.description}</div>}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 9 }}>
+                {r.capabilities.length === 0 && <span className="muted" style={{ fontSize: 12 }}>no capabilities</span>}
+                {r.capabilities.map((c) => (
+                  <span key={c.key} className={`badge ${c.requires_mfa ? 'badge-warning' : 'badge-neutral'}`} style={{ fontSize: 10.5 }}>{c.key}{c.requires_mfa ? ' · MFA' : ''}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+          {rbacLive && (liveRbac ?? []).length === 0 && <div className="muted" style={{ fontSize: 13 }}>No roles defined.</div>}
+        </div>
+      </div>
+
+      {/* Billing — honest: real plan + member counts, no invented MRR */}
       <div className="cols cols-2">
         <div className="card">
           <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Wallet size={17} style={{ color: 'var(--primary)' }} /><h3>Plans &amp; billing</h3></div></div>
           <div className="card-bd">
             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 14 }}>
               <div>
-                <div className="kpi-value" style={{ color: 'var(--primary)' }}>R {totalMrr.toLocaleString('en-ZA')}</div>
-                <div className="kpi-label">Platform MRR</div>
+                <div className="kpi-value" style={{ color: 'var(--primary)' }}>{tenantRows.length}</div>
+                <div className="kpi-label">Tenants · {liveCount} live · {trialCount} trial</div>
               </div>
-              <div className="muted" style={{ fontSize: 13 }}>{liveCount} paying · {trialCount} trial</div>
+              <div className="muted" style={{ fontSize: 13 }}>{totalUsers} users across tenants</div>
             </div>
             <div className="table-wrap">
               <table className="table">
+                <thead><tr><th>Tenant</th><th className="center">Plan</th><th className="num">Members</th></tr></thead>
                 <tbody>
-                  {tenants.map(t => (
-                    <tr key={t.id}><td style={{ fontWeight: 500 }}>{t.name}</td><td className="num muted">{t.plan}</td><td className="num" style={{ color: t.mrr ? 'var(--text)' : 'var(--warning)' }}>{t.mrr ? `R ${t.mrr.toLocaleString('en-ZA')}/mo` : 'trial'}</td></tr>
+                  {tenantRows.map(t => (
+                    <tr key={t.id}><td style={{ fontWeight: 500 }}>{t.name}</td><td className="center"><span className="badge badge-neutral">{t.plan}</span></td><td className="num">{t.users}</td></tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <p className="muted" style={{ fontSize: 12, marginBottom: 0, marginTop: 12 }}>Per-tenant plan and member counts are live. There is no charging engine yet — pricing tiers and invoicing are not configured, so no MRR is shown.</p>
           </div>
         </div>
 
         <div className="card">
           <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ScrollText size={17} style={{ color: 'var(--primary)' }} /><h3>Platform audit log</h3><SourceBadge live={auditLive} /></div></div>
           <div className="card-bd" style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {auditRows.length === 0 && <div className="muted" style={{ fontSize: 13 }}>No audit events yet.</div>}
+            {auditRows.length === 0 && <div className="muted" style={{ fontSize: 13 }}>No audit events yet — owner actions will be recorded here once write auditing is enabled.</div>}
             {auditRows.map((e, i) => {
               const warn = e.level === 'warn';
               const meta = auditLive
