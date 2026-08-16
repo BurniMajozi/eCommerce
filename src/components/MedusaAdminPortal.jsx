@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, fetchCommerceConfig, fetchEngine, runEngineWorkflow, fetchParties, createParty, updateParty, deleteParty, fetchPurchaseOrders, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, fetchCommerceConfig, fetchEngine, runEngineWorkflow, fetchParties, createParty, updateParty, deleteParty, fetchPurchaseOrders, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchPromotions, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { ProductThumb } from './ProductThumb';
 import { ProductFormModal } from './ProductFormModal';
+import { PromotionFormModal } from './PromotionFormModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import {
   MEDUSA_ORDERS, MEDUSA_PROMOTIONS, MEDUSA_TAX_REGIONS, MEDUSA_CUSTOMERS,
@@ -329,6 +330,7 @@ export const MedusaAdminPortal = ({ view }) => {
   const [purchaseOrders, setPurchaseOrders] = useState(null);
   const [poReloadKey, setPoReloadKey] = useState(0);
   const [showPoModal, setShowPoModal] = useState(false);
+  const [showPromoModal, setShowPromoModal] = useState(false);
   const [poDelete, setPoDelete] = useState(null);
   const [poBusyId, setPoBusyId] = useState(null);
   useEffect(() => {
@@ -342,6 +344,27 @@ export const MedusaAdminPortal = ({ view }) => {
   }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, poReloadKey]);
   const reloadPo = () => setPoReloadKey((k) => k + 1);
   const NOTE = { submit: 'submitted for approval', send: 'sent to supplier', cancel: 'cancelled' };
+
+  // Product promotions (active markdowns). Used by the Promotions tab and to
+  // annotate the Products & Pricing table with a promo column + reduced-cost margin.
+  const [promotions, setPromotions] = useState(null);
+  const [promoReloadKey, setPromoReloadKey] = useState(0);
+  useEffect(() => {
+    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setPromotions(null); return undefined; }
+    let cancelled = false;
+    fetchPromotions(commerceScope)
+      .then((r) => { if (!cancelled) setPromotions(r.promotions ?? []); })
+      .catch(() => { if (!cancelled) setPromotions(null); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, promoReloadKey]);
+  const reloadPromo = () => setPromoReloadKey((k) => k + 1);
+  // Active promo per SKU (most recent wins) for the stock-table lookup.
+  const promoBySku = (() => {
+    const m = new Map();
+    (promotions ?? []).forEach((p) => { if (p.status === 'active') m.set(p.sku, p); });
+    return m;
+  })();
   const poAction = async (po, action, extra = {}) => {
     setPoBusyId(po.id);
     try {
@@ -466,19 +489,30 @@ export const MedusaAdminPortal = ({ view }) => {
     const liveProfitBySku = new Map((profitability.items ?? []).map(item => [item.sku, item]));
     const liveCatalogue = catalogue.source === 'medusa';
     const rows = products.map(p => {
+      let costPrice = p.costPrice;
+      let sellingPrice = p.sellingPrice;
+      let margin = p.sellingPrice ? ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100 : 0;
+      let profit = p.sellingPrice - p.costPrice;
       if (liveCatalogue) {
         const financial = liveProfitBySku.get(p.sku);
-        return {
-          ...p,
-          costPrice: financial?.averageCost ?? null,
-          sellingPrice: financial?.averageSellingPrice ?? p.sellingPrice,
-          margin: financial?.marginPercent ?? null,
-          profit: financial?.averageCost == null || financial?.averageSellingPrice == null
-            ? null : financial.averageSellingPrice - financial.averageCost,
-        };
+        costPrice = financial?.averageCost ?? null;
+        sellingPrice = financial?.averageSellingPrice ?? p.sellingPrice;
+        margin = financial?.marginPercent ?? null;
+        profit = financial?.averageCost == null || financial?.averageSellingPrice == null
+          ? null : financial.averageSellingPrice - financial.averageCost;
       }
-      const margin = p.sellingPrice ? ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100 : 0;
-      return { ...p, margin, profit: p.sellingPrice - p.costPrice };
+      // Apply an active promotion: the discount reduces the COST BASIS (decision:
+      // promo narrows margin by lowering cost), selling price is unchanged.
+      const promo = promoBySku.get(p.sku) || null;
+      let promoCost = costPrice;
+      let promoMargin = margin;
+      let promoProfit = profit;
+      if (promo && costPrice != null && sellingPrice) {
+        promoCost = costPrice * (1 - Number(promo.discountPct) / 100);
+        promoMargin = sellingPrice ? ((sellingPrice - promoCost) / sellingPrice) * 100 : null;
+        promoProfit = sellingPrice - promoCost;
+      }
+      return { ...p, costPrice, sellingPrice, margin, profit, promo, promoCost, promoMargin, promoProfit };
     });
     const valuedMargins = rows.map(row => row.margin).filter(value => value !== null);
     const avgMargin = valuedMargins.length ? valuedMargins.reduce((a, value) => a + value, 0) / valuedMargins.length : null;
@@ -509,7 +543,7 @@ export const MedusaAdminPortal = ({ view }) => {
           <div className="card-hd"><h3>Price list · Contract B</h3><span className="badge badge-neutral">{rows.length} products · click a row for variants</span></div>
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th></th><th>SKU</th><th>Product</th><th className="num">Cost</th><th className="num">Price</th><th className="num">Profit/unit</th><th className="num">Margin</th><th className="num">Stock</th><th></th></tr></thead>
+              <thead><tr><th></th><th>SKU</th><th>Product</th><th className="num">Cost</th><th className="num">Price</th><th className="num">Profit/unit</th><th className="num">Margin</th><th className="num">Promo</th><th className="num">Stock</th><th></th></tr></thead>
               <tbody>
                 {rows.map(r => {
                   const open = expandedSku === r.sku;
@@ -526,10 +560,13 @@ export const MedusaAdminPortal = ({ view }) => {
                             <div>{r.name}<div className="eyebrow" style={{ marginTop: 2 }}>{opt.sizes.length} sizes · {opt.colors[0] === '—' ? 'single colour' : `${opt.colors.length} colours`}</div></div>
                           </div>
                         </td>
-                        <td className="num">{r.costPrice === null ? 'Restricted' : `R ${r.costPrice.toFixed(2)}`}</td>
+                        <td className="num">{r.costPrice === null ? 'Restricted' : <span style={r.promo ? { color: 'var(--danger)' } : undefined}>R {r.costPrice.toFixed(2)}</span>}</td>
                         <td className="num">R {r.sellingPrice.toFixed(2)}</td>
                         <td className="num" style={{ color: 'var(--success)', fontWeight: 600 }}>{r.profit === null ? 'Restricted' : `R ${r.profit.toFixed(2)}`}</td>
                         <td className="num">{r.margin === null ? 'Restricted' : <span className={`badge ${r.margin >= 30 ? 'badge-success' : r.margin >= 18 ? 'badge-warning' : 'badge-danger'}`}>{r.margin.toFixed(0)}%</span>}</td>
+                        <td className="num">{r.promo
+                          ? <span className="badge badge-warning" title="Promotion reduces the cost basis">−{Number(r.promo.discountPct)}% {String(r.promo.promoType).slice(0, 4)}</span>
+                          : <span className="muted">—</span>}</td>
                         <td className="num">{r.stockOnHand}</td>
                         <td className="num" style={{ whiteSpace: 'nowrap' }}>
                           <button className="btn-icon" title="Edit product" onClick={(e) => { e.stopPropagation(); setEditProduct(r); }}><Pencil size={15} /></button>
@@ -538,7 +575,7 @@ export const MedusaAdminPortal = ({ view }) => {
                       </tr>
                       {open && (
                         <tr>
-                          <td colSpan={9} style={{ background: 'var(--surface-2)', padding: 0 }}>
+                          <td colSpan={10} style={{ background: 'var(--surface-2)', padding: 0 }}>
                             <div style={{ padding: '12px 16px' }}>
                               <div className="eyebrow" style={{ marginBottom: 8 }}>Variants — lowest SKU (size × colour)</div>
                               <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>
@@ -717,33 +754,47 @@ export const MedusaAdminPortal = ({ view }) => {
 
   /* ---------------- Promotions ---------------- */
   if (view === 'promos') {
-    const sb = { active: 'badge-success', scheduled: 'badge-info', expired: 'badge-neutral' };
-    const promos = liveConfig?.promotions ?? MEDUSA_PROMOTIONS;
-    const live = cfgLive(liveConfig?.promotions);
+    const sb = { active: 'badge-success', scheduled: 'badge-info', expired: 'badge-neutral', cancelled: 'badge-danger' };
+    const live = promotions !== null;
+    const rows = live ? (promotions ?? []) : (liveConfig?.promotions ?? MEDUSA_PROMOTIONS);
     return (
       <Wrap>
-        <Head icon={BadgePercent} title="Promotions" sub="Discount codes and campaign rules."
-          action={<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span><button className="btn btn-primary" onClick={() => triggerNotification('New promotion', 'Blank promotion opened.', 'info')}><Plus size={16} /> New promotion</button></div>} />
+        <Head icon={BadgePercent} title="Promotions" sub="Mark a product down by a percentage — the cost basis drops so the margin narrows. Created promos go live at once and are sent to managers for visibility."
+          action={<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span><button className="btn btn-primary" onClick={() => setShowPromoModal(true)} disabled={!live}><Plus size={16} /> New promotion</button></div>} />
         <div className="card">
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Applies to</th><th className="center">Status</th><th className="num">Used</th></tr></thead>
+              <thead><tr><th>Product</th><th>Type</th><th className="num">Discount</th><th className="num">Cost was → now</th><th className="num">Margin impact</th><th className="center">Status</th><th>Created</th></tr></thead>
               <tbody>
-                {promos.length === 0 && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 22 }}>No promotions yet.</td></tr>}
-                {promos.map(p => (
-                  <tr key={p.code}>
-                    <td style={{ fontWeight: 600 }}>{p.code}</td>
-                    <td>{p.type}</td>
-                    <td className="muted">{p.value}</td>
-                    <td className="muted">{p.applies}</td>
-                    <td className="center"><span className={`badge ${sb[p.status] || 'badge-neutral'}`}>{p.status}</span></td>
-                    <td className="num">{p.used}</td>
-                  </tr>
-                ))}
+                {rows.length === 0 && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 22 }}>{live ? 'No promotions yet — add one with “New promotion”.' : 'Connect the backend to manage promotions.'}</td></tr>}
+                {rows.map((p) => {
+                  const cost = Number(p.costAtCreate ?? 0);
+                  const pct = Number(p.discountPct ?? 0);
+                  const newCost = cost * (1 - pct / 100);
+                  return (
+                    <tr key={p.id}>
+                      <td style={{ fontWeight: 600 }}>{p.sku}</td>
+                      <td className="muted" style={{ textTransform: 'capitalize' }}>{String(p.promoType ?? 'markdown')}</td>
+                      <td className="num">−{pct}%</td>
+                      <td className="num tabular muted">R {cost.toFixed(2)} → <span style={{ color: 'var(--danger)', fontWeight: 600 }}>R {newCost.toFixed(2)}</span></td>
+                      <td className="num muted">cost basis −{pct}%</td>
+                      <td className="center"><span className={`badge ${sb[p.status] || 'badge-neutral'}`}>{String(p.status || 'active').replace(/_/g, ' ')}</span></td>
+                      <td className="muted">{(p.createdAt || '').substring(0, 10)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
+        {showPromoModal && (
+          <PromotionFormModal
+            products={products}
+            onClose={() => setShowPromoModal(false)}
+            onCreated={() => { setShowPromoModal(false); reloadPromo(); triggerNotification('Promotion sent', 'Markdown created and sent to managers.', 'success'); }}
+            scope={commerceScope}
+          />
+        )}
       </Wrap>
     );
   }

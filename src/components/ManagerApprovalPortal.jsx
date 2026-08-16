@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { fetchPurchaseOrders, updatePurchaseOrder, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { fetchPurchaseOrders, updatePurchaseOrder, fetchPromotions, updatePromotion, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { SignaturePad } from './SignaturePad';
 import {
-  Bell, ShieldCheck, AlertTriangle, Check, X, Eye, ArrowRight, ClipboardList, PenLine, Loader2, Factory
+  Bell, ShieldCheck, AlertTriangle, Check, X, Eye, ArrowRight, ClipboardList, PenLine, Loader2, Factory, BadgePercent
 } from 'lucide-react';
 
 const rands = (n, cur = 'ZAR') => `${cur === 'ZAR' ? 'R' : cur + ' '}${Number(n || 0).toLocaleString('en-ZA')}`;
@@ -132,6 +132,76 @@ const PoApprovals = () => {
   );
 };
 
+// Promotions sent to managers for visibility/history. Promos are NOT gated —
+// they activate on creation — so this is a record the manager acknowledges.
+const PromoSubmissions = () => {
+  const { auth, tenantAccess, triggerNotification } = useApp();
+  const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
+  const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
+  const me = auth?.session?.user?.user_metadata?.display_name || auth?.session?.user?.email || 'Manager';
+  const [promos, setPromos] = useState([]);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [busyId, setBusyId] = useState(null);
+
+  useEffect(() => {
+    if (!live) { setPromos([]); return; }
+    let active = true;
+    fetchPromotions(scope).then((r) => { if (active) setPromos(r.promotions ?? []); }).catch(() => { if (active) setPromos([]); });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]);
+
+  const acknowledge = async (p) => {
+    setBusyId(p.id);
+    try {
+      await updatePromotion(p.id, { action: 'acknowledge', managerName: me }, scope);
+      triggerNotification('Promo noted', `${p.sku} (−${p.discountPct}%) acknowledged.`, 'success');
+      setReloadKey((k) => k + 1);
+    } catch (e) { triggerNotification('Failed', e.message || 'Could not acknowledge.', 'danger'); } finally { setBusyId(null); }
+  };
+
+  if (!live) return null;
+
+  return (
+    <div className="card">
+      <div className="card-hd">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><BadgePercent size={17} style={{ color: 'var(--primary)' }} /><h3>Promotions sent to managers</h3></div>
+        <span className={`badge ${promos.length ? 'badge-info' : 'badge-neutral'}`}>{promos.length} total</span>
+      </div>
+      {promos.length === 0 ? (
+        <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>No promotions have been sent to managers yet.</div>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Product</th><th>Type</th><th className="num">Discount</th><th className="num">New cost basis</th><th>Created</th><th className="center">Seen by manager</th><th className="center">Action</th></tr></thead>
+            <tbody>
+              {promos.map((p) => {
+                const cost = Number(p.costAtCreate ?? 0);
+                const newCost = cost * (1 - Number(p.discountPct) / 100);
+                return (
+                  <tr key={p.id}>
+                    <td style={{ fontWeight: 500 }}>{p.sku}</td>
+                    <td className="muted" style={{ textTransform: 'capitalize' }}>{String(p.promoType ?? 'markdown')}</td>
+                    <td className="num">−{Number(p.discountPct)}%</td>
+                    <td className="num tabular">R {newCost.toFixed(2)}</td>
+                    <td className="muted">{(p.createdAt || '').slice(0, 10)}</td>
+                    <td className="center">{p.acknowledgedBy ? <span className="badge badge-success">{p.acknowledgedBy}</span> : <span className="badge badge-neutral">not seen</span>}</td>
+                    <td className="center">
+                      {p.acknowledgedBy
+                        ? <span className="muted" style={{ fontSize: 12 }}>✓ noted</span>
+                        : <button className="btn btn-secondary btn-sm" disabled={busyId === p.id} onClick={() => acknowledge(p)}>{busyId === p.id ? <><Loader2 size={13} className="spin" /> …</> : 'Acknowledge'}</button>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ManagerApprovalPortal = () => {
   const { requests, approveRequest, rejectRequest, triggerNotification } = useApp();
   const [declining, setDeclining] = useState(null);
@@ -166,6 +236,7 @@ export const ManagerApprovalPortal = () => {
       </div>
 
       <PoApprovals />
+      <PromoSubmissions />
 
       {pending.length === 0 ? (
         <div className="card">

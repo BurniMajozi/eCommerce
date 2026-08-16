@@ -16,6 +16,7 @@
     "bootstrap:products": "medusa exec ./src/scripts/bootstrap-products.ts",
     "bootstrap:admin": "medusa exec ./src/scripts/bootstrap-admin.ts",
     "bootstrap:po": "medusa exec ./src/scripts/bootstrap-po.ts",
+    "bootstrap:promo": "medusa exec ./src/scripts/bootstrap-promo.ts",
     "provision:check": "medusa exec ./src/scripts/provision-check.ts",
     "run:saga": "medusa exec ./src/scripts/run-saga.ts",
     "config:check": "node scripts/check-config.mjs",

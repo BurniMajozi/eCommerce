@@ -161,6 +161,22 @@ export const deleteProduct = (id, scope) => scopedJson(`/app/products/${id}`, {
 // Lists the tenant's B2B draft orders (quotes), newest first.
 export const fetchOrders = (scope) => scopedJson('/app/orders', scope);
 
+// Product promotions (markdowns that reduce the cost basis / margin). A merchant
+// creates one; it activates immediately and is surfaced to managers for history.
+export const fetchPromotions = (scope) => scopedJson('/app/commerce/promotions', scope);
+
+export const createPromotion = (promo, scope) => scopedJson('/app/commerce/promotions', {
+  ...scope, method: 'POST', body: promo,
+});
+
+export const updatePromotion = (id, patch, scope) => scopedJson(`/app/commerce/promotions/${id}`, {
+  ...scope, method: 'PATCH', body: patch,
+});
+
+export const deletePromotion = (id, scope) => scopedJson(`/app/commerce/promotions/${id}`, {
+  ...scope, method: 'DELETE',
+});
+
 // Creates a real Medusa draft order from a B2B quote.
 export const createOrder = (order, scope) => scopedJson('/app/orders', {
   ...scope,
