@@ -8,7 +8,7 @@ import { PromotionFormModal } from './PromotionFormModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import {
   MEDUSA_ORDERS, MEDUSA_PROMOTIONS, MEDUSA_TAX_REGIONS, MEDUSA_CUSTOMERS,
-  MEDUSA_WORKFLOWS, MEDUSA_EVENTS, MEDUSA_FULFILMENT, MEDUSA_CURRENCIES,
+  MEDUSA_EVENTS, MEDUSA_FULFILMENT, MEDUSA_CURRENCIES,
   buildVariants, getVariantOptions
 } from '../data/mockData';
 import {
@@ -36,6 +36,22 @@ const Wrap = ({ children }) => (
   <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 22, paddingBottom: 24 }}>{children}</div>
 );
 
+/* ---- Real PPE-issue saga (source of truth: backend/src/workflows/ppe-issue-saga.ts) ----
+   Medusa workflows are code-defined, not a visual builder, so this is the honest,
+   read-only step design for the ONE real custom workflow that exists. */
+const REAL_SAGA = {
+  id: 'ppe-issue-saga',
+  name: 'PPE issue saga',
+  compensates: true,
+  note: 'Validate → Reserve (compensatable) → Audit (compensatable). A downstream failure reverts in reverse.',
+  nodes: [
+    { label: 'ppe-validate', type: 'trigger', comp: false },
+    { label: 'ppe-reserve', type: 'action', comp: true },
+    { label: 'ppe-audit', type: 'action', comp: true },
+    { label: 'issued', type: 'end', comp: false },
+  ],
+};
+
 /* ---- n8n-style workflow node ---- */
 const NODE_STYLE = {
   trigger: { tag: 'TRIGGER', bg: 'var(--success-weak)', bd: 'var(--success)', fg: 'var(--success)', Icon: Zap },
@@ -52,7 +68,7 @@ const WfNode = ({ node }) => {
         <Ico size={13} style={{ color: s.fg }} />
         <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.06em', color: s.fg }}>{s.tag}</span>
       </div>
-      <div style={{ padding: '9px 10px', fontSize: 12.5, fontWeight: 500 }}>{node.label}</div>
+      <div style={{ padding: '9px 10px', fontSize: 12.5, fontWeight: 500 }}>{node.label}{node.comp && <span style={{ display: 'block', fontSize: 9.5, color: 'var(--danger)', marginTop: 3, fontWeight: 600 }}>↺ compensates</span>}</div>
     </div>
   );
 };
@@ -299,15 +315,13 @@ export const MedusaAdminPortal = ({ view }) => {
   // Shared PO status → badge map, used by the Orders and Fulfilment tabs.
   const poStatusBadge = { draft: 'badge-neutral', submitted: 'badge-warning', approved: 'badge-info', sent: 'badge-info', received: 'badge-success', rejected: 'badge-danger' };
 
-  const [selectedWf, setSelectedWf] = useState(MEDUSA_WORKFLOWS[0].id);
-  const [eventLog, setEventLog] = useState([]);
-  const [firing, setFiring] = useState(null);
-
   // Live workflow engine (registered workflows + recent executions).
   const [engine, setEngine] = useState(null);
   const [engineReloadKey, setEngineReloadKey] = useState(0);
   const [runningWf, setRunningWf] = useState(false);
   const [lastRun, setLastRun] = useState(null);
+  const [runSku, setRunSku] = useState('');
+  const [runQty, setRunQty] = useState(5);
   useEffect(() => {
     if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setEngine(null); return undefined; }
     let cancelled = false;
@@ -438,7 +452,9 @@ export const MedusaAdminPortal = ({ view }) => {
   const runWorkflow = async (fail) => {
     setRunningWf(true); setLastRun(null);
     try {
-      const res = await runEngineWorkflow({ quantity: 5, sku: 'DROMEX-BOOT', fail }, commerceScope);
+      const sku = runSku.trim() || (products[0]?.sku ?? 'DROMEX-BOOT');
+      const quantity = Number(runQty) > 0 ? Number(runQty) : 5;
+      const res = await runEngineWorkflow({ quantity, sku, fail }, commerceScope);
       setLastRun(res);
       triggerNotification(
         fail ? 'Saga compensated' : 'Workflow executed',
@@ -1148,9 +1164,8 @@ export const MedusaAdminPortal = ({ view }) => {
     );
   }
 
-  /* ---------------- Workflows (n8n-style canvas) ---------------- */
+  /* ---------------- Workflows (real saga canvas) ---------------- */
   if (view === 'workflows') {
-    const wf = MEDUSA_WORKFLOWS.find(w => w.id === selectedWf) || MEDUSA_WORKFLOWS[0];
     const engineLive = !!engine && Array.isArray(engine.workflows);
     const relTime = (iso) => {
       if (!iso) return '—';
@@ -1227,44 +1242,53 @@ export const MedusaAdminPortal = ({ view }) => {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {MEDUSA_WORKFLOWS.map(w => (
-            <button key={w.id} onClick={() => setSelectedWf(w.id)} className={`btn btn-sm ${w.id === selectedWf ? 'btn-primary' : 'btn-secondary'}`}>
-              {w.name}
-              {w.status === 'retrying' && <RotateCw size={13} />}
-            </button>
-          ))}
-        </div>
         <div className="card">
           <div className="card-hd">
             <div>
-              <h3>{wf.name}</h3>
-              <div className="card-sub">{wf.nodes.length} steps · {wf.compensates ? 'rolls back on failure' : 'no compensation'}</div>
+              <h3>{REAL_SAGA.name}</h3>
+              <div className="card-sub">{REAL_SAGA.nodes.length} steps · {REAL_SAGA.compensates ? 'rolls back on failure' : 'no compensation'} · <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 11 }}>{REAL_SAGA.id}</span></div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span className={`badge ${wf.status === 'healthy' ? 'badge-success' : 'badge-warning'}`}>{wf.status}</span>
-              <span className="badge badge-neutral">{wf.runs24h} runs / 24h</span>
+              <span className="badge badge-success">real saga</span>
+              <span className="badge badge-neutral">store: true · durable</span>
             </div>
           </div>
           <div className="card-bd">
             <div style={{ overflowX: 'auto', paddingBottom: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', minWidth: 'max-content', padding: '6px 2px' }}>
-                {wf.nodes.map((n, i) => (
+                {REAL_SAGA.nodes.map((n, i) => (
                   <React.Fragment key={i}>
                     <WfNode node={n} />
-                    {i < wf.nodes.length - 1 && <Connector />}
+                    {i < REAL_SAGA.nodes.length - 1 && <Connector />}
                   </React.Fragment>
                 ))}
               </div>
             </div>
-            {wf.compensates && (
+            {REAL_SAGA.compensates && (
               <div className="card" style={{ boxShadow: 'none', background: 'var(--danger-weak)', borderColor: 'var(--primary-weak-bd)', marginTop: 14 }}>
                 <div className="card-bd" style={{ padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <RotateCw size={15} style={{ color: 'var(--danger)' }} />
-                  <span style={{ fontSize: 13 }}>On failure the saga <strong>compensates in reverse</strong> — release reservation, restore stock, void the audit entry — so state never ends up half-applied.</span>
+                  <span style={{ fontSize: 13 }}>On failure the saga <strong>compensates in reverse</strong> — release the reservation, then void the audit entry — so state never ends up half-applied. ({REAL_SAGA.note})</span>
                 </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Run the real saga on a chosen SKU + quantity (B) */}
+        <div className="card">
+          <div className="card-hd"><h3>Run the saga</h3><span className="badge badge-neutral">live · commerce.manage (MFA)</span></div>
+          <div className="card-bd" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div className="field" style={{ flex: '2 1 220px', margin: 0 }}>
+              <label className="field-label">SKU {products.length ? `(catalogue has ${products.length})` : ''}</label>
+              <input className="input" placeholder={products[0]?.sku ?? 'DROMEX-BOOT'} value={runSku} onChange={(e) => setRunSku(e.target.value)} />
+            </div>
+            <div className="field" style={{ flex: '1 1 110px', margin: 0 }}>
+              <label className="field-label">Quantity</label>
+              <input className="input" type="number" min={1} value={runQty} onChange={(e) => setRunQty(e.target.value)} />
+            </div>
+            <button className="btn btn-primary" disabled={runningWf} onClick={() => runWorkflow(false)}><Play size={13} /> {runningWf ? 'Running…' : 'Run saga'}</button>
+            <button className="btn btn-secondary" disabled={runningWf} onClick={() => runWorkflow(true)} title="Trigger a downstream failure at the audit step to watch the saga compensate"><RotateCw size={13} /> Run + fail</button>
           </div>
         </div>
       </Wrap>
