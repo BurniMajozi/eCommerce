@@ -12,14 +12,14 @@ export default async function bootstrapAdmin({ container }: ExecArgs): Promise<v
     catch (e) { logger.warn(`[admin] ${label} skipped: ${(e as Error).message.slice(0, 160)}`); }
   };
 
+  // NB: the tax-regions workflow input is a bare array (CreateTaxRegionDTO[]),
+  // unlike promotions/customers which take a wrapper object.
   await run('tax regions', () => createTaxRegionsWorkflow(container).run({
-    input: {
-      tax_regions: [
-        { country_code: 'za', default_tax_rate: { name: 'VAT', rate: 15, code: 'ZA-VAT' } },
-        { country_code: 'bw', default_tax_rate: { name: 'VAT', rate: 14, code: 'BW-VAT' } },
-        { country_code: 'na', default_tax_rate: { name: 'VAT', rate: 15, code: 'NA-VAT' } },
-      ],
-    } as Parameters<typeof createTaxRegionsWorkflow>[0] extends never ? never : any,
+    input: [
+      { country_code: 'za', default_tax_rate: { name: 'VAT', rate: 15, code: 'ZA-VAT' } },
+      { country_code: 'bw', default_tax_rate: { name: 'VAT', rate: 14, code: 'BW-VAT' } },
+      { country_code: 'na', default_tax_rate: { name: 'VAT', rate: 15, code: 'NA-VAT' } },
+    ] as any,
   }));
 
   await run('promotions', () => createPromotionsWorkflow(container).run({
