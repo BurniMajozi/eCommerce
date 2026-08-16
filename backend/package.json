@@ -15,6 +15,7 @@
     "bootstrap:links": "medusa exec ./src/scripts/bootstrap-links.ts",
     "bootstrap:products": "medusa exec ./src/scripts/bootstrap-products.ts",
     "bootstrap:admin": "medusa exec ./src/scripts/bootstrap-admin.ts",
+    "provision:check": "medusa exec ./src/scripts/provision-check.ts",
     "config:check": "node scripts/check-config.mjs",
     "test": "tsx --test test/**/*.test.ts",
     "typecheck": "tsc --noEmit"

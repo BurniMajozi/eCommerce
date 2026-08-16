@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, fetchCommerceConfig, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, fetchCommerceConfig, fetchEngine, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { ProductThumb } from './ProductThumb';
 import { ProductFormModal } from './ProductFormModal';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -100,6 +100,18 @@ export const MedusaAdminPortal = ({ view }) => {
   const [selectedWf, setSelectedWf] = useState(MEDUSA_WORKFLOWS[0].id);
   const [eventLog, setEventLog] = useState([]);
   const [firing, setFiring] = useState(null);
+
+  // Live workflow engine (registered workflows + recent executions).
+  const [engine, setEngine] = useState(null);
+  useEffect(() => {
+    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setEngine(null); return undefined; }
+    let cancelled = false;
+    fetchEngine(commerceScope)
+      .then((r) => { if (!cancelled) setEngine(r); })
+      .catch(() => { if (!cancelled) setEngine(null); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId]);
 
   const medusaScope = {
     accessToken: auth.session?.access_token,
@@ -544,9 +556,69 @@ export const MedusaAdminPortal = ({ view }) => {
   /* ---------------- Workflows (n8n-style canvas) ---------------- */
   if (view === 'workflows') {
     const wf = MEDUSA_WORKFLOWS.find(w => w.id === selectedWf) || MEDUSA_WORKFLOWS[0];
+    const engineLive = !!engine && Array.isArray(engine.workflows);
+    const relTime = (iso) => {
+      if (!iso) return '—';
+      const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+      if (s < 60) return `${s}s ago`;
+      if (s < 3600) return `${Math.round(s / 60)}m ago`;
+      if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+      return `${Math.round(s / 86400)}d ago`;
+    };
+    const stateBadge = (st) => st === 'done' ? 'badge-success' : (st === 'failed' || st === 'reverted') ? 'badge-danger' : 'badge-warning';
     return (
       <Wrap>
-        <Head icon={Workflow} title="Workflow Engine" sub="Durable, compensatable workflows — the actual step design, like a flow canvas. This is what makes issuing stock roll back cleanly." />
+        <Head icon={Workflow} title="Workflow Engine" sub="Durable, compensatable workflows — the actual step design, like a flow canvas. This is what makes issuing stock roll back cleanly."
+          action={<span className={`badge ${engineLive ? 'badge-success' : 'badge-neutral'}`}>{engineLive ? `Live · ${engine.workflowCount} workflows registered` : 'Demo data'}</span>} />
+
+        {/* Live engine — real registered workflows + execution history */}
+        {engineLive && (
+          <div className="card">
+            <div className="card-hd">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Zap size={16} style={{ color: 'var(--success)' }} /><h3>Live engine</h3></div>
+              <span className="badge badge-neutral">{engine.executionsTotal} execution{engine.executionsTotal === 1 ? '' : 's'} recorded</span>
+            </div>
+            <div className="card-bd" style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 300px', minWidth: 280 }}>
+                <div className="eyebrow" style={{ marginBottom: 8 }}>Recent executions</div>
+                <div className="table-wrap card" style={{ boxShadow: 'none' }}>
+                  <table className="table">
+                    <thead><tr><th>Workflow</th><th className="center">State</th><th className="num">When</th></tr></thead>
+                    <tbody>
+                      {engine.executions.length === 0 && <tr><td colSpan={3} className="muted" style={{ textAlign: 'center', padding: 18 }}>No durable executions recorded yet — synchronous flows don’t persist a row.</td></tr>}
+                      {engine.executions.map((e) => (
+                        <tr key={e.transactionId}>
+                          <td style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12 }}>{e.workflowId}</td>
+                          <td className="center"><span className={`badge ${stateBadge(e.state)}`}>{e.state}</span></td>
+                          <td className="num muted" style={{ fontSize: 12 }}>{relTime(e.updatedAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div style={{ flex: '1 1 300px', minWidth: 280 }}>
+                <div className="eyebrow" style={{ marginBottom: 8 }}>Registered workflows ({engine.workflowCount})</div>
+                <div className="table-wrap card" style={{ boxShadow: 'none', maxHeight: 280, overflowY: 'auto' }}>
+                  <table className="table">
+                    <thead><tr><th>ID</th><th className="num">Steps</th><th className="center">Mode</th></tr></thead>
+                    <tbody>
+                      {engine.workflows.map((w) => (
+                        <tr key={w.id}>
+                          <td style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 11.5 }}>{w.id}</td>
+                          <td className="num">{w.steps}</td>
+                          <td className="center"><span className={`badge ${w.async ? 'badge-info' : 'badge-neutral'}`}>{w.async ? 'async' : 'sync'}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div className="card-bd" style={{ paddingTop: 0 }}><p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Read live from the Medusa orchestrator on this tenant’s backend. The canvas below is the annotated step design for the selected saga.</p></div>
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {MEDUSA_WORKFLOWS.map(w => (
             <button key={w.id} onClick={() => setSelectedWf(w.id)} className={`btn btn-sm ${w.id === selectedWf ? 'btn-primary' : 'btn-secondary'}`}>
@@ -601,7 +673,8 @@ export const MedusaAdminPortal = ({ view }) => {
     };
     return (
       <Wrap>
-        <Head icon={Radio} title="Event Bus & Subscribers" sub="Domain events and the async subscribers that react. Publish a test event and watch it fan out." />
+        <Head icon={Radio} title="Event Bus & Subscribers" sub="Domain events and the async subscribers that react. Publish a test event and watch it fan out."
+          action={<span className={`badge ${engine ? 'badge-success' : 'badge-neutral'}`}>{engine ? 'Engine connected · Redis' : 'Demo data'}</span>} />
         <div className="cols" style={{ gridTemplateColumns: '1.4fr 1fr' }}>
           <div className="card">
             <div className="card-hd"><h3>Events</h3></div>

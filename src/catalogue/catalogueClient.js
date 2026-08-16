@@ -84,6 +84,9 @@ export const fetchProfitability = (scope) => scopedJson('/app/catalogue/profit',
 // Live data for the Promotions / Tax / Fulfilment / Customers admin screens.
 export const fetchCommerceConfig = (scope) => scopedJson('/app/commerce/config', scope);
 
+// Live workflow engine: registered workflows + recent executions.
+export const fetchEngine = (scope) => scopedJson('/app/engine', scope);
+
 // Uploads a product photo (base64) and returns its public URL.
 export const uploadProductImage = ({ sku, filename, contentType, dataBase64 }, scope) => scopedJson('/app/products/image', {
   ...scope,
