@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { InvoiceModal } from './InvoiceModal';
 import { ProductThumb } from './ProductThumb';
-import { createOrder, fetchOrders, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { createOrder, fetchOrders, fetchParties, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { Receipt, Plus, FileText, ArrowRight, Store, TrendingUp, Loader2 } from 'lucide-react';
 
 export const QuotationInvoicingPortal = () => {
@@ -25,7 +25,28 @@ export const QuotationInvoicingPortal = () => {
   useEffect(() => { loadOrders(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [live, scope.accessToken, scope.tenantId, scope.siteId]);
 
   const [clientName, setClientName] = useState('Rand Colliery');
+  const [customers, setCustomers] = useState([]);
+  const [customerId, setCustomerId] = useState('');
   const [vatNumber, setVatNumber] = useState('ZA4920194821');
+
+  // Live customers so the order links to a real account (drives spend-vs-limit).
+  useEffect(() => {
+    if (!live) return;
+    let active = true;
+    fetchParties(scope).then(r => {
+      if (!active) return;
+      const cs = r.customers ?? [];
+      setCustomers(cs);
+      if (cs[0]) { setCustomerId(cs[0].id); setClientName(cs[0].company); }
+    }).catch(() => {});
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, scope.accessToken, scope.tenantId, scope.siteId]);
+  const pickCustomer = (id) => {
+    setCustomerId(id);
+    const c = customers.find(x => x.id === id);
+    if (c) setClientName(c.company);
+  };
   const [poNumber, setPoNumber] = useState('PO-88213');
   // Seed a couple of demo lines from whatever products exist. Guards against an
   // empty/short catalogue (live mode before products are seeded) so the page
@@ -55,7 +76,8 @@ export const QuotationInvoicingPortal = () => {
     if (live) {
       setSubmitting(true);
       try {
-        await createOrder({ clientName, vatNumber, poNumber, taxEnabled, items: items.map(i => ({ sku: i.sku, qty: i.qty })) }, scope);
+        const cust = customers.find(x => x.id === customerId);
+        await createOrder({ clientName, customerId: customerId || undefined, email: cust?.email || undefined, vatNumber, poNumber, taxEnabled, items: items.map(i => ({ sku: i.sku, qty: i.qty })) }, scope);
         triggerNotification('Order placed', `Draft order created for ${clientName}.`, 'success');
         setItems([]);
         loadOrders();
@@ -88,7 +110,11 @@ export const QuotationInvoicingPortal = () => {
           </div>
           <form className="card-bd" onSubmit={createQuote} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div className="cols cols-2">
-              <div className="field"><label className="field-label">Client</label><input className="input" value={clientName} onChange={e => setClientName(e.target.value)} required /></div>
+              <div className="field"><label className="field-label">Client</label>
+                {live && customers.length > 0
+                  ? <select className="select" value={customerId} onChange={e => pickCustomer(e.target.value)}>{customers.map(c => <option key={c.id} value={c.id}>{c.company}</option>)}</select>
+                  : <input className="input" value={clientName} onChange={e => setClientName(e.target.value)} required />}
+              </div>
               <div className="field"><label className="field-label">VAT number</label><input className="input" value={vatNumber} onChange={e => setVatNumber(e.target.value)} required /></div>
             </div>
             <div className="field"><label className="field-label">PO number</label><input className="input" value={poNumber} onChange={e => setPoNumber(e.target.value)} /></div>

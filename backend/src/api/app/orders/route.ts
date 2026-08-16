@@ -9,6 +9,7 @@ import { selectSellingPrice, type MedusaVariantRecord } from '../../../catalogue
 type LineInput = { sku?: string; qty?: number | string; quantity?: number | string };
 type Body = {
   clientName?: string;
+  customerId?: string;
   email?: string;
   vatNumber?: string;
   poNumber?: string;
@@ -73,7 +74,7 @@ export async function GET(req: TenantScopedRequest, res: MedusaResponse): Promis
   } catch (error) {
     if (error instanceof ScopeError) { res.status(error.status).json({ code: error.code, message: error.message }); return; }
     if (error instanceof CatalogueConfigurationError) { res.status(409).json({ code: error.code, message: error.message }); return; }
-    throw error;
+    res.status(500).json({ code: 'order_failed', message: (error as Error).message || 'The order could not be created.' });
   }
 }
 
@@ -98,7 +99,7 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
     const skus = [...new Set(lines.map((l) => l.sku))];
     const { data: products } = await query.graph({
       entity: 'product',
-      fields: ['title', 'thumbnail', 'variants.id', 'variants.sku', 'variants.title', '*variants.prices'],
+      fields: ['title', 'thumbnail', 'variants.id', 'variants.sku', 'variants.title', 'variants.prices.*'],
       filters: { variants: { sku: skus }, sales_channels: { id: context.salesChannelId } },
     } as Parameters<typeof query.graph>[0]);
 
@@ -118,6 +119,8 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
 
     const missing = skus.filter((s) => !bySku.has(s));
     if (missing.length) throw new ScopeError(400, 'unknown_skus', `These products are not in the catalogue: ${missing.join(', ')}.`);
+    const unpriced = skus.filter((s) => bySku.get(s)?.price == null);
+    if (unpriced.length) throw new ScopeError(400, 'missing_price', `No selling price is set for: ${unpriced.join(', ')}. Add a price on the product first.`);
 
     const items = lines.map((l) => {
       const p = bySku.get(l.sku)!;
@@ -130,12 +133,23 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
       };
     });
 
+    // Link the order to a customer so spend-vs-limit reporting works. Prefer the
+    // explicit customerId; else match an existing customer by email.
+    let customerId = body.customerId?.trim() || undefined;
+    if (!customerId && body.email?.trim()) {
+      try {
+        const { data: matches } = await query.graph({ entity: 'customer', fields: ['id'], filters: { email: body.email.trim().toLowerCase() } } as Parameters<typeof query.graph>[0]);
+        customerId = (matches ?? [])[0]?.id;
+      } catch { /* no match */ }
+    }
+
     const orderInput = {
       is_draft_order: true,
       region_id: context.regionId ?? undefined,
       sales_channel_id: context.salesChannelId,
       currency_code: (process.env.CURRENCY ?? 'zar').toLowerCase(),
       email: body.email?.trim() || undefined,
+      customer_id: customerId,
       items,
       metadata: {
         client_name: body.clientName?.trim() || null,
@@ -154,6 +168,6 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
   } catch (error) {
     if (error instanceof ScopeError) { res.status(error.status).json({ code: error.code, message: error.message }); return; }
     if (error instanceof CatalogueConfigurationError) { res.status(409).json({ code: error.code, message: error.message }); return; }
-    throw error;
+    res.status(500).json({ code: 'order_failed', message: (error as Error).message || 'The order could not be created.' });
   }
 }
