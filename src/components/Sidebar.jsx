@@ -6,48 +6,69 @@ import {
   Percent, Truck, Upload, Wallet, Workflow, Radio, X
 } from 'lucide-react';
 
+// Each item declares the capability required to see it. In demo mode and for
+// platform owners (platform.manage), everything is shown; otherwise the nav is
+// filtered to the signed-in user's resolved capabilities so different provisioned
+// users see different views.
 export const NAV_GROUPS = [
   {
     label: 'Operations',
     items: [
-      { id: 'EMPLOYEE', label: 'Request PPE', icon: HardHat },
-      { id: 'MANAGER', label: 'Approvals', icon: ClipboardCheck },
-      { id: 'STOREKEEPER', label: 'Store Counter', icon: PackageOpen },
-      { id: 'EXECUTIVE', label: 'Dashboard', icon: LineChart }
+      { id: 'EMPLOYEE', label: 'Request PPE', icon: HardHat, cap: 'ppe.request.create' },
+      { id: 'MANAGER', label: 'Approvals', icon: ClipboardCheck, cap: 'ppe.approve.tier1' },
+      { id: 'STOREKEEPER', label: 'Store Counter', icon: PackageOpen, cap: 'ppe.stock.issue' },
+      { id: 'EXECUTIVE', label: 'Dashboard', icon: LineChart, cap: 'reports.read' }
     ]
   },
   {
     label: 'Commerce',
     items: [
-      { id: 'MERCHANT', label: 'B2B Sales', icon: Receipt },
-      { id: 'MED_PRODUCTS', label: 'Products & Pricing', icon: Tag },
-      { id: 'MED_INVENTORY', label: 'Inventory & Stock', icon: Boxes },
-      { id: 'MED_ORDERS', label: 'Orders', icon: ShoppingCart },
-      { id: 'MED_PROMOS', label: 'Promotions', icon: BadgePercent },
-      { id: 'MED_TAX', label: 'Tax & VAT', icon: Percent },
-      { id: 'MED_FULFIL', label: 'Fulfilment', icon: Truck },
-      { id: 'MED_IMPORT', label: 'CSV Import', icon: Upload },
-      { id: 'MED_CUSTOMERS', label: 'Customers & Limits', icon: Wallet }
+      { id: 'MERCHANT', label: 'B2B Sales', icon: Receipt, cap: 'commerce.read' },
+      { id: 'MED_PRODUCTS', label: 'Products & Pricing', icon: Tag, cap: 'commerce.read' },
+      { id: 'MED_INVENTORY', label: 'Inventory & Stock', icon: Boxes, cap: 'commerce.read' },
+      { id: 'MED_ORDERS', label: 'Orders', icon: ShoppingCart, cap: 'commerce.read' },
+      { id: 'MED_PROMOS', label: 'Promotions', icon: BadgePercent, cap: 'commerce.manage' },
+      { id: 'MED_TAX', label: 'Tax & VAT', icon: Percent, cap: 'commerce.manage' },
+      { id: 'MED_FULFIL', label: 'Fulfilment', icon: Truck, cap: 'commerce.manage' },
+      { id: 'MED_IMPORT', label: 'CSV Import', icon: Upload, cap: 'commerce.manage' },
+      { id: 'MED_CUSTOMERS', label: 'Customers & Limits', icon: Wallet, cap: 'commerce.manage' }
     ]
   },
   {
     label: 'Engine',
     items: [
-      { id: 'MED_WORKFLOWS', label: 'Workflows', icon: Workflow },
-      { id: 'MED_EVENTS', label: 'Event Bus', icon: Radio }
+      { id: 'MED_WORKFLOWS', label: 'Workflows', icon: Workflow, cap: 'commerce.manage' },
+      { id: 'MED_EVENTS', label: 'Event Bus', icon: Radio, cap: 'commerce.manage' }
     ]
   },
   {
     label: 'Platform',
     items: [
-      { id: 'TENANT_ADMIN', label: 'Tenant Admin', icon: Building2 },
-      { id: 'OWNER', label: 'Platform Owner', icon: ShieldEllipsis }
+      { id: 'TENANT_ADMIN', label: 'Tenant Admin', icon: Building2, cap: 'tenant.config.manage' },
+      { id: 'OWNER', label: 'Platform Owner', icon: ShieldEllipsis, cap: 'platform.manage' }
     ]
   }
 ];
 
+// Returns the nav groups visible to the current capability set (empty groups removed).
+export function visibleNavGroups(tenantAccess) {
+  const showAll = !tenantAccess || tenantAccess.mode === 'demo' || tenantAccess.hasCapability?.('platform.manage');
+  return NAV_GROUPS
+    .map((group) => ({ ...group, items: showAll ? group.items : group.items.filter((i) => !i.cap || tenantAccess.hasCapability?.(i.cap)) }))
+    .filter((group) => group.items.length > 0);
+}
+
 export const Sidebar = ({ open, onClose }) => {
-  const { activeRole, setActiveRole } = useApp();
+  const { activeRole, setActiveRole, tenantAccess } = useApp();
+
+  const groups = React.useMemo(() => visibleNavGroups(tenantAccess), [tenantAccess]);
+  const visibleIds = React.useMemo(() => groups.flatMap((g) => g.items.map((i) => i.id)), [groups]);
+
+  // Land the user on a view they can actually access (e.g. a worker on Request
+  // PPE, a merchant on B2B Sales) instead of a hidden default.
+  React.useEffect(() => {
+    if (visibleIds.length && !visibleIds.includes(activeRole)) setActiveRole(visibleIds[0]);
+  }, [visibleIds, activeRole, setActiveRole]);
 
   const pick = (id) => { setActiveRole(id); if (onClose) onClose(); };
 
@@ -64,7 +85,7 @@ export const Sidebar = ({ open, onClose }) => {
         </div>
 
         <nav className="sidebar-nav">
-          {NAV_GROUPS.map(group => (
+          {groups.map(group => (
             <div key={group.label}>
               <div className="nav-group-label">{group.label}</div>
               {group.items.map(item => {
