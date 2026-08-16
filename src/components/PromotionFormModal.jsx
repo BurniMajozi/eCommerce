@@ -55,13 +55,13 @@ export const PromotionFormModal = ({ products, onClose, onCreated, scope }) => {
   };
 
   return (
-    <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 80, padding: 16 }}>
-      <div className="card" style={{ width: 560, maxWidth: '100%', maxHeight: '90vh', overflow: 'auto' }}>
-        <div className="card-hd">
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-hd">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><BadgePercent size={18} style={{ color: 'var(--primary)' }} /><h3>New promotion</h3></div>
-          <button className="btn-icon" onClick={onClose}><X size={16} /></button>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
-        <div className="card-bd" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="field">
             <label className="field-label">Product</label>
             <div style={{ position: 'relative' }}>

@@ -16,7 +16,7 @@ export const InvoiceModal = ({ invoice, onClose }) => {
         </div>
 
         {/* Printable body — fixed light styling for print fidelity */}
-        <div style={{ background: '#ffffff', color: '#1a1d23', padding: 30 }}>
+        <div className="modal-bd" style={{ background: '#ffffff', color: '#1a1d23', padding: 30, overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #1a1d23', paddingBottom: 18 }}>
             <div>
               <img src="/sightlive-logo.svg" alt="SightLive" style={{ height: 44, display: 'block' }} />
@@ -85,7 +85,7 @@ export const InvoiceModal = ({ invoice, onClose }) => {
           </div>
         </div>
 
-        <div className="modal-bd no-print" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div className="modal-ft no-print" style={{ display: 'flex', justifyContent: 'flex-end', padding: '14px 22px', borderTop: '1px solid var(--border)' }}>
           <button className="btn btn-secondary" onClick={onClose}>Close preview</button>
         </div>
       </div>
