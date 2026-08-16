@@ -66,9 +66,11 @@ export async function fetchTenantMembers(tenantId) {
   }
 
   return (memberships ?? []).map((m) => ({
+    membershipId: m.id,
     id: profiles[m.user_id]?.employee_number || m.user_id.slice(0, 8),
     name: profiles[m.user_id]?.display_name || '(member)',
     role: (m.membership_roles ?? []).map((entry) => entry.role?.name).filter(Boolean).join(', ') || '—',
+    roleIds: (m.membership_roles ?? []).map((entry) => entry.role?.id).filter(Boolean),
     dept: m.department || '—',
     status: m.status,
   }));
@@ -105,4 +107,83 @@ export async function fetchRolesCapabilities() {
       .map((k) => capById.get(k))
       .filter(Boolean),
   }));
+}
+
+// ── Writes (require the 202608160001_owner_writes_rls migration) ─────────────
+
+// Provision a new tenant + its branding row. Returns the new tenant id.
+export async function provisionTenantDb(name, slug) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const safeSlug = (slug || name || 'new-tenant').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const { data: tenant, error } = await supabase
+    .from('tenants')
+    .insert({ name, slug: safeSlug, status: 'setup', plan_key: 'trial' })
+    .select('id, name, slug, status, plan_key')
+    .single();
+  if (error) throw error;
+  // Seed a branding row so the accent/logo editor has something to update.
+  await supabase.from('tenant_branding').upsert({ tenant_id: tenant.id, accent_color: '#2563EB' }).then(() => {});
+  return tenant;
+}
+
+// Persist tenant branding (accent / ink / ground / logo_path).
+export async function upsertTenantBranding(tenantId, patch) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase
+    .from('tenant_branding')
+    .upsert({ tenant_id: tenantId, ...patch, updated_at: new Date().toISOString() });
+  if (error) throw error;
+}
+
+// Upload a tenant logo to the private bucket (path: <tenantId>/logo.<ext>).
+// Returns the storage object path (not a public URL — bucket is private).
+export async function uploadTenantLogo(tenantId, file) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+  const path = `${tenantId}/logo.${ext}`;
+  const { error } = await supabase.storage.from('ppe-private').upload(path, file, { upsert: true, cacheControl: '3600' });
+  if (error) throw error;
+  return path;
+}
+
+// Invite a member to a tenant with the given role ids.
+export async function inviteTenantMember(tenantId, email, roleIds) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const token = crypto.randomUUID();
+  const { error } = await supabase.from('invitations').insert({
+    tenant_id: tenantId,
+    email,
+    invited_by: (await supabase.auth.getUser()).data.user?.id,
+    role_ids: roleIds || [],
+    site_ids: [],
+    token_hash: token,
+    status: 'pending',
+    expires_at: new Date(Date.now() + 7 * 864e5).toISOString(),
+  });
+  if (error) throw error;
+}
+
+// Assign (or remove) a role on a membership.
+export async function setMemberRole(membershipId, roleId, assign) {
+  if (!supabase) throw new Error('Supabase not configured');
+  if (assign) {
+    const { error } = await supabase.from('membership_roles').insert({ membership_id: membershipId, role_id: roleId });
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from('membership_roles').delete().eq('membership_id', membershipId).eq('role_id', roleId);
+    if (error) throw error;
+  }
+}
+
+// Record an audit event (owner/platform actions).
+export async function recordAudit(tenantId, action, targetType, source, meta = {}) {
+  if (!supabase) return;
+  await supabase.from('audit_events').insert({
+    tenant_id: tenantId,
+    actor_user_id: (await supabase.auth.getUser()).data.user?.id,
+    action,
+    target_type: targetType,
+    source,
+    metadata: meta,
+  }).then(() => {}, () => {});
 }

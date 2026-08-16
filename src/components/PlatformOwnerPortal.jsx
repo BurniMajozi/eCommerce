@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { MOCK_AUDIT_LOG, ROLE_HOME_CARDS } from '../data/mockData';
-import { fetchPlatformTenants, fetchAuditEvents, fetchTenantMembers, fetchRolesCapabilities } from '../tenant/adminReads';
+import { fetchPlatformTenants, fetchAuditEvents, fetchTenantMembers, fetchRolesCapabilities, provisionTenantDb, upsertTenantBranding, uploadTenantLogo, inviteTenantMember, setMemberRole, recordAudit } from '../tenant/adminReads';
 import { Building2, Plus, Palette, Smartphone, Wallet, ScrollText, LayoutGrid, AlertTriangle, Users, ShieldCheck } from 'lucide-react';
 
 const ACCENT_SWATCHES = ['#EC3013', '#2563EB', '#0891B2', '#7C3AED', '#059669', '#D97706'];
@@ -9,6 +9,29 @@ const ACCENT_SWATCHES = ['#EC3013', '#2563EB', '#0891B2', '#7C3AED', '#059669', 
 const SourceBadge = ({ live }) => (
   <span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live · RLS' : 'Demo data'}</span>
 );
+
+const InviteMember = ({ roles, onInvite }) => {
+  const [email, setEmail] = useState('');
+  const [roleId, setRoleId] = useState('');
+  return (
+    <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)', marginBottom: 14 }}>
+      <div className="card-bd" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div className="field" style={{ flex: '2 1 200px', margin: 0 }}>
+          <label className="field-label">Invite email</label>
+          <input className="input" type="email" placeholder="name@mine.co.za" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </div>
+        <div className="field" style={{ flex: '1 1 160px', margin: 0 }}>
+          <label className="field-label">Role</label>
+          <select className="select" value={roleId} onChange={(e) => setRoleId(e.target.value)}>
+            <option value="">No role</option>
+            {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </div>
+        <button className="btn btn-primary" disabled={!email.trim()} onClick={() => { onInvite(email.trim(), roleId); setEmail(''); }}>Invite</button>
+      </div>
+    </div>
+  );
+};
 
 export const PlatformOwnerPortal = () => {
   const { tenants, selectedTenantId, setSelectedTenantId, modules, toggleTenantModule, updateTenantBranding, provisionTenant, integrationMode } = useApp();
@@ -83,7 +106,18 @@ export const PlatformOwnerPortal = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Building2 size={17} style={{ color: 'var(--primary)' }} /><h3>Tenants</h3><SourceBadge live={tenantsLive} /></div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input className="input" value={newTenantName} onChange={e => setNewTenantName(e.target.value)} placeholder="New tenant name" style={{ width: 180 }} />
-            <button className="btn btn-primary" onClick={() => { provisionTenant(newTenantName.trim()); setNewTenantName(''); }}><Plus size={16} /> Provision</button>
+            <button className="btn btn-primary" disabled={!newTenantName.trim()} onClick={async () => {
+              try {
+                const t = await provisionTenantDb(newTenantName.trim());
+                await recordAudit(t.id, 'tenant.provision', 'tenant', 'platform_owner');
+                setNewTenantName('');
+                // reload live tenant list
+                fetchPlatformTenants().then(rows => setLiveTenants(rows ?? [])).catch(() => {});
+                triggerNotification('Tenant provisioned', `“${t.name}” created (setup · trial).`, 'success');
+              } catch (err) {
+                triggerNotification('Provision failed', err.message || 'Could not create tenant.', 'danger');
+              }
+            }}><Plus size={16} /> Provision</button>
           </div>
         </div>
 
@@ -128,14 +162,38 @@ export const PlatformOwnerPortal = () => {
               <div className="eyebrow" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Palette size={13} /> Branding — {tenant.name}</div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 12 }}>
                 <span className="avatar" style={{ width: 52, height: 52, fontSize: 20, background: tenant.branding.accent }}>{tenant.branding.logo}</span>
-                <div className="muted" style={{ fontSize: 12.5 }}>SVG or PNG<br />light + dark mark</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
+                    Upload logo
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        const path = await uploadTenantLogo(tenant.id, file);
+                        await upsertTenantBranding(tenant.id, { logo_path: path });
+                        await recordAudit(tenant.id, 'tenant.branding.logo', 'tenant', 'platform_owner');
+                        triggerNotification('Logo uploaded', `Stored for ${tenant.name}.`, 'success');
+                      } catch (err) {
+                        triggerNotification('Upload failed', err.message || 'Could not store logo.', 'danger');
+                      }
+                    }} />
+                  </label>
+                  <span className="muted" style={{ fontSize: 12 }}>PNG / SVG · private bucket</span>
+                </div>
               </div>
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
                 {ACCENT_SWATCHES.map(c => {
                   const on = tenant.branding.accent.toUpperCase() === c;
                   return (
-                    <button key={c} onClick={() => updateTenantBranding(tenant.id, { accent: c })}
+                    <button key={c} onClick={async () => {
+                      try {
+                        await upsertTenantBranding(tenant.id, { accent_color: c });
+                        await recordAudit(tenant.id, 'tenant.branding.accent', 'tenant', 'platform_owner', { accent: c });
+                      } catch (err) {
+                        triggerNotification('Branding failed', err.message || 'Could not save accent.', 'danger');
+                      }
+                    }}
                       style={{ width: 34, height: 34, borderRadius: 8, background: c, cursor: 'pointer', border: on ? '2px solid var(--text)' : '2px solid var(--border)', outline: on ? '2px solid var(--text)' : 'none', outlineOffset: 2 }}
                       aria-label={`accent ${c}`} />
                   );
@@ -193,32 +251,65 @@ export const PlatformOwnerPortal = () => {
           <span className="badge badge-neutral">{liveMembers ? liveMembers.length : (tenant.users ?? 0)} members</span>
         </div>
         <div className="card-bd">
+          {/* Invite a member */}
+          {integrationMode === 'supabase' && (
+            <InviteMember
+              roles={(liveRbac ?? []).filter(r => !r.privileged)}
+              onInvite={async (email, roleId) => {
+                try {
+                  await inviteTenantMember(tenant.id, email, roleId ? [roleId] : []);
+                  await recordAudit(tenant.id, 'member.invite', 'tenant', 'platform_owner', { email });
+                  triggerNotification('Invite sent', `Invitation to ${email} recorded.`, 'success');
+                } catch (err) {
+                  triggerNotification('Invite failed', err.message || 'Could not invite member.', 'danger');
+                }
+              }}
+            />
+          )}
           {liveMembers === null ? (
             <div className="muted" style={{ fontSize: 13 }}>Connect to Supabase to list this tenant's members.</div>
           ) : liveMembers.length === 0 ? (
             <div className="muted" style={{ fontSize: 13 }}>No members yet for this tenant.</div>
           ) : (
-            <div className="table-wrap">
+            <div className="table-wrap" style={{ marginTop: 12 }}>
               <table className="table">
-                <thead><tr><th>Member</th><th>Role</th><th>Department</th><th className="center">Status</th></tr></thead>
+                <thead><tr><th>Member</th><th>Department</th><th className="center">Status</th><th>Roles</th></tr></thead>
                 <tbody>
                   {liveMembers.map((m, i) => (
-                    <tr key={m.id || i}>
+                    <tr key={m.membershipId || m.id || i}>
                       <td style={{ fontWeight: 500 }}>{m.name}</td>
-                      <td>{m.role}</td>
                       <td className="muted">{m.dept}</td>
                       <td className="center"><span className={`badge ${m.status === 'active' ? 'badge-success' : 'badge-warning'}`}>{m.status}</span></td>
+                      <td>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {(liveRbac ?? []).filter(r => !r.privileged).map(r => {
+                            const on = (m.roleIds || []).includes(r.id);
+                            return (
+                              <button key={r.id} onClick={async () => {
+                                try {
+                                  await setMemberRole(m.membershipId, r.id, !on);
+                                  await recordAudit(tenant.id, on ? 'member.role.revoke' : 'member.role.grant', 'tenant', 'platform_owner', { member: m.name, role: r.key });
+                                  // reload members
+                                  fetchTenantMembers(tenant.id).then(rows => setLiveMembers(rows ?? [])).catch(() => {});
+                                } catch (err) {
+                                  triggerNotification('Role update failed', err.message || 'Could not change role.', 'danger');
+                                }
+                              }} className={`btn btn-sm ${on ? 'btn-primary' : 'btn-ghost'}`}>{r.name}</button>
+                            );
+                          })}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-          <p className="muted" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>Role assignment is enforced server-side — the owner cannot reassign roles from the browser yet (write policy lands with billing/invite work).</p>
+          <p className="muted" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>Role assignment writes to <code>membership_roles</code> (gated by tenant.members.manage). Privileged/platform roles are not assignable here.</p>
         </div>
-      </div>
+              </div>
 
-      {/* Access control — real RBAC map (read-only) */}
+              {/* Access control — real RBAC map (read-only) */}
       <div className="card">
         <div className="card-hd">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ShieldCheck size={17} style={{ color: 'var(--primary)' }} /><h3>Access control — roles &amp; capabilities</h3><SourceBadge live={rbacLive} /></div>
