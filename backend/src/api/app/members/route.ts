@@ -17,22 +17,30 @@ export async function GET(req: TenantScopedRequest, res: MedusaResponse): Promis
     assertCapability(scope, 'tenant.members.read');
     const db = getServiceClient();
 
+    // NB: no `profiles(display_name)` embed — memberships has no direct FK to
+    // profiles (both reference auth.users), so PostgREST can't join them. Name
+    // and email come from auth.users via the admin API instead.
     const { data: rows, error } = await db
       .from('memberships')
-      .select('id, user_id, status, profiles(display_name), membership_roles(role:roles(key,name))')
+      .select('id, user_id, status, membership_roles(role:roles(key,name))')
       .eq('tenant_id', scope.tenantId)
       .neq('status', 'closed');
     if (error) throw new Error(error.message);
 
-    // Emails live in auth.users — fetch per member (small N).
+    // Name + email live in auth.users — fetch per member (small N).
     const members = await Promise.all((rows ?? []).map(async (m: any) => {
       let email: string | null = null;
-      try { const { data } = await db.auth.admin.getUserById(m.user_id); email = data?.user?.email ?? null; } catch { /* ignore */ }
+      let name: string | null = null;
+      try {
+        const { data } = await db.auth.admin.getUserById(m.user_id);
+        email = data?.user?.email ?? null;
+        name = (data?.user?.user_metadata as { display_name?: string } | undefined)?.display_name ?? null;
+      } catch { /* ignore */ }
       const roles = (m.membership_roles ?? []).map((r: any) => r.role?.key).filter(Boolean);
       return {
         membershipId: m.id,
         userId: m.user_id,
-        name: m.profiles?.display_name ?? email ?? 'Member',
+        name: name || email || 'Member',
         email,
         role: roles[0] ?? null,
         roles,

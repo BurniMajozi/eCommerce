@@ -30,9 +30,10 @@ export default async function provisionCheck({ container }: ExecArgs): Promise<v
   }
 
   // --- 2) Live scope resolution for each real member of the tenant ----------
+  // No profiles embed — memberships has no FK to profiles (both -> auth.users).
   const { data: members, error: mErr } = await db
     .from('memberships')
-    .select('user_id, status, profiles(display_name), membership_roles(role:roles(key)), membership_sites(site_id)')
+    .select('user_id, status, membership_roles(role:roles(key)), membership_sites(site_id)')
     .eq('tenant_id', tenantId)
     .neq('status', 'revoked');
   if (mErr) { logger.warn(`[provision] members read failed: ${mErr.message}`); return; }
@@ -45,7 +46,7 @@ export default async function provisionCheck({ container }: ExecArgs): Promise<v
       const resolved = await resolveSupabaseAccess(m.user_id, tenantId, siteId);
       const capCount = resolved?.capabilities?.length ?? 0;
       const mfaCount = resolved?.mfa_capabilities?.length ?? 0;
-      logger.info(`[provision] ${(m.profiles?.display_name || m.user_id).slice(0, 24).padEnd(24)} status=${m.status} roles=[${roleKeys.join(',')}] -> ${capCount} caps, ${mfaCount} mfa-gated`);
+      logger.info(`[provision] ${String(m.user_id).slice(0, 24).padEnd(24)} status=${m.status} roles=[${roleKeys.join(',')}] -> ${capCount} caps, ${mfaCount} mfa-gated`);
     } catch (e) {
       logger.warn(`[provision] ${m.user_id} resolve failed: ${(e as Error).message.slice(0, 100)}`);
     }
