@@ -282,6 +282,8 @@ export const MedusaAdminPortal = ({ view }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId]);
   const cfgLive = (arr) => Array.isArray(arr);
+  // Shared PO status → badge map, used by the Orders and Fulfilment tabs.
+  const poStatusBadge = { draft: 'badge-neutral', submitted: 'badge-warning', approved: 'badge-info', sent: 'badge-info', received: 'badge-success', rejected: 'badge-danger' };
 
   const [selectedWf, setSelectedWf] = useState(MEDUSA_WORKFLOWS[0].id);
   const [eventLog, setEventLog] = useState([]);
@@ -652,10 +654,13 @@ export const MedusaAdminPortal = ({ view }) => {
   if (view === 'orders') {
     const statusBadge = { captured: 'badge-success', authorized: 'badge-info', requires_action: 'badge-warning', draft: 'badge-warning', pending: 'badge-info' };
     const live = liveOrders !== null;
-    // Normalise live B2B orders and mock orders to one row shape.
-    const rows = live
+    // Normalise live B2B orders and mock orders to one row shape. Purchase orders
+    // are a separate inbound (procurement) flow but the user expects them visible
+    // here too, so we merge them as PO rows marked with direction: 'in'.
+    const orderRows = live
       ? liveOrders.map(o => ({
           id: o.displayId ? `#${o.displayId}` : (o.id?.slice(0, 12) ?? '—'),
+          direction: 'out',
           customer: o.clientName || o.email || 'Customer',
           currency: (o.currencyCode || 'zar').toUpperCase(),
           total: (o.items ?? []).reduce((a, i) => a + i.unitPrice * i.qty, 0) * (o.taxEnabled === false ? 1 : 1.15),
@@ -664,29 +669,41 @@ export const MedusaAdminPortal = ({ view }) => {
           fulfil: 'not_fulfilled',
           date: (o.createdAt || '').substring(0, 10),
         }))
-      : MEDUSA_ORDERS;
+      : MEDUSA_ORDERS.map(o => ({ ...o, direction: 'out' }));
+    const poRows = (purchaseOrders ?? []).map(p => ({
+      id: p.reference || (p.id?.slice(0, 12) ?? '—'),
+      direction: 'in',
+      customer: p.supplier || 'Supplier',
+      currency: (p.currency || 'zar').toUpperCase(),
+      total: Number(p.total ?? 0),
+      items: p.lineCount ?? (p.lines ?? []).length,
+      status: p.status || 'draft',
+      fulfil: p.status === 'received' ? 'received' : 'inbound',
+      date: (p.createdAt || p.submittedAt || '').substring(0, 10),
+    }));
+    const rows = [...orderRows, ...poRows];
     return (
       <Wrap>
-        <Head icon={ShoppingCart} title="Orders" sub={live ? 'Live B2B orders — created from the B2B Sales storefront.' : 'B2B orders across regions and currencies.'} />
+        <Head icon={ShoppingCart} title="Orders" sub={live ? 'Live B2B orders (outbound) and purchase orders (inbound), newest first.' : 'B2B orders across regions and currencies.'} />
         <div className="card">
           <div className="card-hd">
             <h3>All orders</h3>
-            <span className={`badge ${live ? 'badge-primary' : 'badge-neutral'}`}>{rows.length} {live ? 'live orders' : 'orders'}</span>
+            <span className={`badge ${live ? 'badge-primary' : 'badge-neutral'}`}>{rows.length} {live ? 'live' : ''} {orderRows.length} out · {poRows.length} PO</span>
           </div>
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Order</th><th>Customer</th><th className="center">Cur</th><th className="num">Total</th><th className="num">Items</th><th className="center">Payment</th><th className="center">Fulfilment</th><th>Date</th></tr></thead>
+              <thead><tr><th>Type</th><th>Ref</th><th>Customer / Supplier</th><th className="center">Cur</th><th className="num">Total</th><th className="num">Items</th><th className="center">Status</th><th>Date</th></tr></thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 20 }}>No orders yet — create one in B2B Sales.</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 20 }}>No orders yet — create one in B2B Sales or raise a PO.</td></tr>}
                 {rows.map(o => (
-                  <tr key={o.id}>
+                  <tr key={`${o.direction}-${o.id}`}>
+                    <td><span className={`badge ${o.direction === 'in' ? 'badge-info' : 'badge-primary'}`}>{o.direction === 'in' ? 'PO' : 'Sale'}</span></td>
                     <td className="muted">{o.id}</td>
                     <td style={{ fontWeight: 500 }}>{o.customer}</td>
                     <td className="center"><span className="badge badge-neutral">{o.currency}</span></td>
                     <td className="num" style={{ fontWeight: 600 }}>{money(o.total, o.currency)}</td>
                     <td className="num">{o.items}</td>
-                    <td className="center"><span className={`badge ${statusBadge[o.status] || 'badge-neutral'}`}>{String(o.status).replace(/_/g, ' ')}</span></td>
-                    <td className="center muted">{String(o.fulfil).replace(/_/g, ' ')}</td>
+                    <td className="center"><span className={`badge ${o.direction === 'in' ? (poStatusBadge[o.status] || 'badge-neutral') : (statusBadge[o.status] || 'badge-neutral')}`}>{String(o.status).replace(/_/g, ' ')}</span></td>
                     <td className="muted">{o.date}</td>
                   </tr>
                 ))}
@@ -796,6 +813,28 @@ export const MedusaAdminPortal = ({ view }) => {
                       <td style={{ fontWeight: 500 }}>{s.company}</td>
                       <td className="muted">{s.category || '—'}</td>
                       <td className="num muted">{s.leadTime || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Inbound — open purchase orders (the actual stock-receiving flow) */}
+          <div className="card">
+            <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ArrowDownLeft size={16} style={{ color: 'var(--success)' }} /><h3>Inbound · open POs</h3></div><span className="badge badge-neutral">{(purchaseOrders ?? []).length}</span></div>
+            <div className="table-wrap">
+              <table className="table">
+                <thead><tr><th>Ref</th><th>Supplier</th><th className="num">Total</th><th className="center">Status</th><th>Expected</th></tr></thead>
+                <tbody>
+                  {(purchaseOrders ?? []).length === 0 && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 20 }}>{live ? 'No purchase orders yet — raise one under Purchase Orders.' : 'Connect the backend to see inbound POs.'}</td></tr>}
+                  {(purchaseOrders ?? []).map((p) => (
+                    <tr key={p.id}>
+                      <td className="muted">{p.reference || (p.id?.slice(0, 12) ?? '—')}</td>
+                      <td style={{ fontWeight: 500 }}>{p.supplier || 'Supplier'}</td>
+                      <td className="num" style={{ fontWeight: 600 }}>{money(Number(p.total ?? 0), (p.currency || 'zar'))}</td>
+                      <td className="center"><span className={`badge ${poStatusBadge[p.status] || 'badge-neutral'}`}>{String(p.status || 'draft').replace(/_/g, ' ')}</span></td>
+                      <td className="muted">{p.expectedDate ? String(p.expectedDate).substring(0, 10) : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
