@@ -24,6 +24,14 @@ create table if not exists purchase_orders (
 );
 create index if not exists purchase_orders_tenant_idx on purchase_orders(tenant_id);
 create index if not exists purchase_orders_supplier_idx on purchase_orders(supplier_id);
+-- Approval + dispatch columns (idempotent for tables created before this).
+alter table purchase_orders add column if not exists submitted_at timestamptz;
+alter table purchase_orders add column if not exists approved_by text;
+alter table purchase_orders add column if not exists approved_at timestamptz;
+alter table purchase_orders add column if not exists approval_signature text;
+alter table purchase_orders add column if not exists rejection_reason text;
+alter table purchase_orders add column if not exists sent_at timestamptz;
+alter table purchase_orders add column if not exists sent_to text;
 `;
 
 export default async function bootstrapPo({ container }: ExecArgs): Promise<void> {

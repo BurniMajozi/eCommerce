@@ -1,8 +1,136 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { fetchPurchaseOrders, updatePurchaseOrder, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { SignaturePad } from './SignaturePad';
 import {
-  Bell, ShieldCheck, AlertTriangle, Check, X, Eye, ArrowRight
+  Bell, ShieldCheck, AlertTriangle, Check, X, Eye, ArrowRight, ClipboardList, PenLine, Loader2, Factory
 } from 'lucide-react';
+
+const rands = (n, cur = 'ZAR') => `${cur === 'ZAR' ? 'R' : cur + ' '}${Number(n || 0).toLocaleString('en-ZA')}`;
+
+// Live purchase-order approvals for managers. A PO submitted by the merchant
+// lands here; the manager approves it with a captured signature or rejects it
+// with a reason. Approval releases the PO back to the merchant to send.
+const PoApprovals = () => {
+  const { auth, tenantAccess, triggerNotification } = useApp();
+  const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
+  const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
+  const me = auth?.session?.user?.user_metadata?.display_name || auth?.session?.user?.email || 'Manager';
+  const [orders, setOrders] = useState([]);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [signing, setSigning] = useState(null); // PO being approved
+  const [signature, setSignature] = useState('');
+  const [approverName, setApproverName] = useState(me);
+  const [rejecting, setRejecting] = useState(null);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!live) return;
+    let active = true;
+    fetchPurchaseOrders(scope).then((r) => { if (active) setOrders((r.orders ?? []).filter((p) => p.status === 'pending_approval')); }).catch(() => { if (active) setOrders([]); });
+    return () => { active = false; };
+  }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const approve = async () => {
+    if (!signature) { triggerNotification('Signature required', 'Please sign to approve the purchase order.', 'warning'); return; }
+    setBusy(true);
+    try {
+      await updatePurchaseOrder(signing.id, { action: 'approve', approverName, signature }, scope);
+      triggerNotification('PO approved', `${signing.supplier} approved & signed — released to the merchant.`, 'success');
+      setSigning(null); setSignature(''); setReloadKey((k) => k + 1);
+    } catch (e) { triggerNotification('Approval failed', e.message || 'Could not approve.', 'danger'); } finally { setBusy(false); }
+  };
+  const reject = async () => {
+    setBusy(true);
+    try {
+      await updatePurchaseOrder(rejecting.id, { action: 'reject', reason: reason || 'Rejected' }, scope);
+      triggerNotification('PO rejected', `${rejecting.supplier} sent back to the merchant.`, 'info');
+      setRejecting(null); setReason(''); setReloadKey((k) => k + 1);
+    } catch (e) { triggerNotification('Reject failed', e.message || 'Could not reject.', 'danger'); } finally { setBusy(false); }
+  };
+
+  if (!live) return null;
+
+  return (
+    <div className="card">
+      <div className="card-hd">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ClipboardList size={17} style={{ color: 'var(--primary)' }} /><h3>Purchase order approvals</h3></div>
+        <span className={`badge ${orders.length ? 'badge-warning' : 'badge-neutral'}`}>{orders.length} waiting</span>
+      </div>
+      {orders.length === 0 ? (
+        <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>No purchase orders are waiting for approval.</div>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Reference</th><th>Supplier</th><th className="num">Lines</th><th className="num">Total</th><th>Submitted</th><th className="center">Decision</th></tr></thead>
+            <tbody>
+              {orders.map((po) => (
+                <tr key={po.id}>
+                  <td style={{ fontWeight: 500 }}>{po.reference || po.id.slice(0, 8)}</td>
+                  <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Factory size={13} style={{ color: 'var(--text-subtle)' }} />{po.supplier}</span></td>
+                  <td className="num">{po.lineCount}</td>
+                  <td className="num tabular" style={{ fontWeight: 600 }}>{rands(po.total, po.currency)}</td>
+                  <td className="muted">{(po.submittedAt || po.createdAt || '').slice(0, 10)}</td>
+                  <td className="center" style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn btn-primary btn-sm" onClick={() => { setApproverName(me); setSignature(''); setSigning(po); }}><PenLine size={13} /> Approve &amp; sign</button>
+                    <button className="btn btn-danger btn-sm" style={{ marginLeft: 6 }} onClick={() => { setReason(''); setRejecting(po); }}><X size={13} /> Reject</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Approve + signature modal */}
+      {signing && (
+        <div className="overlay" onClick={busy ? undefined : () => setSigning(null)}>
+          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-hd" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><PenLine size={18} style={{ color: 'var(--primary)' }} /><h3>Approve purchase order</h3></div>
+              <button className="icon-btn" onClick={() => setSigning(null)} aria-label="Close"><X size={17} /></button>
+            </div>
+            <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
+                <div className="card-bd" style={{ padding: 12, fontSize: 13 }}>
+                  <div style={{ fontWeight: 600 }}>{signing.supplier}</div>
+                  <div className="muted">{signing.lineCount} line(s) · <strong>{rands(signing.total, signing.currency)}</strong>{signing.reference ? ` · ${signing.reference}` : ''}</div>
+                </div>
+              </div>
+              <div className="field"><label className="field-label">Approver</label>
+                <input className="input" value={approverName} onChange={(e) => setApproverName(e.target.value)} /></div>
+              <div className="field"><label className="field-label">Signature</label>
+                <SignaturePad onChange={setSignature} /></div>
+            </div>
+            <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 18px', borderTop: '1px solid var(--border)' }}>
+              <button className="btn btn-secondary" onClick={() => setSigning(null)} disabled={busy}>Cancel</button>
+              <button className="btn btn-primary" onClick={approve} disabled={busy || !signature}>{busy ? <><Loader2 size={15} className="spin" /> Approving…</> : 'Approve & release'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject modal */}
+      {rejecting && (
+        <div className="overlay" onClick={busy ? undefined : () => setRejecting(null)}>
+          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-hd"><h3>Reject purchase order</h3></div>
+            <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p className="muted" style={{ fontSize: 13 }}>{rejecting.supplier} · {rands(rejecting.total, rejecting.currency)}. The merchant can revise and re-submit.</p>
+              <div className="field"><label className="field-label">Reason</label>
+                <textarea className="input" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. over budget for Q3 — reduce boot quantity" /></div>
+            </div>
+            <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 18px', borderTop: '1px solid var(--border)' }}>
+              <button className="btn btn-secondary" onClick={() => setRejecting(null)} disabled={busy}>Cancel</button>
+              <button className="btn btn-danger" onClick={reject} disabled={busy}>{busy ? <><Loader2 size={15} className="spin" /> Rejecting…</> : 'Reject PO'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const ManagerApprovalPortal = () => {
   const { requests, approveRequest, rejectRequest, triggerNotification } = useApp();
@@ -36,6 +164,8 @@ export const ManagerApprovalPortal = () => {
           </div>
         </div>
       </div>
+
+      <PoApprovals />
 
       {pending.length === 0 ? (
         <div className="card">

@@ -47,6 +47,12 @@ export default defineMiddlewares({
       bodyParser: { sizeLimit: '10mb' },
     },
     {
+      // PO approval carries a captured signature (data URL), so raise the limit.
+      matcher: '/app/commerce/purchase-orders/*',
+      methods: ['PATCH'],
+      bodyParser: { sizeLimit: '2mb' },
+    },
+    {
       matcher: '/app/*',
       // appCors must run before the auth middleware so preflight OPTIONS
       // (no bearer token) gets a 204 with CORS headers instead of a 401.

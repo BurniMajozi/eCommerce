@@ -1,7 +1,7 @@
 import type { MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { randomUUID } from 'crypto';
-import { assertCapability, ScopeError } from '../../../../security/tenant-scope';
+import { assertCapability, assertAnyCapability, ScopeError } from '../../../../security/tenant-scope';
 import type { TenantScopedRequest } from '../../../middlewares/tenant-scope';
 
 type Line = { product_id?: string | null; sku?: string | null; name?: string; qty?: number; unit_cost?: number };
@@ -27,16 +27,25 @@ const toApi = (po: any) => ({
   lines: po.lines ?? [],
   lineCount: (po.lines ?? []).length,
   total: num(po.total),
+  submittedAt: po.submitted_at,
+  approvedBy: po.approved_by,
+  approvedAt: po.approved_at,
+  approvalSignature: po.approval_signature,
+  rejectionReason: po.rejection_reason,
+  sentAt: po.sent_at,
+  sentTo: po.sent_to,
   receivedAt: po.received_at,
   createdAt: po.created_at,
 });
 
 // GET /app/commerce/purchase-orders — list the tenant's POs, newest first.
+// Readable by buyers (commerce.read), approvers (ppe.approve.*) and reporting
+// roles so the manager approvals screen can list pending POs.
 export async function GET(req: TenantScopedRequest, res: MedusaResponse): Promise<void> {
   const scope = req.tenantScope;
   try {
     if (!scope) throw new ScopeError(401, 'scope_missing', 'Tenant scope was not resolved.');
-    assertCapability(scope, 'commerce.read');
+    assertAnyCapability(scope, ['commerce.read', 'commerce.manage', 'ppe.approve.tier1', 'ppe.approve.tier2', 'reports.read', 'platform.manage']);
     const rows = await pg(req)('purchase_orders').where({ tenant_id: scope.tenantId }).orderBy('created_at', 'desc');
     res.json({ source: 'medusa', orders: rows.map(toApi) });
   } catch (error) {

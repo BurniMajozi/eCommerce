@@ -15,7 +15,7 @@ import {
   Workflow, Radio, Plus, FileSpreadsheet, CheckCircle2, RotateCw, Globe2,
   ChevronRight, ChevronDown, Zap, GitBranch, Play, Pencil, Trash2,
   Factory, Loader2, X, ArrowDownLeft, ArrowUpRight, Download,
-  ClipboardCheck, ClipboardList, Send, PackageCheck
+  ClipboardCheck, ClipboardList, Send, PackageCheck, Printer, Mail, PenLine
 } from 'lucide-react';
 
 const cur = (code) => MEDUSA_CURRENCIES.find(c => c.code === code) || MEDUSA_CURRENCIES[0];
@@ -339,26 +339,62 @@ export const MedusaAdminPortal = ({ view }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, poReloadKey]);
   const reloadPo = () => setPoReloadKey((k) => k + 1);
-  const setPoStatus = async (po, status) => {
+  const NOTE = { submit: 'submitted for approval', send: 'sent to supplier', cancel: 'cancelled' };
+  const poAction = async (po, action, extra = {}) => {
     setPoBusyId(po.id);
     try {
-      const r = await updatePurchaseOrder(po.id, { status }, commerceScope);
-      if (status === 'received') {
+      const r = await updatePurchaseOrder(po.id, { action, ...extra }, commerceScope);
+      if (action === 'receive') {
         const s = r.stock;
         triggerNotification('Stock received', s?.located ? `${po.supplier}: ${s.updated} line(s) added to on-hand stock.` : `${po.supplier} marked received (no stock location linked).`, 'success');
         refreshCatalogue();
       } else {
-        triggerNotification('PO updated', `${po.supplier} marked ${status}.`, 'success');
+        triggerNotification('Purchase order', `${po.supplier} ${NOTE[action] || action}.`, 'success');
       }
       reloadPo();
     } catch (err) {
-      triggerNotification('Update failed', err.message || 'Could not update the PO.', 'danger');
+      triggerNotification('Action failed', err.message || 'Could not update the PO.', 'danger');
     } finally { setPoBusyId(null); }
   };
   const doDeletePo = async (po) => {
     await deletePurchaseOrder(po.id, commerceScope);
     triggerNotification('PO deleted', `${po.supplier} purchase order removed.`, 'success');
     reloadPo();
+  };
+  // Printable PO document (includes the approval signature when present).
+  const printPo = (po) => {
+    const w = window.open('', '_blank');
+    if (!w) { triggerNotification('Popup blocked', 'Allow popups to print the PO.', 'warning'); return; }
+    const rows = (po.lines ?? []).map((l) => `<tr><td>${l.name || ''}</td><td>${l.sku || ''}</td><td style="text-align:right">${l.qty}</td><td style="text-align:right">R ${Number(l.unit_cost || 0).toFixed(2)}</td><td style="text-align:right">R ${(l.qty * (l.unit_cost || 0)).toLocaleString('en-ZA')}</td></tr>`).join('');
+    const sig = po.approvalSignature ? `<img src="${po.approvalSignature}" alt="signature" style="height:60px"/>` : '<span style="color:#999">— pending —</span>';
+    w.document.write(`<html><head><title>PO ${po.reference || po.id.slice(0, 8)} — SightLive</title><style>
+      body{font-family:Inter,Arial,sans-serif;color:#111;padding:32px;font-size:12.5px}
+      h1{font-size:20px;margin:0}.muted{color:#666}.row{display:flex;justify-content:space-between;margin-bottom:18px}
+      table{width:100%;border-collapse:collapse;margin-top:10px}th,td{padding:7px 9px;border-bottom:1px solid #ddd}
+      th{background:#f5f5f4;text-transform:uppercase;font-size:9.5px;letter-spacing:.05em;text-align:left}
+      tfoot td{font-weight:700;border-top:2px solid #999}
+      .sign{margin-top:34px;display:flex;gap:60px}.sign div{border-top:1px solid #333;padding-top:6px;min-width:220px}
+    </style></head><body>
+      <div class="row"><div><h1>Purchase Order</h1><div class="muted">${po.reference || po.id.slice(0, 8)} · issued ${(po.createdAt || '').slice(0, 10)}</div></div>
+        <div style="text-align:right"><strong>SightLive · CageLi PPE</strong><div class="muted">Status: ${po.status}</div>${po.expectedDate ? `<div class="muted">Expected: ${po.expectedDate}</div>` : ''}</div></div>
+      <div class="muted">Supplier</div><div style="font-weight:600;font-size:15px;margin-bottom:8px">${po.supplier}</div>
+      <table><thead><tr><th>Product</th><th>SKU</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit</th><th style="text-align:right">Line</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="4">Total (${po.currency})</td><td style="text-align:right">R ${Number(po.total || 0).toLocaleString('en-ZA')}</td></tr></tfoot></table>
+      <div class="sign"><div>${sig}<br/>Approved by: ${po.approvedBy || '—'}${po.approvedAt ? ' · ' + po.approvedAt.slice(0, 10) : ''}</div>
+        <div style="min-width:220px">&nbsp;<br/>Supplier acceptance</div></div>
+    </body></html>`);
+    w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+  };
+  // Share via the merchant's email client (mailto), then mark the PO sent.
+  const emailPo = (po) => {
+    const supplier = (parties?.suppliers ?? []).find((s) => s.id === po.supplierId);
+    const to = supplier?.email && !String(supplier.email).endsWith('parties.sightlive.local') ? supplier.email : '';
+    const lines = (po.lines ?? []).map((l) => `- ${l.name} (${l.sku}) x${l.qty} @ R${Number(l.unit_cost || 0).toFixed(2)}`).join('%0D%0A');
+    const subject = encodeURIComponent(`Purchase Order ${po.reference || po.id.slice(0, 8)} — SightLive`);
+    const body = `Dear ${po.supplier},%0D%0A%0D%0APlease find our purchase order below.%0D%0A%0D%0A${lines}%0D%0A%0D%0ATotal: ${po.currency} ${Number(po.total || 0).toLocaleString('en-ZA')}%0D%0A${po.expectedDate ? 'Expected delivery: ' + po.expectedDate + '%0D%0A' : ''}%0D%0AApproved by ${po.approvedBy || 'management'}.%0D%0A%0D%0ARegards,%0D%0ASightLive Procurement`;
+    window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank');
+    poAction(po, 'send', to ? { email: to } : {});
   };
 
   const runWorkflow = async (fail) => {
@@ -956,32 +992,46 @@ export const MedusaAdminPortal = ({ view }) => {
     const live = purchaseOrders !== null;
     const suppliers = parties?.suppliers ?? [];
     const rows = live ? purchaseOrders : [];
-    const stat = { draft: 'badge-neutral', sent: 'badge-info', received: 'badge-success', cancelled: 'badge-warning' };
+    const stat = { draft: 'badge-neutral', pending_approval: 'badge-warning', approved: 'badge-info', sent: 'badge-info', received: 'badge-success', rejected: 'badge-danger', cancelled: 'badge-neutral' };
+    const label = { pending_approval: 'awaiting approval', approved: 'approved', sent: 'sent', received: 'received', rejected: 'rejected', draft: 'draft', cancelled: 'cancelled' };
     const canCreate = live && suppliers.length > 0 && products.length > 0;
+    const busy = (po) => poBusyId === po.id;
     return (
       <Wrap>
-        <Head icon={ClipboardList} title="Purchase Orders" sub="Order stock from your suppliers. Receiving a PO adds the quantities to on-hand inventory."
+        <Head icon={ClipboardList} title="Purchase Orders" sub="Raise a PO, send it to a manager to approve & sign, then print or email it to the supplier. Receiving adds the stock to inventory."
           action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span><button className="btn btn-primary" onClick={() => setShowPoModal(true)} disabled={!canCreate}><Plus size={16} /> New PO</button></div>} />
         {live && !canCreate && <div className="card"><div className="card-bd muted" style={{ padding: 18 }}>Add at least one supplier and one product before raising a purchase order.</div></div>}
         <div className="card">
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Reference</th><th>Supplier</th><th className="num">Lines</th><th className="num">Total</th><th>Expected</th><th className="center">Status</th><th className="center">Actions</th></tr></thead>
+              <thead><tr><th>Reference</th><th>Supplier</th><th className="num">Lines</th><th className="num">Total</th><th className="center">Status</th><th className="center">Actions</th></tr></thead>
               <tbody>
-                {!live && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 22 }}>Connect the live backend to manage purchase orders.</td></tr>}
-                {live && rows.length === 0 && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 22 }}>No purchase orders yet — raise one with “New PO”.</td></tr>}
+                {!live && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 22 }}>Connect the live backend to manage purchase orders.</td></tr>}
+                {live && rows.length === 0 && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 22 }}>No purchase orders yet — raise one with “New PO”.</td></tr>}
                 {rows.map((po) => (
                   <tr key={po.id}>
-                    <td><div style={{ fontWeight: 500 }}>{po.reference || '—'}</div><div className="eyebrow">{(po.createdAt || '').slice(0, 10)}</div></td>
+                    <td><div style={{ fontWeight: 500 }}>{po.reference || '—'}</div><div className="eyebrow">{(po.createdAt || '').slice(0, 10)}{po.expectedDate ? ` · exp ${po.expectedDate}` : ''}</div></td>
                     <td>{po.supplier}</td>
                     <td className="num">{po.lineCount}</td>
                     <td className="num tabular">{money(po.total, po.currency)}</td>
-                    <td className="muted">{po.expectedDate || '—'}</td>
-                    <td className="center"><span className={`badge ${stat[po.status] || 'badge-neutral'}`}>{po.status}</span></td>
+                    <td className="center">
+                      <span className={`badge ${stat[po.status] || 'badge-neutral'}`}>{label[po.status] || po.status}</span>
+                      {po.approvedBy && (po.status === 'approved' || po.status === 'sent' || po.status === 'received') && (
+                        <div className="eyebrow" style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 3, justifyContent: 'center' }}><PenLine size={10} /> {po.approvedBy}</div>
+                      )}
+                      {po.status === 'rejected' && po.rejectionReason && <div className="eyebrow" style={{ marginTop: 3, color: 'var(--danger)' }}>{po.rejectionReason}</div>}
+                    </td>
                     <td className="center" style={{ whiteSpace: 'nowrap' }}>
-                      {po.status === 'draft' && <button className="btn btn-secondary btn-sm" disabled={poBusyId === po.id} onClick={() => setPoStatus(po, 'sent')}><Send size={13} /> Send</button>}
-                      {(po.status === 'draft' || po.status === 'sent') && <button className="btn btn-primary btn-sm" style={{ marginLeft: 6 }} disabled={poBusyId === po.id} onClick={() => setPoStatus(po, 'received')}>{poBusyId === po.id ? <Loader2 size={13} className="spin" /> : <PackageCheck size={13} />} Receive</button>}
-                      {po.status !== 'received' && <button className="icon-btn" style={{ width: 30, height: 30, marginLeft: 6 }} title="Delete" onClick={() => setPoDelete(po)}><Trash2 size={14} /></button>}
+                      {po.status === 'draft' && <button className="btn btn-secondary btn-sm" disabled={busy(po)} onClick={() => poAction(po, 'submit')}>{busy(po) ? <Loader2 size={13} className="spin" /> : <Send size={13} />} Submit for approval</button>}
+                      {po.status === 'pending_approval' && <span className="muted" style={{ fontSize: 12 }}>with manager…</span>}
+                      {po.status === 'rejected' && <button className="btn btn-secondary btn-sm" disabled={busy(po)} onClick={() => poAction(po, 'submit')}>Re-submit</button>}
+                      {(po.status === 'approved' || po.status === 'sent') && <>
+                        <button className="btn btn-secondary btn-sm" title="Print / PDF" onClick={() => printPo(po)}><Printer size={13} /></button>
+                        <button className="btn btn-secondary btn-sm" style={{ marginLeft: 6 }} title="Email to supplier" disabled={busy(po)} onClick={() => emailPo(po)}><Mail size={13} /></button>
+                        <button className="btn btn-primary btn-sm" style={{ marginLeft: 6 }} disabled={busy(po)} onClick={() => poAction(po, 'receive')}>{busy(po) ? <Loader2 size={13} className="spin" /> : <PackageCheck size={13} />} Receive</button>
+                      </>}
+                      {po.status === 'received' && <button className="btn btn-secondary btn-sm" title="Print / PDF" onClick={() => printPo(po)}><Printer size={13} /></button>}
+                      {po.status !== 'received' && po.status !== 'pending_approval' && <button className="icon-btn" style={{ width: 30, height: 30, marginLeft: 6 }} title="Delete" onClick={() => setPoDelete(po)}><Trash2 size={14} /></button>}
                     </td>
                   </tr>
                 ))}

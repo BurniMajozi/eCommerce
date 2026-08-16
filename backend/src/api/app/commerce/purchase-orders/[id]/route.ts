@@ -2,12 +2,16 @@ import type { MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { updateInventoryLevelsWorkflow } from '@medusajs/medusa/core-flows';
 import { readCatalogueData } from '../../../../../catalogue/read';
-import { assertCapability, ScopeError } from '../../../../../security/tenant-scope';
+import { assertCapability, assertAnyCapability, ScopeError } from '../../../../../security/tenant-scope';
 import type { TenantScopedRequest } from '../../../../middlewares/tenant-scope';
 
 const finite = (v: any): number => (typeof v === 'number' && Number.isFinite(v) ? v : (v == null || isNaN(Number(v)) ? 0 : Number(v)));
-const VALID = ['draft', 'sent', 'received', 'cancelled'];
+// Separation of duties: the buyer (commerce.manage) submits; a manager
+// (ppe.approve.*) or platform owner approves & signs — a merchant cannot
+// approve their own PO.
+const APPROVE_CAPS = ['ppe.approve.tier1', 'ppe.approve.tier2', 'platform.manage'];
 const pg = (req: TenantScopedRequest) => req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as any;
+const now = () => new Date().toISOString();
 
 // Receiving a PO increases on-hand stock. Resolve each line product's inventory
 // item + the tenant/site stock location, then bump stocked_quantity by the
@@ -44,31 +48,69 @@ async function receiveStock(req: TenantScopedRequest, scope: NonNullable<TenantS
   return { updated, skipped, located: true };
 }
 
-// PATCH /app/commerce/purchase-orders/:id — change status or edit fields.
+// PATCH /app/commerce/purchase-orders/:id — drive the approval workflow via an
+// `action`: submit → approve|reject → send → receive. Separation of duties:
+// buyers (commerce.manage) submit/send/receive; approvers (ppe.approve.*) sign.
 export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Promise<void> {
   const scope = req.tenantScope;
   try {
     if (!scope) throw new ScopeError(401, 'scope_missing', 'Tenant scope was not resolved.');
-    assertCapability(scope, 'commerce.manage');
     const b = (req.body ?? {}) as Record<string, any>;
+    const action = (b.action ?? 'edit').toString();
     const db = pg(req);
 
     const po = await db('purchase_orders').where({ id: req.params.id, tenant_id: scope.tenantId }).first();
     if (!po) throw new ScopeError(404, 'po_not_found', 'Purchase order not found.');
 
-    const patch: Record<string, any> = { updated_at: new Date().toISOString() };
-    if (b.reference !== undefined) patch.reference = (b.reference ?? '').toString().trim() || null;
-    if (b.expectedDate !== undefined) patch.expected_date = b.expectedDate || null;
-
+    const patch: Record<string, any> = { updated_at: now() };
     let stockResult: { updated: number; skipped: number; located: boolean } | null = null;
-    if (b.status !== undefined) {
-      const status = String(b.status);
-      if (!VALID.includes(status)) throw new ScopeError(400, 'invalid_status', `Status must be one of: ${VALID.join(', ')}.`);
-      patch.status = status;
-      if (status === 'received' && po.status !== 'received') {
+    const expect = (...states: string[]) => { if (!states.includes(po.status)) throw new ScopeError(409, 'invalid_transition', `A '${action}' action is not allowed from status '${po.status}'.`); };
+
+    switch (action) {
+      case 'edit':
+        assertCapability(scope, 'commerce.manage');
+        if (b.reference !== undefined) patch.reference = (b.reference ?? '').toString().trim() || null;
+        if (b.expectedDate !== undefined) patch.expected_date = b.expectedDate || null;
+        break;
+      case 'submit':
+        assertCapability(scope, 'commerce.manage');
+        expect('draft', 'rejected');
+        patch.status = 'pending_approval'; patch.submitted_at = now();
+        patch.rejection_reason = null;
+        break;
+      case 'approve':
+        assertAnyCapability(scope, APPROVE_CAPS);
+        expect('pending_approval');
+        patch.status = 'approved';
+        patch.approved_by = (b.approverName ?? scope.userId ?? 'Approver').toString().slice(0, 200);
+        patch.approved_at = now();
+        patch.approval_signature = (b.signature ?? '').toString().slice(0, 300000) || null;
+        break;
+      case 'reject':
+        assertAnyCapability(scope, APPROVE_CAPS);
+        expect('pending_approval');
+        patch.status = 'rejected';
+        patch.rejection_reason = (b.reason ?? '').toString().slice(0, 1000) || 'Rejected';
+        break;
+      case 'send':
+        assertCapability(scope, 'commerce.manage');
+        expect('approved', 'sent');
+        patch.status = 'sent'; patch.sent_at = now();
+        if (b.email) patch.sent_to = String(b.email).slice(0, 320);
+        break;
+      case 'receive':
+        assertCapability(scope, 'commerce.manage');
+        expect('approved', 'sent');
         stockResult = await receiveStock(req, scope, po.lines ?? []);
-        patch.received_at = new Date().toISOString();
-      }
+        patch.status = 'received'; patch.received_at = now();
+        break;
+      case 'cancel':
+        assertCapability(scope, 'commerce.manage');
+        if (po.status === 'received') throw new ScopeError(409, 'invalid_transition', 'A received PO cannot be cancelled.');
+        patch.status = 'cancelled';
+        break;
+      default:
+        throw new ScopeError(400, 'invalid_action', `Unknown action '${action}'.`);
     }
 
     await db('purchase_orders').where({ id: req.params.id, tenant_id: scope.tenantId }).update(patch);
