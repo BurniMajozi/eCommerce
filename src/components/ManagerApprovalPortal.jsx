@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { fetchPurchaseOrders, updatePurchaseOrder, fetchPromotions, updatePromotion, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { SignaturePad } from './SignaturePad';
 import {
-  Bell, ShieldCheck, AlertTriangle, Check, X, Eye, ArrowRight, ClipboardList, PenLine, Loader2, Factory, BadgePercent
+  Bell, ShieldCheck, AlertTriangle, Check, X, Eye, ArrowRight, ClipboardList, ClipboardCheck, PenLine, Loader2, Factory, BadgePercent
 } from 'lucide-react';
 
 const rands = (n, cur = 'ZAR') => `${cur === 'ZAR' ? 'R' : cur + ' '}${Number(n || 0).toLocaleString('en-ZA')}`;
