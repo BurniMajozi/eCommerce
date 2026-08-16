@@ -6,6 +6,7 @@ import {
 import { fetchTenantMembers } from '../tenant/adminReads';
 import { fetchMembers, inviteMember, updateMemberRole, removeMember, fetchReports, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { ConfirmDialog } from './ConfirmDialog';
+import { EmployeeAllocationReport } from './EmployeeAllocationReport';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { FileBarChart, Plus, Play, Save, ArrowRight, Users, ListChecks, ShieldCheck, Trash2, PackageCheck, ClipboardList, GitBranch, ShieldQuestion, UserPlus, Mail, KeyRound, Copy, Loader2, RefreshCw, Download, Printer } from 'lucide-react';
 
@@ -13,17 +14,19 @@ const rand = (n) => `R ${Number(n || 0).toLocaleString('en-ZA', { maximumFractio
 
 // Real tenant reports from live commerce data, with CSV + PDF export.
 const REPORT_DEFS = {
+  allocations: {
+    name: 'Stock allocation by employee',
+    custom: true,
+  },
   stock: {
     name: 'Stock valuation', pick: (r) => r.stockValuation?.rows ?? [],
     cols: [
       { key: 'sku', label: 'SKU' }, { key: 'name', label: 'Product' },
+      { key: 'category', label: 'Category' },
       { key: 'onHand', label: 'On hand', num: true },
-      { key: 'unitCost', label: 'Unit cost', num: true, money: true, restrict: true },
-      { key: 'unitPrice', label: 'Unit price', num: true, money: true },
-      { key: 'stockCost', label: 'Stock @ cost', num: true, money: true, restrict: true },
-      { key: 'stockRetail', label: 'Stock @ retail', num: true, money: true },
-      { key: 'potentialProfit', label: 'Potential profit', num: true, money: true, restrict: true },
-      { key: 'margin', label: 'Margin %', num: true, pct: true },
+      { key: 'inTransit', label: 'In transit', num: true },
+      { key: 'unitPrice', label: 'Unit price (RP)', num: true, money: true },
+      { key: 'stockRetail', label: 'Total value (@ RP)', num: true, money: true },
     ],
   },
   reorder: {
@@ -36,18 +39,18 @@ const REPORT_DEFS = {
     ],
   },
   customers: {
-    name: 'Customer spend', pick: (r) => r.customerSpend?.rows ?? [],
+    name: 'Department spend', pick: (r) => r.customerSpend?.rows ?? [],
     cols: [
-      { key: 'company', label: 'Customer' }, { key: 'currency', label: 'Cur' },
-      { key: 'limit', label: 'Limit', num: true, money: true }, { key: 'spent', label: 'Spent', num: true, money: true },
+      { key: 'company', label: 'Department / Section' }, { key: 'currency', label: 'Cur' },
+      { key: 'limit', label: 'Budget limit', num: true, money: true }, { key: 'spent', label: 'Spent (@ RP)', num: true, money: true },
       { key: 'pctUsed', label: '% used', num: true, pct: true, flag: (v) => v >= 80 },
     ],
   },
   orders: {
-    name: 'Orders', pick: (r) => r.orders?.rows ?? [],
+    name: 'Orders & Issues', pick: (r) => r.orders?.rows ?? [],
     cols: [
-      { key: 'order', label: 'Order' }, { key: 'email', label: 'Customer' }, { key: 'currency', label: 'Cur' },
-      { key: 'total', label: 'Total', num: true, money: true }, { key: 'status', label: 'Status' }, { key: 'date', label: 'Date' },
+      { key: 'order', label: 'Order ref' }, { key: 'email', label: 'Recipient' }, { key: 'currency', label: 'Cur' },
+      { key: 'total', label: 'Total value (@ RP)', num: true, money: true }, { key: 'status', label: 'Status' }, { key: 'date', label: 'Date' },
     ],
   },
 };
@@ -65,7 +68,7 @@ const LiveReportBuilder = ({ scope, triggerNotification }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [active, setActive] = useState('stock');
+  const [active, setActive] = useState('allocations');
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -75,11 +78,12 @@ const LiveReportBuilder = ({ scope, triggerNotification }) => {
   }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const def = REPORT_DEFS[active];
-  const rows = data?.reports ? def.pick(data.reports) : [];
+  const rows = data?.reports && !def.custom ? def.pick(data.reports) : [];
   const totals = active === 'stock' ? data?.reports?.stockValuation?.totals : null;
   const generatedAt = data?.generatedAt ? new Date(data.generatedAt).toLocaleString('en-ZA') : null;
 
   const exportCsvNow = () => {
+    if (def.custom) return;
     downloadCsv(`sightlive-${active}-report-${dateStamp()}`, def.cols.map((c) => ({
       key: c.key, label: c.label,
       map: (row) => { const v = row[c.key]; if (v == null) return c.restrict ? 'Restricted' : ''; return c.money || c.pct || c.num ? v : v; },
@@ -88,6 +92,7 @@ const LiveReportBuilder = ({ scope, triggerNotification }) => {
   };
 
   const printPdf = () => {
+    if (def.custom) return;
     const w = window.open('', '_blank');
     if (!w) { triggerNotification('Popup blocked', 'Allow popups to export the PDF.', 'warning'); return; }
     const th = def.cols.map((c) => `<th style="text-align:${c.num ? 'right' : 'left'}">${c.label}</th>`).join('');
@@ -100,7 +105,7 @@ const LiveReportBuilder = ({ scope, triggerNotification }) => {
       tfoot td{font-weight:700;border-top:2px solid #999}
     </style></head><body>
       <h1>${def.name}</h1><div class="sub">SightLive · generated ${generatedAt ?? dateStamp()} · ${rows.length} rows</div>
-      <table><thead><tr>${th}</tr></thead><tbody>${tb}</tbody>${totals ? `<tfoot><tr><td colspan="${def.cols.length - 3}">Totals</td><td style="text-align:right">${rand(totals.stockCostValue)}</td><td style="text-align:right">${rand(totals.stockRetailValue)}</td><td style="text-align:right">${rand(totals.potentialProfit)}</td></tr></tfoot>` : ''}</table>
+      <table><thead><tr>${th}</tr></thead><tbody>${tb}</tbody>${totals ? `<tfoot><tr><td colspan="${def.cols.length - 1}">Total stock value (@ RP)</td><td style="text-align:right">${rand(totals.stockRetailValue)}</td></tr></tfoot>` : ''}</table>
     </body></html>`);
     w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
     triggerNotification('Print / PDF', `${def.name} opened — use “Save as PDF”.`, 'info');
@@ -110,13 +115,13 @@ const LiveReportBuilder = ({ scope, triggerNotification }) => {
     <div className="card">
       <div className="card-hd">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <FileBarChart size={17} style={{ color: 'var(--primary)' }} /><h3>Reports</h3>
+          <FileBarChart size={17} style={{ color: 'var(--primary)' }} /><h3>Reports &amp; Stock Allocations</h3>
           <span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live data' : 'Demo mode'}</span>
         </div>
         {live && <button className="btn btn-ghost btn-sm" onClick={() => setReloadKey((k) => k + 1)} disabled={loading} aria-label="Refresh">{loading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}</button>}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-        <div style={{ width: 210, borderRight: '1px solid var(--border)', padding: 16, minWidth: 180 }}>
+        <div style={{ width: 230, borderRight: '1px solid var(--border)', padding: 16, minWidth: 190 }}>
           <div className="eyebrow" style={{ marginBottom: 10 }}>Reports</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {Object.entries(REPORT_DEFS).map(([k, d]) => (
@@ -125,47 +130,51 @@ const LiveReportBuilder = ({ scope, triggerNotification }) => {
           </div>
         </div>
         <div style={{ flex: 1, padding: 18, minWidth: 320 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-            <div>
-              <h3 style={{ fontSize: 18 }}>{def.name}</h3>
-              {generatedAt && <div className="eyebrow">as at {generatedAt}</div>}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-secondary btn-sm" onClick={exportCsvNow} disabled={!rows.length}><Download size={14} /> CSV</button>
-              <button className="btn btn-primary btn-sm" onClick={printPdf} disabled={!rows.length}><Printer size={14} /> Print / PDF</button>
-            </div>
-          </div>
+          {def.custom ? (
+            <EmployeeAllocationReport embedded={true} />
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  <h3 style={{ fontSize: 18 }}>{def.name}</h3>
+                  {generatedAt && <div className="eyebrow">as at {generatedAt}</div>}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-secondary btn-sm" onClick={exportCsvNow} disabled={!rows.length}><Download size={14} /> CSV</button>
+                  <button className="btn btn-primary btn-sm" onClick={printPdf} disabled={!rows.length}><Printer size={14} /> Print / PDF</button>
+                </div>
+              </div>
 
-          {!live && <p className="muted" style={{ fontSize: 13, marginTop: 14 }}>Sign in to the live tenant to run reports from real stock, order and customer data.</p>}
-          {error && <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 14 }}>{error.message || 'Report could not be generated.'}</p>}
-          {live && !error && (
-            <div className="table-wrap card" style={{ boxShadow: 'none', marginTop: 14 }}>
-              <table className="table">
-                <thead><tr>{def.cols.map((c) => <th key={c.key} className={c.num ? 'num' : ''}>{c.label}</th>)}</tr></thead>
-                <tbody>
-                  {rows.length === 0 && <tr><td colSpan={def.cols.length} className="muted" style={{ textAlign: 'center', padding: 22 }}>{loading ? 'Generating…' : 'No rows for this report yet.'}</td></tr>}
-                  {rows.map((row, i) => (
-                    <tr key={i}>
-                      {def.cols.map((c) => {
-                        const v = row[c.key];
-                        const flagged = c.flag && v != null && c.flag(v);
-                        return <td key={c.key} className={c.num ? 'num' : ''} style={flagged ? { color: 'var(--danger)', fontWeight: 600 } : undefined}>{fmtCell(c, v)}</td>;
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-                {totals && (
-                  <tfoot>
-                    <tr style={{ fontWeight: 700, borderTop: '2px solid var(--border-strong)' }}>
-                      <td colSpan={def.cols.length - 3}>Totals</td>
-                      <td className="num">{rand(totals.stockCostValue)}</td>
-                      <td className="num">{rand(totals.stockRetailValue)}</td>
-                      <td className="num" style={{ color: 'var(--success)' }}>{rand(totals.potentialProfit)}</td>
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
-            </div>
+              {!live && <p className="muted" style={{ fontSize: 13, marginTop: 14 }}>Sign in to the live tenant to run reports from real stock, order and customer data.</p>}
+              {error && <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 14 }}>{error.message || 'Report could not be generated.'}</p>}
+              {live && !error && (
+                <div className="table-wrap card" style={{ boxShadow: 'none', marginTop: 14 }}>
+                  <table className="table">
+                    <thead><tr>{def.cols.map((c) => <th key={c.key} className={c.num ? 'num' : ''}>{c.label}</th>)}</tr></thead>
+                    <tbody>
+                      {rows.length === 0 && <tr><td colSpan={def.cols.length} className="muted" style={{ textAlign: 'center', padding: 22 }}>{loading ? 'Generating…' : 'No rows for this report yet.'}</td></tr>}
+                      {rows.map((row, i) => (
+                        <tr key={i}>
+                          {def.cols.map((c) => {
+                            const v = row[c.key];
+                            const flagged = c.flag && v != null && c.flag(v);
+                            return <td key={c.key} className={c.num ? 'num' : ''} style={flagged ? { color: 'var(--danger)', fontWeight: 600 } : undefined}>{fmtCell(c, v)}</td>;
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                    {totals && (
+                      <tfoot>
+                        <tr style={{ fontWeight: 700, borderTop: '2px solid var(--border-strong)' }}>
+                          <td colSpan={def.cols.length - 1}>Total stock valuation (@ RP)</td>
+                          <td className="num" style={{ color: 'var(--primary)', textAlign: 'right' }}>{rand(totals.stockRetailValue)}</td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

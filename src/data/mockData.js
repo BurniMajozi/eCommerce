@@ -589,13 +589,201 @@ export const MOCK_SAVED_REPORTS = [
 ];
 
 // Result set backing the "Monthly consumption" report
-export const MOCK_CREW_CONSUMPTION = [
-  { crew: "Crew A", issues: 104, heads: 52, value: 31200, vsEntitle: 92 },
-  { crew: "Crew B", issues: 118, heads: 55, value: 36900, vsEntitle: 101 },
-  { crew: "Crew C", issues: 191, heads: 54, value: 61400, vsEntitle: 168, flag: true },
-  { crew: "Crew D", issues: 99, heads: 51, value: 28700, vsEntitle: 88 },
-  { crew: "Crew E", issues: 132, heads: 58, value: 41100, vsEntitle: 108 },
-  { crew: "Crew F", issues: 87, heads: 49, value: 24300, vsEntitle: 79 }
+export const MOCK_DEPARTMENT_CONSUMPTION = [
+  { dept: "Underground Operations", issues: 104, heads: 52, value: 31200, vsEntitle: 92 },
+  { dept: "Processing Plant", issues: 118, heads: 55, value: 36900, vsEntitle: 101 },
+  { dept: "Engineering & Maintenance", issues: 191, heads: 54, value: 61400, vsEntitle: 168, flag: true },
+  { dept: "Surface Mining & Haulage", issues: 99, heads: 51, value: 28700, vsEntitle: 88 },
+  { dept: "Safety & Security", issues: 132, heads: 58, value: 41100, vsEntitle: 108 },
+  { dept: "Shaft 3 Extraction", issues: 87, heads: 49, value: 24300, vsEntitle: 79 }
+];
+export const MOCK_CREW_CONSUMPTION = MOCK_DEPARTMENT_CONSUMPTION;
+
+// Employee stock allocation history & live register (John Sibanda as prime sample)
+export const MOCK_EMPLOYEE_ALLOCATIONS = [
+  {
+    employeeId: "EM-8492",
+    employeeName: "John Sibanda",
+    department: "Engineering & Maintenance",
+    role: "Boilermaker / Welder",
+    plant: "Kumba Iron Ore - Plant Alpha",
+    quotaUtilization: 94,
+    allocations: [
+      {
+        id: "ALC-10491",
+        sku: "DW-ARC40-WJ",
+        name: "DROMEX ARC 40 CAL WINTER JACKETS",
+        category: "Arc Flash Protection",
+        qty: 1,
+        unitPrice: 2900.00,
+        totalValue: 2900.00,
+        issueDate: "2026-08-10",
+        issuedBy: "S. Dlamini (Store 2)",
+        serialNumber: "ARC-8492-01",
+        status: "Active (In Use)",
+        condition: "Good",
+        nextEligibleDate: "2027-08-10",
+        signedBy: "J. Sibanda",
+        approvalRef: "APV-8492-01 (Tier 2 Approved)"
+      },
+      {
+        id: "ALC-10442",
+        sku: "ACE ONE 60×90",
+        name: "ACE Leather Welders Apron 60×90cm",
+        category: "Welding Protection",
+        qty: 1,
+        unitPrice: 103.00,
+        totalValue: 103.00,
+        issueDate: "2026-08-04",
+        issuedBy: "S. Dlamini (Store 2)",
+        serialNumber: "WLD-6090-84",
+        status: "Active (In Use)",
+        condition: "Fair",
+        nextEligibleDate: "2026-11-04",
+        signedBy: "J. Sibanda",
+        approvalRef: "Auto-approved"
+      },
+      {
+        id: "ALC-10398",
+        sku: "DV-11",
+        name: "DIRECT MESH VENT Goggle (1,F)",
+        category: "Eye & Face",
+        qty: 2,
+        unitPrice: 17.00,
+        totalValue: 34.00,
+        issueDate: "2026-07-22",
+        issuedBy: "S. Dlamini (Store 2)",
+        serialNumber: "EYE-DV11-02",
+        status: "Active (In Use)",
+        condition: "Good",
+        nextEligibleDate: "2026-09-22",
+        signedBy: "J. Sibanda",
+        approvalRef: "Auto-approved"
+      },
+      {
+        id: "ALC-10355",
+        sku: "CEM",
+        name: "Classic Muff, SNR 30, Blue",
+        category: "Hearing Protection",
+        qty: 1,
+        unitPrice: 125.00,
+        totalValue: 125.00,
+        issueDate: "2026-07-15",
+        issuedBy: "S. Dlamini (Store 2)",
+        serialNumber: "HR-CEM-15",
+        status: "Active (In Use)",
+        condition: "Good",
+        nextEligibleDate: "2027-01-15",
+        signedBy: "J. Sibanda",
+        approvalRef: "Auto-approved"
+      },
+      {
+        id: "ALC-10290",
+        sku: "DW-6535XX-P",
+        name: "DROMEX ULTRATEC HI-VIZ POLY VISCOSE PANTS",
+        category: "Speciality Workwear",
+        qty: 2,
+        unitPrice: 385.00,
+        totalValue: 770.00,
+        issueDate: "2026-06-20",
+        issuedBy: "S. Dlamini (Store 2)",
+        serialNumber: "WRK-6535-09",
+        status: "Active (In Use)",
+        condition: "Good",
+        nextEligibleDate: "2026-12-20",
+        signedBy: "J. Sibanda",
+        approvalRef: "Auto-approved"
+      },
+      {
+        id: "ALC-10112",
+        sku: "DF-UBLK",
+        name: "DROMEX FREESTYLE BOOT, BLACK",
+        category: "Footwear",
+        qty: 1,
+        unitPrice: 790.00,
+        totalValue: 790.00,
+        issueDate: "2026-05-18",
+        issuedBy: "S. Dlamini (Store 2)",
+        serialNumber: "FTW-UBLK-84",
+        status: "Active (In Use)",
+        condition: "Good",
+        nextEligibleDate: "2026-11-18",
+        signedBy: "J. Sibanda",
+        approvalRef: "APV-8492-00 (Tier 1 Approved)"
+      }
+    ]
+  },
+  {
+    employeeId: "EM-7781",
+    employeeName: "P. Khumalo",
+    department: "Underground Operations",
+    role: "Drill Rig Operator",
+    plant: "Kumba Iron Ore - Plant Alpha",
+    quotaUtilization: 112,
+    allocations: [
+      {
+        id: "ALC-10480",
+        sku: "DF-UBLK",
+        name: "DROMEX FREESTYLE BOOT, BLACK",
+        category: "Footwear",
+        qty: 1,
+        unitPrice: 790.00,
+        totalValue: 790.00,
+        issueDate: "2026-08-08",
+        issuedBy: "S. Dlamini (Store 2)",
+        serialNumber: "FTW-UBLK-77",
+        status: "Active (In Use)",
+        condition: "Good",
+        nextEligibleDate: "2027-02-08",
+        signedBy: "P. Khumalo",
+        approvalRef: "APV-7781-01"
+      },
+      {
+        id: "ALC-10310",
+        sku: "DV-11",
+        name: "DIRECT MESH VENT Goggle (1,F)",
+        category: "Eye & Face",
+        qty: 2,
+        unitPrice: 17.00,
+        totalValue: 34.00,
+        issueDate: "2026-07-02",
+        issuedBy: "S. Dlamini (Store 2)",
+        serialNumber: "EYE-DV11-77",
+        status: "Active (In Use)",
+        condition: "Fair",
+        nextEligibleDate: "2026-09-02",
+        signedBy: "P. Khumalo",
+        approvalRef: "Auto-approved"
+      }
+    ]
+  },
+  {
+    employeeId: "EM-9104",
+    employeeName: "Kagiso Molefe",
+    department: "Processing Plant",
+    role: "Chemical Operator",
+    plant: "Kumba Iron Ore - Plant Alpha",
+    quotaUtilization: 78,
+    allocations: [
+      {
+        id: "ALC-10450",
+        sku: "CEM",
+        name: "Classic Muff, SNR 30, Blue",
+        category: "Hearing Protection",
+        qty: 1,
+        unitPrice: 125.00,
+        totalValue: 125.00,
+        issueDate: "2026-08-01",
+        issuedBy: "S. Dlamini (Store 2)",
+        serialNumber: "HR-CEM-91",
+        status: "Active (In Use)",
+        condition: "Good",
+        nextEligibleDate: "2027-02-01",
+        signedBy: "K. Molefe",
+        approvalRef: "Auto-approved"
+      }
+    ]
+  }
 ];
 
 // Tenant-Admin users & roles register (Level-2 scope, one plant)

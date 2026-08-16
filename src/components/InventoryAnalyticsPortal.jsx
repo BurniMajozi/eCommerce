@@ -1,16 +1,19 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { fetchReports, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
-import { MOCK_CREW_CONSUMPTION, CAGELI_PRODUCTS } from '../data/mockData';
-import { TrendingUp, AlertTriangle, FileDown, Boxes, Wallet, TriangleAlert, PackageX } from 'lucide-react';
+import { MOCK_DEPARTMENT_CONSUMPTION, CAGELI_PRODUCTS } from '../data/mockData';
+import { EmployeeAllocationReport } from './EmployeeAllocationReport';
+import {
+  TrendingUp, AlertTriangle, FileDown, Boxes, Wallet, TriangleAlert, PackageX,
+  Users, HardHat, Building2, Layers
+} from 'lucide-react';
 
 export const InventoryAnalyticsPortal = () => {
-  const { products, profitability, activePlant, auth, tenantAccess, triggerNotification } = useApp();
+  const { products, activePlant, auth, tenantAccess, triggerNotification } = useApp();
   const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
   const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
 
-  // Live tenant reports (stock valuation + reorder) — drives the dashboard KPIs
-  // and the below-min count. Falls back to product-derived values when offline.
+  // Live tenant reports (stock valuation + reorder)
   const [reports, setReports] = useState(null);
   useEffect(() => {
     if (!live) { setReports(null); return; }
@@ -20,59 +23,53 @@ export const InventoryAnalyticsPortal = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, scope.accessToken, scope.tenantId, scope.siteId]);
 
-  const costLookup = useMemo(() => {
-    const map = new Map();
-    (CAGELI_PRODUCTS || []).forEach((p) => { if (p.sku && p.costPrice != null) map.set(p.sku, Number(p.costPrice)); });
-    (profitability?.items || []).forEach((p) => { if (p.sku && p.averageCost != null) map.set(p.sku, Number(p.averageCost)); });
-    (reports?.stockValuation?.rows || []).forEach((r) => { if (r.sku && r.unitCost != null) map.set(r.sku, Number(r.unitCost)); });
-    return map;
-  }, [profitability, reports]);
-
-  const getItemCost = (p) => {
-    if (p.costPrice != null && !isNaN(Number(p.costPrice))) return Number(p.costPrice);
-    return costLookup.get(p.sku) ?? null;
+  const getItemPrice = (p) => {
+    if (p.sellingPrice != null && !isNaN(Number(p.sellingPrice)) && Number(p.sellingPrice) > 0) return Number(p.sellingPrice);
+    const mock = CAGELI_PRODUCTS.find((cp) => cp.sku === p.sku);
+    return mock?.sellingPrice || 0;
   };
 
-  const stockValue = reports?.stockValuation?.totals?.stockCostValue != null
-    ? reports.stockValuation.totals.stockCostValue
-    : products.reduce((a, p) => a + (getItemCost(p) ?? 0) * (p.stockOnHand ?? 0), 0);
-  const potentialProfit = reports?.stockValuation?.totals?.potentialProfit ?? null;
-  const cover = (p) => Math.round((p.stockOnHand + p.stockInTransit) / (p.dailyConsumption || 1));
+  // Stock valuation to the mine is based on the Retail Price (the billed asset value).
+  const stockValue = reports?.stockValuation?.totals?.stockRetailValue != null
+    ? reports.stockValuation.totals.stockRetailValue
+    : products.reduce((a, p) => a + getItemPrice(p) * (p.stockOnHand ?? 0), 0);
+
+  const cover = (p) => Math.round(((p.stockOnHand || 0) + (p.stockInTransit || 0)) / (p.dailyConsumption || 1));
   const belowMin = reports?.reorder?.rows?.length != null
     ? reports.reorder.rows
-    : products.filter(p => cover(p) < 14);
-  const critical = (reports?.reorder?.rows ?? products.filter(p => cover(p) < 8)).length;
-  const maxCrew = Math.max(...MOCK_CREW_CONSUMPTION.map(c => c.vsEntitle));
+    : products.filter((p) => cover(p) < 14);
+  const critical = (reports?.reorder?.rows ?? products.filter((p) => cover(p) < 8)).length;
+  const maxDept = Math.max(...MOCK_DEPARTMENT_CONSUMPTION.map((c) => c.vsEntitle));
 
   const FLAGS = [
-    { t: '4 workers claimed "lost" ≥3× this quarter', open: true },
+    { t: 'Engineering & Maintenance: 168% entitlement consumption', open: true },
     { t: 'Store 2: 14 issues logged after shift end', open: true },
-    { t: 'Glove L consumption 3× site average', open: true },
-    { t: '1 approver signs 92% of exceptions', open: true },
+    { t: 'Heavy Nitrile Gloves: consumption 3× site average', open: true },
+    { t: '1 approver signs 92% of early-replacement exceptions', open: true },
   ];
 
   const KPIS = [
-    { icon: Wallet, label: 'Stock value', value: `R ${(stockValue / 1e6).toFixed(2)}m`, sub: live ? 'live tenant stock' : 'across 3 stores' },
-    { icon: TrendingUp, label: 'Potential profit', value: potentialProfit != null ? `R ${(potentialProfit / 1e3).toFixed(0)}k` : '—', sub: 'at retail − cost', cls: 'up' },
-    { icon: TriangleAlert, label: 'Unexplained variance', value: 'R 9 400', sub: 'count vs ledger', accent: true },
-    { icon: PackageX, label: 'Below min', value: `${belowMin.length} items`, sub: `${critical} critical` },
+    { icon: Wallet, label: 'Mine stock value (@ RP)', value: `R ${(stockValue / 1e6).toFixed(2)}m`, sub: live ? 'live plant inventory' : 'across all plant stores' },
+    { icon: Building2, label: 'Monthly mine spend', value: 'R 223.6k', sub: 'across 6 departments', cls: 'up' },
+    { icon: TriangleAlert, label: 'Quota flags', value: '2 departments', sub: 'exceeding 100% entitlement', accent: true },
+    { icon: PackageX, label: 'Below min stock', value: `${belowMin.length} items`, sub: `${critical} critical cover` },
   ];
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 22, paddingBottom: 24 }}>
       <div className="page-head">
         <div>
-          <h2>{activePlant.name} — PPE control</h2>
-          <p>Stock value, consumption against entitlement, and the abuse signals worth a manager's attention.</p>
+          <h2>{activePlant.name} — PPE Control &amp; Allocation</h2>
+          <p>Mine stock valuation, departmental consumption against entitlement, and employee issue registers.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => triggerNotification('Report generated', 'Abuse-signal report → PDF · XLS · sent to Finance.', 'success')}>
-          <FileDown size={16} /> Generate report
+        <button className="btn btn-primary" onClick={() => triggerNotification('Report generated', 'PPE Department & Employee allocation report exported → PDF/XLS.', 'success')}>
+          <FileDown size={16} /> Generate site audit
         </button>
       </div>
 
       {/* KPIs */}
       <div className="cols cols-4">
-        {KPIS.map(k => {
+        {KPIS.map((k) => {
           const Icon = k.icon;
           return (
             <div key={k.label} className="card" style={{ borderColor: k.accent ? 'var(--primary-weak-bd)' : 'var(--border)' }}>
@@ -89,32 +86,42 @@ export const InventoryAnalyticsPortal = () => {
         })}
       </div>
 
-      {/* Consumption + flags */}
+      {/* Department Consumption & Flags */}
       <div className="cols" style={{ gridTemplateColumns: '1.4fr 1fr' }}>
         <div className="card">
-          <div className="card-hd"><h3>Consumption per crew vs entitlement</h3><span className="badge badge-neutral">this month</span></div>
+          <div className="card-hd">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Layers size={17} style={{ color: 'var(--primary)' }} />
+              <h3>Consumption per department vs entitlement</h3>
+            </div>
+            <span className="badge badge-neutral">this month</span>
+          </div>
           <div className="card-bd">
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, height: 150, borderBottom: '1px solid var(--border)', paddingBottom: 2 }}>
-              {MOCK_CREW_CONSUMPTION.map(c => (
-                <div key={c.crew} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: c.flag ? 'var(--primary)' : 'var(--text-muted)', marginBottom: 4 }}>{c.vsEntitle}%</span>
-                  <div style={{ width: '100%', maxWidth: 42, height: `${(c.vsEntitle / maxCrew) * 100}%`, background: c.flag ? 'var(--primary)' : 'var(--surface-3)', borderRadius: '6px 6px 0 0' }} />
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, height: 150, borderBottom: '1px solid var(--border)', paddingBottom: 2 }}>
+              {MOCK_DEPARTMENT_CONSUMPTION.map((c) => (
+                <div key={c.dept} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: c.flag ? 'var(--primary)' : 'var(--text-muted)', marginBottom: 4 }}>
+                    {c.vsEntitle}%
+                  </span>
+                  <div style={{ width: '100%', maxWidth: 38, height: `${(c.vsEntitle / maxDept) * 100}%`, background: c.flag ? 'var(--primary)' : 'var(--surface-3)', borderRadius: '6px 6px 0 0' }} />
                 </div>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 14, marginTop: 8 }}>
-              {MOCK_CREW_CONSUMPTION.map(c => (
-                <span key={c.crew} style={{ flex: 1, textAlign: 'center', fontSize: 12, color: c.flag ? 'var(--primary)' : 'var(--text-muted)', fontWeight: 500 }}>{c.crew.split(' ')[1]}</span>
+            <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+              {MOCK_DEPARTMENT_CONSUMPTION.map((c) => (
+                <span key={c.dept} style={{ flex: 1, textAlign: 'center', fontSize: 11, color: c.flag ? 'var(--primary)' : 'var(--text-muted)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.dept}>
+                  {c.dept.split(' ')[0]}
+                </span>
               ))}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 12, fontSize: 13, color: 'var(--primary)' }}>
-              <AlertTriangle size={15} /> Crew C at 168% of entitlement — 3 months running.
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 14, fontSize: 13, color: 'var(--primary)', fontWeight: 500 }}>
+              <AlertTriangle size={15} /> Engineering &amp; Maintenance at 168% of entitlement — 3 months running.
             </div>
           </div>
         </div>
 
         <div className="card">
-          <div className="card-hd"><h3>Flags to review</h3><span className="badge badge-danger">{FLAGS.filter(f => f.open).length} open</span></div>
+          <div className="card-hd"><h3>Flags to review</h3><span className="badge badge-danger">{FLAGS.filter((f) => f.open).length} open</span></div>
           <div className="card-bd" style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
             {FLAGS.map((f, i) => (
               <div key={i} className="card" style={{ boxShadow: 'none', background: f.open ? 'var(--danger-weak)' : 'var(--surface-2)', borderColor: f.open ? 'var(--primary-weak-bd)' : 'var(--border)' }}>
@@ -128,39 +135,58 @@ export const InventoryAnalyticsPortal = () => {
         </div>
       </div>
 
+      {/* Stock Allocation by Employee Report */}
+      <EmployeeAllocationReport />
+
       {/* Stock ledger */}
       <div className="card">
         <div className="card-hd">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Boxes size={17} style={{ color: 'var(--primary)' }} /><h3>Stock ledger — forward cover &amp; value</h3></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Boxes size={17} style={{ color: 'var(--primary)' }} />
+            <h3>Stock ledger — forward cover &amp; valuation</h3>
+          </div>
           <span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? `${products.length} live SKUs` : `${products.length} SKUs`}</span>
         </div>
         {live && products.length === 0 && (
           <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>Connecting to the live catalogue… stock will appear here once the tenant link resolves.</div>
         )}
         {products.length > 0 && (
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr><th>SKU</th><th>Item</th><th className="center">Cat</th><th className="num">Cost</th><th className="num">On hand</th><th className="num">Transit</th><th className="num">Cover</th></tr>
-            </thead>
-            <tbody>
-              {products.map(p => {
-                const cv = cover(p); const low = cv < 14;
-                return (
-                  <tr key={p.sku} className={low ? 'row-flag' : ''}>
-                    <td className="muted">{p.sku}</td>
-                    <td style={{ fontWeight: 500 }}>{p.name}</td>
-                    <td className="center"><span className="badge badge-neutral" style={{ fontSize: 10 }}>{p.abcClass}</span></td>
-                    <td className="num">{getItemCost(p) != null ? `R ${getItemCost(p).toFixed(2)}` : '—'}</td>
-                    <td className="num">{p.stockOnHand ?? 0}</td>
-                    <td className="num muted">+{p.stockInTransit ?? 0}</td>
-                    <td className="num" style={{ color: low ? 'var(--danger)' : 'var(--text)', fontWeight: low ? 600 : 400 }}>{cv}d</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Item description</th>
+                  <th>Department / Category</th>
+                  <th className="num">Unit price (RP)</th>
+                  <th className="num">On hand</th>
+                  <th className="num">Transit</th>
+                  <th className="num">Total value (RP)</th>
+                  <th className="num">Cover</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((p) => {
+                  const cv = cover(p);
+                  const low = cv < 14;
+                  const price = getItemPrice(p);
+                  const lineTotal = price * (p.stockOnHand || 0);
+                  return (
+                    <tr key={p.sku} className={low ? 'row-flag' : ''}>
+                      <td className="muted" style={{ fontWeight: 500 }}>{p.sku}</td>
+                      <td style={{ fontWeight: 600 }}>{p.name}</td>
+                      <td className="muted">{p.category || 'General PPE'}</td>
+                      <td className="num tabular">R {price.toFixed(2)}</td>
+                      <td className="num tabular">{p.stockOnHand ?? 0}</td>
+                      <td className="num tabular muted">+{p.stockInTransit ?? 0}</td>
+                      <td className="num tabular" style={{ fontWeight: 600 }}>R {lineTotal.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="num tabular" style={{ color: low ? 'var(--danger)' : 'var(--text)', fontWeight: low ? 600 : 400 }}>{cv}d</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
