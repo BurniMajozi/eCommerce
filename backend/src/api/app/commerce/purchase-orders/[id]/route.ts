@@ -1,12 +1,13 @@
 import type { MedusaResponse } from '@medusajs/framework/http';
+import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { updateInventoryLevelsWorkflow } from '@medusajs/medusa/core-flows';
 import { readCatalogueData } from '../../../../../catalogue/read';
 import { assertCapability, ScopeError } from '../../../../../security/tenant-scope';
 import type { TenantScopedRequest } from '../../../../middlewares/tenant-scope';
-import { getServiceClient } from '../../../../../security/supabase-scope-resolver';
 
 const finite = (v: any): number => (typeof v === 'number' && Number.isFinite(v) ? v : (v == null || isNaN(Number(v)) ? 0 : Number(v)));
 const VALID = ['draft', 'sent', 'received', 'cancelled'];
+const pg = (req: TenantScopedRequest) => req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as any;
 
 // Receiving a PO increases on-hand stock. Resolve each line product's inventory
 // item + the tenant/site stock location, then bump stocked_quantity by the
@@ -17,7 +18,6 @@ async function receiveStock(req: TenantScopedRequest, scope: NonNullable<TenantS
   const locationId = data.context.stockLocationId;
   if (!locationId) return { updated: 0, skipped: lines.length, located: false };
 
-  // product_id -> { inventory_item_id, required }
   const itemByProduct = new Map<string, { itemId: string; required: number }>();
   for (const p of data.products) {
     for (const v of p.variants ?? []) {
@@ -25,7 +25,6 @@ async function receiveStock(req: TenantScopedRequest, scope: NonNullable<TenantS
       if (p.id && link?.inventory_item_id) { itemByProduct.set(p.id, { itemId: link.inventory_item_id, required: Math.max(1, finite(link.required_quantity) || 1) }); break; }
     }
   }
-  // inventory_item_id -> current stocked_quantity
   const stockedByItem = new Map<string, number>();
   for (const lvl of data.inventoryLevels) {
     if (lvl.inventory_item_id && lvl.location_id === locationId) stockedByItem.set(lvl.inventory_item_id, finite(lvl.stocked_quantity));
@@ -45,17 +44,16 @@ async function receiveStock(req: TenantScopedRequest, scope: NonNullable<TenantS
   return { updated, skipped, located: true };
 }
 
-// PATCH /app/commerce/purchase-orders/:id — change status (draft→sent→received)
-// or edit reference/expected date. Receiving bumps stock.
+// PATCH /app/commerce/purchase-orders/:id — change status or edit fields.
 export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Promise<void> {
   const scope = req.tenantScope;
   try {
     if (!scope) throw new ScopeError(401, 'scope_missing', 'Tenant scope was not resolved.');
     assertCapability(scope, 'commerce.manage');
     const b = (req.body ?? {}) as Record<string, any>;
-    const db = getServiceClient();
+    const db = pg(req);
 
-    const { data: po } = await db.from('purchase_orders').select('id, status, lines').eq('id', req.params.id).eq('tenant_id', scope.tenantId).maybeSingle();
+    const po = await db('purchase_orders').where({ id: req.params.id, tenant_id: scope.tenantId }).first();
     if (!po) throw new ScopeError(404, 'po_not_found', 'Purchase order not found.');
 
     const patch: Record<string, any> = { updated_at: new Date().toISOString() };
@@ -73,8 +71,7 @@ export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Prom
       }
     }
 
-    const { error } = await db.from('purchase_orders').update(patch).eq('id', req.params.id).eq('tenant_id', scope.tenantId);
-    if (error) throw new Error(error.message);
+    await db('purchase_orders').where({ id: req.params.id, tenant_id: scope.tenantId }).update(patch);
     res.json({ id: req.params.id, status: patch.status ?? po.status, stock: stockResult });
   } catch (error) {
     if (error instanceof ScopeError) { res.status(error.status).json({ code: error.code, message: error.message }); return; }
@@ -88,9 +85,7 @@ export async function DELETE(req: TenantScopedRequest, res: MedusaResponse): Pro
   try {
     if (!scope) throw new ScopeError(401, 'scope_missing', 'Tenant scope was not resolved.');
     assertCapability(scope, 'commerce.manage');
-    const db = getServiceClient();
-    const { error } = await db.from('purchase_orders').delete().eq('id', req.params.id).eq('tenant_id', scope.tenantId);
-    if (error) throw new Error(error.message);
+    await pg(req)('purchase_orders').where({ id: req.params.id, tenant_id: scope.tenantId }).del();
     res.json({ id: req.params.id, deleted: true });
   } catch (error) {
     if (error instanceof ScopeError) { res.status(error.status).json({ code: error.code, message: error.message }); return; }
