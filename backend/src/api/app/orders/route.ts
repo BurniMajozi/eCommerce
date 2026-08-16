@@ -1,6 +1,7 @@
 import type { MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { createOrderWorkflow } from '@medusajs/medusa/core-flows';
+import { randomUUID } from 'crypto';
 import { assertCapability, ScopeError } from '../../../security/tenant-scope';
 import type { TenantScopedRequest } from '../../middlewares/tenant-scope';
 import { CatalogueConfigurationError, readCatalogueData } from '../../../catalogue/read';
@@ -196,6 +197,49 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
     };
 
     const { result } = await createOrderWorkflow(req.scope).run({ input: orderInput as any });
+
+    // Sync B2B Order to Purchase Orders table
+    try {
+      const pg = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as any;
+      const supplierName = (body.supplier || '').trim() || 'Dromex Safety (Pty) Ltd';
+      
+      // Determine if supplier is from the mine or external
+      const isMinePlant = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi/i.test(supplierName);
+      // If mine plant -> requires approval logic ('pending_approval')
+      // If external -> receipt trigger only ('sent', ready for receipting)
+      const poStatus = isMinePlant ? 'pending_approval' : 'sent';
+
+      const poLines = enrichedLines.map((l) => ({
+        product_id: l.variant_id,
+        sku: l.sku,
+        name: l.title || l.name,
+        qty: l.quantity,
+        unit_cost: l.unit_price,
+      }));
+
+      const poId = randomUUID();
+      const displayRef = (result as any)?.display_id ? `#${(result as any)?.display_id}` : (body.poNumber?.trim() || 'B2B');
+      await pg('purchase_orders').insert({
+        id: poId,
+        tenant_id: scope.tenantId,
+        supplier_id: null,
+        supplier_name: supplierName,
+        status: poStatus,
+        currency: (process.env.CURRENCY ?? 'zar').toUpperCase(),
+        reference: `B2B Order ${displayRef} (${body.clientName || 'Storefront'})`,
+        expected_date: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+        lines: JSON.stringify(poLines),
+        total: subtotal,
+        created_by: scope.userId,
+        created_at: new Date(),
+        updated_at: new Date(),
+        ...(isMinePlant
+          ? { submitted_at: new Date() }
+          : { sent_at: new Date(), approved_by: 'B2B Auto-Dispatch (External Vendor)', approved_at: new Date() }),
+      });
+    } catch {
+      // ignore PO sync failure if table is being created
+    }
 
     res.status(201).json({ order: toOrderSummary(result as unknown as Record<string, unknown>) });
   } catch (error) {

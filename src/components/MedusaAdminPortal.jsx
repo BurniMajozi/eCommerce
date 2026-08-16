@@ -205,12 +205,12 @@ const PurchaseOrderModal = ({ suppliers, products, scope, onClose, onSaved, trig
 
   return (
     <div className="overlay" onClick={busy ? undefined : onClose}>
-      <div className="modal" style={{ maxWidth: 620 }} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-hd" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="modal" style={{ maxWidth: 620, maxHeight: 'min(88vh, 680px)', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-hd" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><ClipboardCheck size={18} style={{ color: 'var(--primary)' }} /><h3>New purchase order</h3></div>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={17} /></button>
         </div>
-        <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: '1 1 auto', overflowY: 'auto', padding: '18px 22px' }}>
           {suppliers.length === 0 && <div style={{ color: 'var(--warning)', fontSize: 13 }}>Add a supplier first (Suppliers tab).</div>}
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <div className="field" style={{ flex: '2 1 220px' }}><label className="field-label">Supplier</label>
@@ -265,7 +265,7 @@ const PurchaseOrderModal = ({ suppliers, products, scope, onClose, onSaved, trig
           )}
           {error && <div style={{ color: 'var(--danger)', fontSize: 13 }}>{error}</div>}
         </div>
-        <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 18px', borderTop: '1px solid var(--border)' }}>
+        <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 18px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
           <button className="btn btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
           <button className="btn btn-primary" onClick={submit} disabled={busy || !lines.length || !supplierId}>{busy ? <><Loader2 size={15} className="spin" /> Creating…</> : 'Create PO'}</button>
         </div>
@@ -1134,25 +1134,31 @@ export const MedusaAdminPortal = ({ view }) => {
     const suppliers = parties?.suppliers ?? [];
     const rows = live ? purchaseOrders : [];
     const stat = { draft: 'badge-neutral', pending_approval: 'badge-warning', approved: 'badge-info', sent: 'badge-info', received: 'badge-success', rejected: 'badge-danger', cancelled: 'badge-neutral' };
-    const label = { pending_approval: 'awaiting approval', approved: 'approved', sent: 'sent', received: 'received', rejected: 'rejected', draft: 'draft', cancelled: 'cancelled' };
+    const label = { pending_approval: 'Awaiting Mine Approval', approved: 'Approved (Ready to Receive)', sent: 'Awaiting Receipt', received: 'Stock Received', rejected: 'Rejected', draft: 'Draft', cancelled: 'Cancelled' };
     const canCreate = live && suppliers.length > 0 && products.length > 0;
     const busy = (po) => poBusyId === po.id;
     return (
       <Wrap>
-        <Head icon={ClipboardList} title="Purchase Orders" sub="Raise a PO, send it to a manager to approve & sign, then print or email it to the supplier. Receiving adds the stock to inventory."
+        <Head icon={ClipboardList} title="Purchase Orders" sub="Inbound POs from mine plants (internal approval) & external vendors (receipt trigger). Receiving adds the stock to inventory."
           action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span><button className="btn btn-primary" onClick={() => setShowPoModal(true)} disabled={!canCreate}><Plus size={16} /> New PO</button></div>} />
         {live && !canCreate && <div className="card"><div className="card-bd muted" style={{ padding: 18 }}>Add at least one supplier and one product before raising a purchase order.</div></div>}
         <div className="card">
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Reference</th><th>Supplier</th><th className="num">Lines</th><th className="num">Total</th><th className="center">Status</th><th className="center">Actions</th></tr></thead>
+              <thead><tr><th>Reference / Source</th><th>Supplier / Plant</th><th className="num">Lines</th><th className="num">Total</th><th className="center">Workflow Status</th><th className="center">Actions</th></tr></thead>
               <tbody>
                 {!live && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 22 }}>Connect the live backend to manage purchase orders.</td></tr>}
-                {live && rows.length === 0 && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 22 }}>No purchase orders yet — raise one with “New PO”.</td></tr>}
+                {live && rows.length === 0 && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 22 }}>No purchase orders yet — raise one with “New PO” or place a B2B order.</td></tr>}
                 {rows.map((po) => (
                   <tr key={po.id}>
-                    <td><div style={{ fontWeight: 500 }}>{po.reference || '—'}</div><div className="eyebrow">{(po.createdAt || '').slice(0, 10)}{po.expectedDate ? ` · exp ${po.expectedDate}` : ''}</div></td>
-                    <td>{po.supplier}</td>
+                    <td>
+                      <div style={{ fontWeight: 500 }}>{po.reference || '—'}</div>
+                      <div className="eyebrow">{(po.createdAt || '').slice(0, 10)}{po.expectedDate ? ` · exp ${po.expectedDate}` : ''}</div>
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 500 }}>{po.supplier}</div>
+                      <div className="eyebrow">{/mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi/i.test(po.supplier || '') ? 'Internal mine plant' : 'External safety vendor'}</div>
+                    </td>
                     <td className="num">{po.lineCount}</td>
                     <td className="num tabular">{money(po.total, po.currency)}</td>
                     <td className="center">
@@ -1164,12 +1170,16 @@ export const MedusaAdminPortal = ({ view }) => {
                     </td>
                     <td className="center" style={{ whiteSpace: 'nowrap' }}>
                       {po.status === 'draft' && <button className="btn btn-secondary btn-sm" disabled={busy(po)} onClick={() => poAction(po, 'submit')}>{busy(po) ? <Loader2 size={13} className="spin" /> : <Send size={13} />} Submit for approval</button>}
-                      {po.status === 'pending_approval' && <span className="muted" style={{ fontSize: 12 }}>with manager…</span>}
+                      {po.status === 'pending_approval' && (
+                        <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                          <button className="btn btn-primary btn-sm" disabled={busy(po)} onClick={() => poAction(po, 'approve')}>{busy(po) ? <Loader2 size={13} className="spin" /> : <Check size={13} />} Approve</button>
+                        </div>
+                      )}
                       {po.status === 'rejected' && <button className="btn btn-secondary btn-sm" disabled={busy(po)} onClick={() => poAction(po, 'submit')}>Re-submit</button>}
                       {(po.status === 'approved' || po.status === 'sent') && <>
                         <button className="btn btn-secondary btn-sm" title="Print / PDF" onClick={() => printPo(po)}><Printer size={13} /></button>
                         <button className="btn btn-secondary btn-sm" style={{ marginLeft: 6 }} title="Email to supplier" disabled={busy(po)} onClick={() => emailPo(po)}><Mail size={13} /></button>
-                        <button className="btn btn-primary btn-sm" style={{ marginLeft: 6 }} disabled={busy(po)} onClick={() => poAction(po, 'receive')}>{busy(po) ? <Loader2 size={13} className="spin" /> : <PackageCheck size={13} />} Receive</button>
+                        <button className="btn btn-primary btn-sm" style={{ marginLeft: 6 }} disabled={busy(po)} onClick={() => poAction(po, 'receive')}>{busy(po) ? <Loader2 size={13} className="spin" /> : <PackageCheck size={13} />} Receive stock</button>
                       </>}
                       {po.status === 'received' && <button className="btn btn-secondary btn-sm" title="Print / PDF" onClick={() => printPo(po)}><Printer size={13} /></button>}
                       {po.status !== 'received' && po.status !== 'pending_approval' && <button className="icon-btn" style={{ width: 30, height: 30, marginLeft: 6 }} title="Delete" onClick={() => setPoDelete(po)}><Trash2 size={14} /></button>}

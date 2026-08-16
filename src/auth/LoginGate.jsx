@@ -21,24 +21,44 @@ export const LoginGate = ({ children }) => {
   const [factorId, setFactorId] = useState(null);
   const [qr, setQr] = useState(null);
   const [secret, setSecret] = useState(null);
+  const checkedUserIdRef = React.useRef(null);
 
   const detect = useCallback(async () => {
-    const { data: aal } = await auth.getAAL();
-    const { data: factors } = await auth.listMfaFactors();
-    const totps = factors?.totp || [];
-    const verified = totps.find((f) => f.status === 'verified');
-    if (verified && aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') { setFactorId(verified.id); setStage('challenge'); return; }
-    if (!verified && aal?.currentLevel === 'aal1') { setStage('offer'); return; }
-    setStage(null);
+    try {
+      const { data: aal } = await auth.getAAL();
+      const { data: factors } = await auth.listMfaFactors();
+      const totps = factors?.totp || [];
+      const verified = totps.find((f) => f.status === 'verified');
+      if (verified && aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') { setFactorId(verified.id); setStage('challenge'); return; }
+      if (!verified && aal?.currentLevel === 'aal1') { setStage('offer'); return; }
+      setStage(null);
+    } catch {
+      setStage(null);
+    }
   }, [auth]);
 
   useEffect(() => {
-    if (auth.mode !== 'supabase' || !auth.user) { setStage(null); setChecked(true); setSkipped(false); return undefined; }
+    if (auth.mode !== 'supabase' || !auth.user) {
+      setStage(null);
+      setChecked(true);
+      setSkipped(false);
+      checkedUserIdRef.current = null;
+      return undefined;
+    }
+    // Prevent unmounting and re-logging on site changes if user is already checked
+    if (checkedUserIdRef.current === auth.user.id) {
+      setChecked(true);
+      return undefined;
+    }
     let cancelled = false;
-    setChecked(false);
-    detect().finally(() => { if (!cancelled) setChecked(true); });
+    detect().finally(() => {
+      if (!cancelled) {
+        checkedUserIdRef.current = auth.user.id;
+        setChecked(true);
+      }
+    });
     return () => { cancelled = true; };
-  }, [auth.user, auth.mode, detect]);
+  }, [auth.user?.id, auth.mode, detect]);
 
   if (auth.mode === 'demo') return children;
 
