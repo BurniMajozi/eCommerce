@@ -513,7 +513,10 @@ export const TenantAdminPortal = () => {
       {/* Users & roles — in-app member management (invite / role / suspend) */}
       <MembersManager scope={commerceScope} triggerNotification={triggerNotification} fallbackRows={memberRows} />
 
-      {/* Permission matrix */}
+      {/* Reports — live data, exportable to CSV / PDF & Employee Allocation */}
+      <LiveReportBuilder scope={commerceScope} triggerNotification={triggerNotification} />
+
+      {/* Permission matrix — separation of duties */}
       <div className="card">
         <div className="card-hd">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ShieldCheck size={17} style={{ color: 'var(--primary)' }} /><h3>Permission matrix — separation of duties</h3></div>
@@ -544,9 +547,6 @@ export const TenantAdminPortal = () => {
           <p className="muted" style={{ fontSize: 13, margin: 0 }}>Whoever <strong style={{ color: 'var(--text)' }}>issues</strong> can never <strong style={{ color: 'var(--text)' }}>approve</strong>, and neither can <strong style={{ color: 'var(--text)' }}>adjust</strong> stock without a manager co-sign. Every role change is itself logged.</p>
         </div>
       </div>
-
-      {/* Reports — live data, exportable to CSV / PDF */}
-      <LiveReportBuilder scope={commerceScope} triggerNotification={triggerNotification} />
     </div>
   );
 };
