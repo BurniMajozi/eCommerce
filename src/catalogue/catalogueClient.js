@@ -81,6 +81,9 @@ async function scopedJson(path, { accessToken, tenantId, siteId = null, signal, 
 
 export const fetchProfitability = (scope) => scopedJson('/app/catalogue/profit', scope);
 
+// Real tenant reports (stock valuation, reorder, customer spend, orders).
+export const fetchReports = (scope) => scopedJson('/app/reports/summary', scope);
+
 // Live data for the Promotions / Tax / Fulfilment / Customers admin screens.
 export const fetchCommerceConfig = (scope) => scopedJson('/app/commerce/config', scope);
 

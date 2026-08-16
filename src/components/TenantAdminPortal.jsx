@@ -1,13 +1,177 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-  MOCK_SAVED_REPORTS, MOCK_CREW_CONSUMPTION, PERMISSION_MATRIX,
-  MOCK_TENANT_USERS, MOCK_ENTITLEMENT_RULES
+  PERMISSION_MATRIX, MOCK_TENANT_USERS, MOCK_ENTITLEMENT_RULES
 } from '../data/mockData';
 import { fetchTenantMembers } from '../tenant/adminReads';
-import { fetchMembers, inviteMember, updateMemberRole, removeMember, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { fetchMembers, inviteMember, updateMemberRole, removeMember, fetchReports, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { ConfirmDialog } from './ConfirmDialog';
-import { FileBarChart, Plus, Play, Save, ArrowRight, Users, ListChecks, ShieldCheck, Trash2, PackageCheck, ClipboardList, GitBranch, ShieldQuestion, UserPlus, Mail, KeyRound, Copy, Loader2, RefreshCw } from 'lucide-react';
+import { downloadCsv, dateStamp } from '../utils/exportCsv';
+import { FileBarChart, Plus, Play, Save, ArrowRight, Users, ListChecks, ShieldCheck, Trash2, PackageCheck, ClipboardList, GitBranch, ShieldQuestion, UserPlus, Mail, KeyRound, Copy, Loader2, RefreshCw, Download, Printer } from 'lucide-react';
+
+const rand = (n) => `R ${Number(n || 0).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
+
+// Real tenant reports from live commerce data, with CSV + PDF export.
+const REPORT_DEFS = {
+  stock: {
+    name: 'Stock valuation', pick: (r) => r.stockValuation?.rows ?? [],
+    cols: [
+      { key: 'sku', label: 'SKU' }, { key: 'name', label: 'Product' },
+      { key: 'onHand', label: 'On hand', num: true },
+      { key: 'unitCost', label: 'Unit cost', num: true, money: true, restrict: true },
+      { key: 'unitPrice', label: 'Unit price', num: true, money: true },
+      { key: 'stockCost', label: 'Stock @ cost', num: true, money: true, restrict: true },
+      { key: 'stockRetail', label: 'Stock @ retail', num: true, money: true },
+      { key: 'potentialProfit', label: 'Potential profit', num: true, money: true, restrict: true },
+      { key: 'margin', label: 'Margin %', num: true, pct: true },
+    ],
+  },
+  reorder: {
+    name: 'Reorder (low cover)', pick: (r) => r.reorder?.rows ?? [],
+    cols: [
+      { key: 'sku', label: 'SKU' }, { key: 'name', label: 'Product' }, { key: 'category', label: 'Category' },
+      { key: 'onHand', label: 'On hand', num: true }, { key: 'inTransit', label: 'In transit', num: true },
+      { key: 'dailyConsumption', label: 'Daily use', num: true }, { key: 'coverDays', label: 'Cover (days)', num: true, flag: (v) => v < 7 },
+      { key: 'leadTimeDays', label: 'Lead (days)', num: true },
+    ],
+  },
+  customers: {
+    name: 'Customer spend', pick: (r) => r.customerSpend?.rows ?? [],
+    cols: [
+      { key: 'company', label: 'Customer' }, { key: 'currency', label: 'Cur' },
+      { key: 'limit', label: 'Limit', num: true, money: true }, { key: 'spent', label: 'Spent', num: true, money: true },
+      { key: 'pctUsed', label: '% used', num: true, pct: true, flag: (v) => v >= 80 },
+    ],
+  },
+  orders: {
+    name: 'Orders', pick: (r) => r.orders?.rows ?? [],
+    cols: [
+      { key: 'order', label: 'Order' }, { key: 'email', label: 'Customer' }, { key: 'currency', label: 'Cur' },
+      { key: 'total', label: 'Total', num: true, money: true }, { key: 'status', label: 'Status' }, { key: 'date', label: 'Date' },
+    ],
+  },
+};
+
+const fmtCell = (col, v) => {
+  if (v == null) return col.restrict ? 'Restricted' : '—';
+  if (col.money) return rand(v);
+  if (col.pct) return `${Number(v).toFixed(0)}%`;
+  if (col.num) return Number(v).toLocaleString('en-ZA');
+  return v;
+};
+
+const LiveReportBuilder = ({ scope, triggerNotification }) => {
+  const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [active, setActive] = useState('stock');
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    if (!live) { setData(null); return; }
+    setLoading(true); setError(null);
+    fetchReports(scope).then((r) => setData(r.reports ? r : { reports: r })).catch((e) => setError(e)).finally(() => setLoading(false));
+  }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const def = REPORT_DEFS[active];
+  const rows = data?.reports ? def.pick(data.reports) : [];
+  const totals = active === 'stock' ? data?.reports?.stockValuation?.totals : null;
+  const generatedAt = data?.generatedAt ? new Date(data.generatedAt).toLocaleString('en-ZA') : null;
+
+  const exportCsvNow = () => {
+    downloadCsv(`sightlive-${active}-report-${dateStamp()}`, def.cols.map((c) => ({
+      key: c.key, label: c.label,
+      map: (row) => { const v = row[c.key]; if (v == null) return c.restrict ? 'Restricted' : ''; return c.money || c.pct || c.num ? v : v; },
+    })), rows);
+    triggerNotification('Report exported', `${def.name} · ${rows.length} rows to CSV.`, 'success');
+  };
+
+  const printPdf = () => {
+    const w = window.open('', '_blank');
+    if (!w) { triggerNotification('Popup blocked', 'Allow popups to export the PDF.', 'warning'); return; }
+    const th = def.cols.map((c) => `<th style="text-align:${c.num ? 'right' : 'left'}">${c.label}</th>`).join('');
+    const tb = rows.map((row) => `<tr>${def.cols.map((c) => `<td style="text-align:${c.num ? 'right' : 'left'}">${fmtCell(c, row[c.key])}</td>`).join('')}</tr>`).join('');
+    w.document.write(`<html><head><title>${def.name} — SightLive</title><style>
+      body{font-family:Inter,Arial,sans-serif;color:#111;padding:28px;font-size:12px}
+      h1{font-size:19px;margin:0 0 2px} .sub{color:#666;font-size:11px;margin-bottom:16px}
+      table{width:100%;border-collapse:collapse} th,td{padding:6px 9px;border-bottom:1px solid #ddd}
+      th{background:#f5f5f4;text-transform:uppercase;font-size:9.5px;letter-spacing:.05em}
+      tfoot td{font-weight:700;border-top:2px solid #999}
+    </style></head><body>
+      <h1>${def.name}</h1><div class="sub">SightLive · generated ${generatedAt ?? dateStamp()} · ${rows.length} rows</div>
+      <table><thead><tr>${th}</tr></thead><tbody>${tb}</tbody>${totals ? `<tfoot><tr><td colspan="${def.cols.length - 3}">Totals</td><td style="text-align:right">${rand(totals.stockCostValue)}</td><td style="text-align:right">${rand(totals.stockRetailValue)}</td><td style="text-align:right">${rand(totals.potentialProfit)}</td></tr></tfoot>` : ''}</table>
+    </body></html>`);
+    w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+    triggerNotification('Print / PDF', `${def.name} opened — use “Save as PDF”.`, 'info');
+  };
+
+  return (
+    <div className="card">
+      <div className="card-hd">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <FileBarChart size={17} style={{ color: 'var(--primary)' }} /><h3>Reports</h3>
+          <span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live data' : 'Demo mode'}</span>
+        </div>
+        {live && <button className="btn btn-ghost btn-sm" onClick={() => setReloadKey((k) => k + 1)} disabled={loading} aria-label="Refresh">{loading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}</button>}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+        <div style={{ width: 210, borderRight: '1px solid var(--border)', padding: 16, minWidth: 180 }}>
+          <div className="eyebrow" style={{ marginBottom: 10 }}>Reports</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {Object.entries(REPORT_DEFS).map(([k, d]) => (
+              <button key={k} onClick={() => setActive(k)} className={`btn btn-sm ${k === active ? 'btn-primary' : 'btn-secondary'}`} style={{ justifyContent: 'flex-start' }}>{d.name}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{ flex: 1, padding: 18, minWidth: 320 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <h3 style={{ fontSize: 18 }}>{def.name}</h3>
+              {generatedAt && <div className="eyebrow">as at {generatedAt}</div>}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-secondary btn-sm" onClick={exportCsvNow} disabled={!rows.length}><Download size={14} /> CSV</button>
+              <button className="btn btn-primary btn-sm" onClick={printPdf} disabled={!rows.length}><Printer size={14} /> Print / PDF</button>
+            </div>
+          </div>
+
+          {!live && <p className="muted" style={{ fontSize: 13, marginTop: 14 }}>Sign in to the live tenant to run reports from real stock, order and customer data.</p>}
+          {error && <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 14 }}>{error.message || 'Report could not be generated.'}</p>}
+          {live && !error && (
+            <div className="table-wrap card" style={{ boxShadow: 'none', marginTop: 14 }}>
+              <table className="table">
+                <thead><tr>{def.cols.map((c) => <th key={c.key} className={c.num ? 'num' : ''}>{c.label}</th>)}</tr></thead>
+                <tbody>
+                  {rows.length === 0 && <tr><td colSpan={def.cols.length} className="muted" style={{ textAlign: 'center', padding: 22 }}>{loading ? 'Generating…' : 'No rows for this report yet.'}</td></tr>}
+                  {rows.map((row, i) => (
+                    <tr key={i}>
+                      {def.cols.map((c) => {
+                        const v = row[c.key];
+                        const flagged = c.flag && v != null && c.flag(v);
+                        return <td key={c.key} className={c.num ? 'num' : ''} style={flagged ? { color: 'var(--danger)', fontWeight: 600 } : undefined}>{fmtCell(c, v)}</td>;
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+                {totals && (
+                  <tfoot>
+                    <tr style={{ fontWeight: 700, borderTop: '2px solid var(--border-strong)' }}>
+                      <td colSpan={def.cols.length - 3}>Totals</td>
+                      <td className="num">{rand(totals.stockCostValue)}</td>
+                      <td className="num">{rand(totals.stockRetailValue)}</td>
+                      <td className="num" style={{ color: 'var(--success)' }}>{rand(totals.potentialProfit)}</td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const SourceBadge = ({ live }) => (
   <span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live · RLS' : 'Demo data'}</span>
@@ -223,14 +387,12 @@ const permCell = (v, hot) => {
 };
 
 export const TenantAdminPortal = () => {
-  const { activePlant, runScheduledReport, triggerNotification, integrationMode, tenantAccess, auth } = useApp();
+  const { activePlant, triggerNotification, integrationMode, tenantAccess, auth } = useApp();
   const commerceScope = {
     accessToken: auth?.session?.access_token,
     tenantId: tenantAccess?.activeTenantId,
     siteId: tenantAccess?.activeSiteId,
   };
-  const [activeReport, setActiveReport] = useState('consumption');
-  const [groupBy, setGroupBy] = useState('crew');
   const [rules, setRules] = useState(MOCK_ENTITLEMENT_RULES);
   const [nr, setNr] = useState({ role: 'Underground Driller', itemClass: 'Safety boots', qty: 1, cycle: '6 months' });
   const [liveMembers, setLiveMembers] = useState(null);
@@ -252,9 +414,6 @@ export const TenantAdminPortal = () => {
   };
   const removeRule = (idx) => setRules(prev => prev.filter((_, i) => i !== idx));
 
-  const report = MOCK_SAVED_REPORTS.find(r => r.id === activeReport) || MOCK_SAVED_REPORTS[0];
-  const maxCons = Math.max(...MOCK_CREW_CONSUMPTION.map(c => c.value));
-
   const JOURNEY = [
     { icon: ListChecks, t: 'Entitlement rule', d: 'role gets X per cycle' },
     { icon: ClipboardList, t: 'Worker requests', d: 'picks item + size' },
@@ -273,83 +432,8 @@ export const TenantAdminPortal = () => {
         <span className="badge badge-neutral">M. van Wyk · Tenant Admin</span>
       </div>
 
-      {/* Report builder */}
-      <div className="card">
-        <div className="card-hd">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><FileBarChart size={17} style={{ color: 'var(--primary)' }} /><h3>Report builder</h3></div>
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-          {/* saved rail */}
-          <div style={{ width: 220, borderRight: '1px solid var(--border)', padding: 16, minWidth: 190 }}>
-            <div className="eyebrow" style={{ marginBottom: 10 }}>Saved</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {MOCK_SAVED_REPORTS.map(r => (
-                <button key={r.id} onClick={() => setActiveReport(r.id)}
-                  className={`btn btn-sm ${r.id === activeReport ? 'btn-primary' : 'btn-secondary'}`} style={{ justifyContent: 'flex-start' }}>
-                  {r.name}
-                </button>
-              ))}
-              <button className="btn btn-ghost btn-sm" style={{ justifyContent: 'flex-start', borderStyle: 'dashed', borderWidth: 1, borderColor: 'var(--border-strong)' }} onClick={() => triggerNotification('New report', 'Blank report opened in the builder.', 'info')}>
-                <Plus size={14} /> New report
-              </button>
-            </div>
-          </div>
-
-          {/* canvas */}
-          <div style={{ flex: 1, padding: 18, minWidth: 320 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-              <h3 style={{ fontSize: 18 }}>{report.name}</h3>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <span className="badge badge-neutral">Aug 2026</span>
-                <select className="select" value={groupBy} onChange={e => setGroupBy(e.target.value)} style={{ width: 'auto', padding: '5px 10px', fontSize: 12.5 }}>
-                  <option value="crew">by crew</option>
-                  <option value="cost centre">by cost centre</option>
-                  <option value="item class">by item class</option>
-                </select>
-                <span className="badge badge-primary" style={{ cursor: 'pointer' }}>+ filter</span>
-              </div>
-            </div>
-
-            <div className="table-wrap card" style={{ boxShadow: 'none', marginTop: 14 }}>
-              <table className="table">
-                <thead>
-                  <tr><th style={{ textTransform: 'capitalize' }}>{groupBy}</th><th className="num">Issues</th><th className="num">Heads</th><th className="num">R value</th><th className="num">vs Entitle</th><th>Distribution</th></tr>
-                </thead>
-                <tbody>
-                  {MOCK_CREW_CONSUMPTION.map(c => (
-                    <tr key={c.crew} className={c.flag ? 'row-flag' : ''}>
-                      <td style={{ fontWeight: 500 }}>{c.crew}</td>
-                      <td className="num">{c.issues}</td>
-                      <td className="num">{c.heads}</td>
-                      <td className="num">R {c.value.toLocaleString('en-ZA')}</td>
-                      <td className="num" style={{ color: c.flag ? 'var(--danger)' : 'var(--text)', fontWeight: c.flag ? 600 : 400 }}>{c.vsEntitle}%</td>
-                      <td style={{ width: 150 }}>
-                        <div className="progress"><span style={{ width: `${(c.value / maxCons) * 100}%`, background: c.flag ? 'var(--primary)' : 'var(--text-subtle)' }} /></div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginTop: 16, flexWrap: 'wrap' }}>
-              <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)', flex: 1, minWidth: 240 }}>
-                <div className="card-bd" style={{ padding: 14 }}>
-                  <div className="eyebrow">Schedule</div>
-                  <div style={{ fontSize: 13, marginTop: 6, lineHeight: 1.6 }}>
-                    Every 1st of the month, 06:00 · to mine manager, finance, SHEQ<br />PDF + XLS · also posts to Teams
-                  </div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: 220 }}>
-                <button className="btn btn-primary btn-block" onClick={() => runScheduledReport(report.name)}><Play size={15} /> Run &amp; export</button>
-                <button className="btn btn-secondary btn-block" onClick={() => triggerNotification('Template saved', `“${report.name}” saved as a reusable template.`, 'success')}><Save size={15} /> Save as template</button>
-                <button className="btn btn-danger btn-block" onClick={() => triggerNotification('Drill-down', 'Opening Crew C issue-level detail…', 'info')}>Drill into Crew C <ArrowRight size={14} /></button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Reports — live data, exportable to CSV / PDF */}
+      <LiveReportBuilder scope={commerceScope} triggerNotification={triggerNotification} />
 
       {/* Permission matrix */}
       <div className="card">

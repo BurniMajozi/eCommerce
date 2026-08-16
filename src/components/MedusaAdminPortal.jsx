@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, fetchCommerceConfig, fetchEngine, runEngineWorkflow, fetchParties, createParty, updateParty, deleteParty, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { ProductThumb } from './ProductThumb';
 import { ProductFormModal } from './ProductFormModal';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -13,7 +14,7 @@ import {
   Tag, Boxes, ShoppingCart, BadgePercent, Percent, Truck, Upload, Wallet,
   Workflow, Radio, Plus, FileSpreadsheet, CheckCircle2, RotateCw, Globe2,
   ChevronRight, ChevronDown, Zap, GitBranch, Play, Pencil, Trash2,
-  Factory, Loader2, X, ArrowDownLeft, ArrowUpRight
+  Factory, Loader2, X, ArrowDownLeft, ArrowUpRight, Download
 } from 'lucide-react';
 
 const cur = (code) => MEDUSA_CURRENCIES.find(c => c.code === code) || MEDUSA_CURRENCIES[0];
@@ -313,7 +314,17 @@ export const MedusaAdminPortal = ({ view }) => {
     return (
       <Wrap>
         <Head icon={Tag} title="Products & Pricing" sub="Cost, contract price and margin per SKU — with size/colour variants as the lowest stock-keeping level."
-          action={<button className="btn btn-primary" onClick={() => setShowProductForm(true)}><Plus size={16} /> New product</button>} />
+          action={<div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn btn-secondary" onClick={() => { downloadCsv(`sightlive-pricelist-${dateStamp()}`, [
+              { key: 'sku', label: 'SKU' }, { key: 'name', label: 'Product' }, { key: 'category', label: 'Category', map: (r) => r.category ?? '' },
+              { key: 'costPrice', label: 'Cost (R)', map: (r) => (r.costPrice == null ? 'Restricted' : r.costPrice.toFixed(2)) },
+              { key: 'sellingPrice', label: 'Price (R)', map: (r) => (r.sellingPrice == null ? '' : r.sellingPrice.toFixed(2)) },
+              { key: 'profit', label: 'Profit/unit (R)', map: (r) => (r.profit == null ? 'Restricted' : r.profit.toFixed(2)) },
+              { key: 'margin', label: 'Margin (%)', map: (r) => (r.margin == null ? 'Restricted' : r.margin.toFixed(1)) },
+              { key: 'stockOnHand', label: 'Stock' },
+            ], rows); triggerNotification('Export ready', `${rows.length} products exported to CSV.`, 'success'); }} disabled={!rows.length}><Download size={16} /> Export CSV</button>
+            <button className="btn btn-primary" onClick={() => setShowProductForm(true)}><Plus size={16} /> New product</button>
+          </div>} />
         <div className="cols cols-3">
           <div className="card"><div className="card-bd"><div className="kpi-label">Avg margin</div><div className="kpi-value" style={{ color: 'var(--primary)' }}>{avgMargin === null ? 'Restricted' : `${avgMargin.toFixed(1)}%`}</div><div className="kpi-sub">server-authoritative when live</div></div></div>
           <div className="card"><div className="card-bd"><div className="kpi-label">Stock at cost</div><div className="kpi-value">{stockValue === null ? 'Restricted' : `R ${(stockValue / 1e6).toFixed(2)}m`}</div><div className="kpi-sub">requires commerce management + MFA</div></div></div>
@@ -402,9 +413,31 @@ export const MedusaAdminPortal = ({ view }) => {
     const cover = (p) => Math.round((p.stockOnHand + p.stockInTransit) / (p.dailyConsumption || 1));
     const low = products.filter(p => cover(p) < 14).length;
     const reserved = (p) => Math.min(p.stockOnHand, Math.round(p.dailyConsumption * 2));
+    const liveStock = catalogue?.source === 'medusa';
+    const exportInventory = () => {
+      const rows = products.map((p) => {
+        const res = reserved(p);
+        return { ...p, _reserved: res, _available: p.stockOnHand - res, _cover: cover(p) };
+      });
+      downloadCsv(`sightlive-inventory-${dateStamp()}`, [
+        { key: 'sku', label: 'SKU' },
+        { key: 'name', label: 'Product' },
+        { key: 'category', label: 'Category', map: (p) => p.category ?? '' },
+        { key: 'stockOnHand', label: 'On hand' },
+        { key: '_reserved', label: 'Reserved' },
+        { key: '_available', label: 'Available' },
+        { key: 'stockInTransit', label: 'In transit' },
+        { key: '_cover', label: 'Cover (days)' },
+        { key: 'costPrice', label: 'Cost (R)', map: (p) => (p.costPrice == null ? '' : p.costPrice.toFixed(2)) },
+        { key: 'sellingPrice', label: 'Selling (R)', map: (p) => (p.sellingPrice == null ? '' : p.sellingPrice.toFixed(2)) },
+        { key: 'stockValue', label: 'Stock value (R)', map: (p) => ((p.costPrice ?? 0) * p.stockOnHand).toFixed(2) },
+      ], rows);
+      triggerNotification('Export ready', `${rows.length} SKUs exported to CSV.`, 'success');
+    };
     return (
       <Wrap>
-        <Head icon={Boxes} title="Inventory & Stock" sub="Multi-location stock levels and reservations across your stores." />
+        <Head icon={Boxes} title="Inventory & Stock" sub="Multi-location stock levels and reservations across your stores."
+          action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${liveStock ? 'badge-success' : 'badge-neutral'}`}>{liveStock ? 'Live' : 'Demo data'}</span><button className="btn btn-secondary" onClick={exportInventory} disabled={!products.length}><Download size={16} /> Export CSV</button></div>} />
         <div className="cols cols-3">
           <div className="card"><div className="card-bd"><div className="kpi-label">Locations</div><div className="kpi-value">3</div><div className="kpi-sub">Store 1 · Store 2 · Central</div></div></div>
           <div className="card"><div className="card-bd"><div className="kpi-label">SKUs tracked</div><div className="kpi-value">{products.length}</div><div className="kpi-sub">with reservations</div></div></div>

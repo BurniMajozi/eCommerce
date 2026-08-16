@@ -67,6 +67,15 @@ export function buildTenantScope(
   });
 }
 
+// Passes if the scope holds ANY of the given capabilities. Used by cross-cutting
+// routes (e.g. reports) reachable by more than one role family — a tenant admin
+// has reports.read but not commerce.read, while a platform owner has the reverse.
+export function assertAnyCapability(scope: TenantScope, capabilities: string[]): void {
+  if (!capabilities.some((c) => scope.capabilities.includes(c))) {
+    throw new ScopeError(403, 'capability_required', `One of [${capabilities.join(', ')}] is required.`);
+  }
+}
+
 export function assertCapability(scope: TenantScope, capability: string, requireMfa = false): void {
   if (!scope.capabilities.includes(capability)) {
     throw new ScopeError(403, 'capability_required', `Capability ${capability} is required.`);
