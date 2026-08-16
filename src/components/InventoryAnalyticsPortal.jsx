@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { fetchReports, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
-import { MOCK_CREW_CONSUMPTION } from '../data/mockData';
+import { MOCK_CREW_CONSUMPTION, CAGELI_PRODUCTS } from '../data/mockData';
 import { TrendingUp, AlertTriangle, FileDown, Boxes, Wallet, TriangleAlert, PackageX } from 'lucide-react';
 
 export const InventoryAnalyticsPortal = () => {
-  const { products, activePlant, auth, tenantAccess, triggerNotification } = useApp();
+  const { products, profitability, activePlant, auth, tenantAccess, triggerNotification } = useApp();
   const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
   const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
 
@@ -20,9 +20,22 @@ export const InventoryAnalyticsPortal = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, scope.accessToken, scope.tenantId, scope.siteId]);
 
+  const costLookup = useMemo(() => {
+    const map = new Map();
+    (CAGELI_PRODUCTS || []).forEach((p) => { if (p.sku && p.costPrice != null) map.set(p.sku, Number(p.costPrice)); });
+    (profitability?.items || []).forEach((p) => { if (p.sku && p.averageCost != null) map.set(p.sku, Number(p.averageCost)); });
+    (reports?.stockValuation?.rows || []).forEach((r) => { if (r.sku && r.unitCost != null) map.set(r.sku, Number(r.unitCost)); });
+    return map;
+  }, [profitability, reports]);
+
+  const getItemCost = (p) => {
+    if (p.costPrice != null && !isNaN(Number(p.costPrice))) return Number(p.costPrice);
+    return costLookup.get(p.sku) ?? null;
+  };
+
   const stockValue = reports?.stockValuation?.totals?.stockCostValue != null
     ? reports.stockValuation.totals.stockCostValue
-    : products.reduce((a, p) => a + (p.costPrice ?? 0) * (p.stockOnHand ?? 0), 0);
+    : products.reduce((a, p) => a + (getItemCost(p) ?? 0) * (p.stockOnHand ?? 0), 0);
   const potentialProfit = reports?.stockValuation?.totals?.potentialProfit ?? null;
   const cover = (p) => Math.round((p.stockOnHand + p.stockInTransit) / (p.dailyConsumption || 1));
   const belowMin = reports?.reorder?.rows?.length != null
@@ -138,7 +151,7 @@ export const InventoryAnalyticsPortal = () => {
                     <td className="muted">{p.sku}</td>
                     <td style={{ fontWeight: 500 }}>{p.name}</td>
                     <td className="center"><span className="badge badge-neutral" style={{ fontSize: 10 }}>{p.abcClass}</span></td>
-                    <td className="num">{p.costPrice != null ? `R ${p.costPrice.toFixed(2)}` : '—'}</td>
+                    <td className="num">{getItemCost(p) != null ? `R ${getItemCost(p).toFixed(2)}` : '—'}</td>
                     <td className="num">{p.stockOnHand ?? 0}</td>
                     <td className="num muted">+{p.stockInTransit ?? 0}</td>
                     <td className="num" style={{ color: low ? 'var(--danger)' : 'var(--text)', fontWeight: low ? 600 : 400 }}>{cv}d</td>

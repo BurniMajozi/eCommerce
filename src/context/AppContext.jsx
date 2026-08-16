@@ -58,7 +58,12 @@ export const AppProvider = ({ children }) => {
     setCatalogue((current) => ({ ...current, loading: true, error: null }));
     fetchCatalogue({ accessToken, tenantId, siteId, signal: controller.signal })
       .then((response) => {
-        setProducts(response.items);
+        const costMap = new Map(CAGELI_PRODUCTS.map((cp) => [cp.sku, cp.costPrice]));
+        const items = (response.items || []).map((item) => ({
+          ...item,
+          costPrice: item.costPrice ?? costMap.get(item.sku) ?? null,
+        }));
+        setProducts(items);
         setCatalogue({ source: 'medusa', loading: false, error: null, dataQuality: response.dataQuality ?? null });
       })
       .catch((error) => {
