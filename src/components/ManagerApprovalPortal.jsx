@@ -146,7 +146,7 @@ const PromoSubmissions = () => {
   useEffect(() => {
     if (!live) { setPromos([]); return; }
     let active = true;
-    fetchPromotions(scope).then((r) => { if (active) setPromos(r.promotions ?? []); }).catch(() => { if (active) setPromos([]); });
+    fetchPromotions(scope).then((r) => { if (active) setPromos(Array.isArray(r?.promotions) ? r.promotions : []); }).catch(() => { if (active) setPromos([]); });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]);
@@ -155,7 +155,7 @@ const PromoSubmissions = () => {
     setBusyId(p.id);
     try {
       await updatePromotion(p.id, { action: 'acknowledge', managerName: me }, scope);
-      triggerNotification('Promo noted', `${p.sku} (−${p.discountPct}%) acknowledged.`, 'success');
+      triggerNotification('Promo noted', `${p.sku || 'Promotion'} (−${p.discountPct || 0}%) acknowledged.`, 'success');
       setReloadKey((k) => k + 1);
     } catch (e) { triggerNotification('Failed', e.message || 'Could not acknowledge.', 'danger'); } finally { setBusyId(null); }
   };
@@ -175,15 +175,18 @@ const PromoSubmissions = () => {
           <table className="table">
             <thead><tr><th>Product</th><th>Type</th><th className="num">Discount</th><th className="num">New cost basis</th><th>Created</th><th className="center">Seen by manager</th><th className="center">Action</th></tr></thead>
             <tbody>
-              {promos.map((p) => {
+              {promos.map((p, idx) => {
+                if (!p) return null;
                 const cost = Number(p.costAtCreate ?? 0);
-                const newCost = cost * (1 - Number(p.discountPct) / 100);
+                const pct = Number(p.discountPct ?? 0);
+                const validPct = isNaN(pct) ? 0 : pct;
+                const newCost = cost * (1 - validPct / 100);
                 return (
-                  <tr key={p.id}>
-                    <td style={{ fontWeight: 500 }}>{p.sku}</td>
+                  <tr key={p.id || p.sku || idx}>
+                    <td style={{ fontWeight: 500 }}>{p.sku || '—'}</td>
                     <td className="muted" style={{ textTransform: 'capitalize' }}>{String(p.promoType ?? 'markdown')}</td>
-                    <td className="num">−{Number(p.discountPct)}%</td>
-                    <td className="num tabular">R {newCost.toFixed(2)}</td>
+                    <td className="num">−{validPct}%</td>
+                    <td className="num tabular">R {isNaN(newCost) ? '0.00' : newCost.toFixed(2)}</td>
                     <td className="muted">{(p.createdAt || '').slice(0, 10)}</td>
                     <td className="center">{p.acknowledgedBy ? <span className="badge badge-success">{p.acknowledgedBy}</span> : <span className="badge badge-neutral">not seen</span>}</td>
                     <td className="center">

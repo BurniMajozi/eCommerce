@@ -1,0 +1,11 @@
+node_modules
+dist
+.git
+.claude
+.gemini
+backend/node_modules
+backend/.medusa
+backend/.cache
+item pictures.docx
+SightLive — PPE Stock Platform Invoice.pdf
+CageLi 2026 Prices (1).xlsx

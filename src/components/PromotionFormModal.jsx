@@ -70,9 +70,12 @@ export const PromotionFormModal = ({ products, onClose, onCreated, scope }) => {
             </div>
             <select className="select" style={{ marginTop: 8 }} value={productId} onChange={(e) => setProductId(e.target.value)}>
               <option value="">{search ? 'Matching products…' : 'Select a product'}</option>
-              {filtered.map((p) => (
-                <option key={p.id} value={p.id}>{p.sku} · {p.name}{p.sellingPrice != null ? ` (R${Number(p.sellingPrice).toFixed(2)})` : ''}</option>
-              ))}
+              {filtered.map((p, idx) => {
+                const val = p.id || p.sku;
+                return (
+                  <option key={val || idx} value={val}>{p.sku} · {p.name}{p.sellingPrice != null ? ` (R${Number(p.sellingPrice).toFixed(2)})` : ''}</option>
+                );
+              })}
             </select>
           </div>
 

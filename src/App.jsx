@@ -10,6 +10,7 @@ import { TenantAdminPortal } from './components/TenantAdminPortal';
 import { PlatformOwnerPortal } from './components/PlatformOwnerPortal';
 import { MedusaAdminPortal } from './components/MedusaAdminPortal';
 import { LoginGate } from './auth/LoginGate';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Menu, ChevronDown, Sun, Moon, CheckCircle2, AlertTriangle, Info, XCircle, LogOut } from 'lucide-react';
 
 const MED_VIEW = {
@@ -74,7 +75,9 @@ const AppContent = () => {
         </div>
 
         <main style={{ flex: 1, width: '100%', maxWidth: 1240, margin: '0 auto', padding: '22px 20px 40px' }}>
-          {render()}
+          <ErrorBoundary key={activeRole}>
+            {render()}
+          </ErrorBoundary>
         </main>
       </div>
 

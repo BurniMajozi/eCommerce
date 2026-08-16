@@ -798,17 +798,19 @@ export const MedusaAdminPortal = ({ view }) => {
               <thead><tr><th>Product</th><th>Type</th><th className="num">Discount</th><th className="num">Cost was → now</th><th className="num">Margin impact</th><th className="center">Status</th><th>Created</th></tr></thead>
               <tbody>
                 {rows.length === 0 && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 22 }}>{live ? 'No promotions yet — add one with “New promotion”.' : 'Connect the backend to manage promotions.'}</td></tr>}
-                {rows.map((p) => {
+                {rows.map((p, idx) => {
+                  if (!p) return null;
                   const cost = Number(p.costAtCreate ?? 0);
                   const pct = Number(p.discountPct ?? 0);
-                  const newCost = cost * (1 - pct / 100);
+                  const validPct = isNaN(pct) ? 0 : pct;
+                  const newCost = cost * (1 - validPct / 100);
                   return (
-                    <tr key={p.id}>
-                      <td style={{ fontWeight: 600 }}>{p.sku}</td>
+                    <tr key={p.id || p.sku || idx}>
+                      <td style={{ fontWeight: 600 }}>{p.sku || '—'}</td>
                       <td className="muted" style={{ textTransform: 'capitalize' }}>{String(p.promoType ?? 'markdown')}</td>
-                      <td className="num">−{pct}%</td>
-                      <td className="num tabular muted">R {cost.toFixed(2)} → <span style={{ color: 'var(--danger)', fontWeight: 600 }}>R {newCost.toFixed(2)}</span></td>
-                      <td className="num muted">cost basis −{pct}%</td>
+                      <td className="num">−{validPct}%</td>
+                      <td className="num tabular muted">R {cost.toFixed(2)} → <span style={{ color: 'var(--danger)', fontWeight: 600 }}>R {isNaN(newCost) ? '0.00' : newCost.toFixed(2)}</span></td>
+                      <td className="num muted">cost basis −{validPct}%</td>
                       <td className="center"><span className={`badge ${sb[p.status] || 'badge-neutral'}`}>{String(p.status || 'active').replace(/_/g, ' ')}</span></td>
                       <td className="muted">{(p.createdAt || '').substring(0, 10)}</td>
                     </tr>
