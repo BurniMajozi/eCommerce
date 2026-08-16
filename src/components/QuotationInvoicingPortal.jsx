@@ -48,6 +48,7 @@ export const QuotationInvoicingPortal = () => {
     if (c) setClientName(c.company);
   };
   const [poNumber, setPoNumber] = useState('PO-88213');
+  const [catalogueSearch, setCatalogueSearch] = useState('');
   // Seed a couple of demo lines from whatever products exist. Guards against an
   // empty/short catalogue (live mode before products are seeded) so the page
   // never crashes on products[13]/[22].
@@ -121,9 +122,10 @@ export const QuotationInvoicingPortal = () => {
 
             <div className="field">
               <label className="field-label">Add from catalogue</label>
+              <input className="input" style={{ marginBottom: 6 }} placeholder="Search SKU or name…" value={catalogueSearch} onChange={e => setCatalogueSearch(e.target.value)} />
               <select className="select" value="" onChange={e => { if (e.target.value) addItem(e.target.value); }}>
                 <option value="">Select a product (contract price)…</option>
-                {products.map(p => <option key={p.sku} value={p.sku}>{p.sku} · {p.name}{p.sellingPrice != null ? ` (R${p.sellingPrice.toFixed(2)})` : ''}</option>)}
+                {products.filter(p => `${p.sku} ${p.name}`.toLowerCase().includes(catalogueSearch.trim().toLowerCase())).map(p => <option key={p.sku} value={p.sku}>{p.sku} · {p.name}{p.sellingPrice != null ? ` (R${p.sellingPrice.toFixed(2)})` : ''}</option>)}
               </select>
             </div>
 

@@ -202,6 +202,60 @@ const PromoSubmissions = () => {
   );
 };
 
+// Approval history — POs that have already been decided (approved / rejected /
+// sent / received), so a manager can review what was approved and when.
+const PoApprovalHistory = () => {
+  const { auth, tenantAccess } = useApp();
+  const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
+  const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
+  const [history, setHistory] = useState([]);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    if (!live) { setHistory([]); return; }
+    let active = true;
+    fetchPurchaseOrders(scope).then((r) => {
+      if (!active) return;
+      setHistory((r.orders ?? []).filter((p) => p.status !== 'draft' && p.status !== 'pending_approval'));
+    }).catch(() => { if (active) setHistory([]); });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]);
+
+  if (!live) return null;
+  const sb = { approved: 'badge-success', rejected: 'badge-danger', sent: 'badge-info', received: 'badge-success' };
+
+  return (
+    <div className="card">
+      <div className="card-hd">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ClipboardCheck size={17} style={{ color: 'var(--primary)' }} /><h3>PO approval history</h3></div>
+        <span className={`badge ${history.length ? 'badge-neutral' : 'badge-neutral'}`}>{history.length} decided</span>
+      </div>
+      {history.length === 0 ? (
+        <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>No purchase orders have been approved or rejected yet.</div>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Reference</th><th>Supplier</th><th className="num">Total</th><th className="center">Decision</th><th>Approved by</th><th>Date</th></tr></thead>
+            <tbody>
+              {history.map((po) => (
+                <tr key={po.id}>
+                  <td style={{ fontWeight: 500 }}>{po.reference || po.id.slice(0, 8)}</td>
+                  <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Factory size={13} style={{ color: 'var(--text-subtle)' }} />{po.supplier}</span></td>
+                  <td className="num tabular">R {Number(po.total || 0).toLocaleString('en-ZA')}</td>
+                  <td className="center"><span className={`badge ${sb[po.status] || 'badge-neutral'}`}>{String(po.status).replace(/_/g, ' ')}</span></td>
+                  <td className="muted">{po.approvedBy || (po.status === 'rejected' ? 'rejected' : '—')}</td>
+                  <td className="muted">{(po.approvedAt || po.submittedAt || po.createdAt || '').slice(0, 10)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ManagerApprovalPortal = () => {
   const { requests, approveRequest, rejectRequest, triggerNotification } = useApp();
   const [declining, setDeclining] = useState(null);
@@ -237,6 +291,7 @@ export const ManagerApprovalPortal = () => {
 
       <PoApprovals />
       <PromoSubmissions />
+      <PoApprovalHistory />
 
       {pending.length === 0 ? (
         <div className="card">

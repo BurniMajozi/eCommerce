@@ -1,30 +1,48 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { fetchReports, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { MOCK_CREW_CONSUMPTION } from '../data/mockData';
 import { TrendingUp, AlertTriangle, FileDown, Boxes, Wallet, TriangleAlert, PackageX } from 'lucide-react';
 
 export const InventoryAnalyticsPortal = () => {
-  const { products, activePlant, triggerNotification } = useApp();
+  const { products, activePlant, auth, tenantAccess, triggerNotification } = useApp();
+  const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
+  const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
 
-  // Live catalogue products have no costPrice (cost is MFA/profit-gated), so guard it.
-  const stockValue = products.reduce((a, p) => a + (p.costPrice ?? 0) * (p.stockOnHand ?? 0), 0);
+  // Live tenant reports (stock valuation + reorder) — drives the dashboard KPIs
+  // and the below-min count. Falls back to product-derived values when offline.
+  const [reports, setReports] = useState(null);
+  useEffect(() => {
+    if (!live) { setReports(null); return; }
+    let active = true;
+    fetchReports(scope).then((r) => { if (active) setReports(r.reports ?? null); }).catch(() => { if (active) setReports(null); });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, scope.accessToken, scope.tenantId, scope.siteId]);
+
+  const stockValue = reports?.stockValuation?.totals?.stockCostValue != null
+    ? reports.stockValuation.totals.stockCostValue
+    : products.reduce((a, p) => a + (p.costPrice ?? 0) * (p.stockOnHand ?? 0), 0);
+  const potentialProfit = reports?.stockValuation?.totals?.potentialProfit ?? null;
   const cover = (p) => Math.round((p.stockOnHand + p.stockInTransit) / (p.dailyConsumption || 1));
-  const belowMin = products.filter(p => cover(p) < 14);
-  const critical = products.filter(p => cover(p) < 8).length;
+  const belowMin = reports?.reorder?.rows?.length != null
+    ? reports.reorder.rows
+    : products.filter(p => cover(p) < 14);
+  const critical = (reports?.reorder?.rows ?? products.filter(p => cover(p) < 8)).length;
   const maxCrew = Math.max(...MOCK_CREW_CONSUMPTION.map(c => c.vsEntitle));
 
   const FLAGS = [
     { t: '4 workers claimed "lost" ≥3× this quarter', open: true },
     { t: 'Store 2: 14 issues logged after shift end', open: true },
-    { t: 'Glove L consumption 3× site average' },
-    { t: '1 approver signs 92% of exceptions' }
+    { t: 'Glove L consumption 3× site average', open: true },
+    { t: '1 approver signs 92% of exceptions', open: true },
   ];
 
   const KPIS = [
-    { icon: Wallet, label: 'Stock value', value: `R ${(stockValue / 1e6).toFixed(2)}m`, sub: 'across 3 stores' },
-    { icon: TrendingUp, label: 'Issued MTD', value: 'R 212k', sub: 'budget R 190k · +12%', cls: 'down' },
+    { icon: Wallet, label: 'Stock value', value: `R ${(stockValue / 1e6).toFixed(2)}m`, sub: live ? 'live tenant stock' : 'across 3 stores' },
+    { icon: TrendingUp, label: 'Potential profit', value: potentialProfit != null ? `R ${(potentialProfit / 1e3).toFixed(0)}k` : '—', sub: 'at retail − cost', cls: 'up' },
     { icon: TriangleAlert, label: 'Unexplained variance', value: 'R 9 400', sub: 'count vs ledger', accent: true },
-    { icon: PackageX, label: 'Below min', value: `${belowMin.length} items`, sub: `${critical} critical` }
+    { icon: PackageX, label: 'Below min', value: `${belowMin.length} items`, sub: `${critical} critical` },
   ];
 
   return (
@@ -101,8 +119,12 @@ export const InventoryAnalyticsPortal = () => {
       <div className="card">
         <div className="card-hd">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Boxes size={17} style={{ color: 'var(--primary)' }} /><h3>Stock ledger — forward cover &amp; value</h3></div>
-          <span className="badge badge-neutral">{products.length} SKUs</span>
+          <span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? `${products.length} live SKUs` : `${products.length} SKUs`}</span>
         </div>
+        {live && products.length === 0 && (
+          <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>Connecting to the live catalogue… stock will appear here once the tenant link resolves.</div>
+        )}
+        {products.length > 0 && (
         <div className="table-wrap">
           <table className="table">
             <thead>
@@ -126,6 +148,7 @@ export const InventoryAnalyticsPortal = () => {
             </tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   );

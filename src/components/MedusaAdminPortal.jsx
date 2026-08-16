@@ -157,12 +157,19 @@ const PurchaseOrderModal = ({ suppliers, products, scope, onClose, onSaved, trig
   const [pick, setPick] = useState({ productId: products[0]?.id ?? '', qty: 1, unitCost: products[0]?.costPrice ?? 0 });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [productSearch, setProductSearch] = useState('');
+
+  const filteredProducts = (() => {
+    const q = productSearch.trim().toLowerCase();
+    if (!q) return products;
+    return products.filter((p) => `${p.sku} ${p.name}`.toLowerCase().includes(q));
+  })();
 
   const total = lines.reduce((a, l) => a + l.qty * l.unitCost, 0);
   const addLine = () => {
     const p = products.find((x) => x.id === pick.productId);
     if (!p || pick.qty <= 0) return;
-    setLines((prev) => [...prev.filter((l) => l.productId !== p.id), { productId: p.id, sku: p.sku, name: p.name, qty: Number(pick.qty), unitCost: Number(pick.unitCost) || 0 }]);
+    setLines((prev) => [...prev.filter((l) => l.productId !== p.id), { productId: p.id, sku: p.sku, name: p.name, imageUrl: p.imageUrl, stockOnHand: p.stockOnHand ?? 0, qty: Number(pick.qty), unitCost: Number(pick.unitCost) || 0 }]);
     const next = products[0];
     setPick({ productId: next?.id ?? '', qty: 1, unitCost: next?.costPrice ?? 0 });
   };
@@ -204,8 +211,9 @@ const PurchaseOrderModal = ({ suppliers, products, scope, onClose, onSaved, trig
           <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
             <div className="card-bd" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', padding: 12 }}>
               <div className="field" style={{ flex: '2 1 200px', margin: 0 }}><label className="field-label">Product</label>
+                <input className="input" style={{ marginBottom: 6 }} placeholder="Search SKU or name…" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} />
                 <select className="select" value={pick.productId} onChange={(e) => onPickProduct(e.target.value)}>
-                  {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {filteredProducts.map((p) => <option key={p.id} value={p.id}>{p.sku} · {p.name}{p.costPrice != null ? ` (R${Number(p.costPrice).toFixed(2)})` : ''}</option>)}
                 </select></div>
               <div className="field" style={{ width: 70, margin: 0 }}><label className="field-label">Qty</label>
                 <input type="number" min="1" className="input" value={pick.qty} onChange={(e) => setPick({ ...pick, qty: parseInt(e.target.value) || 0 })} /></div>
@@ -222,7 +230,12 @@ const PurchaseOrderModal = ({ suppliers, products, scope, onClose, onSaved, trig
                 <tbody>
                   {lines.map((l) => (
                     <tr key={l.productId}>
-                      <td>{l.name}<div className="eyebrow">{l.sku}</div></td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                          <ProductThumb sku={l.sku} name={l.name} imageUrl={l.imageUrl} size={34} style={{ width: 34, flex: '0 0 auto' }} />
+                          <div><div style={{ fontWeight: 500 }}>{l.name}</div><div className="eyebrow">{l.sku} · stock {l.stockOnHand ?? 0}</div></div>
+                        </div>
+                      </td>
                       <td className="num">{l.qty}</td>
                       <td className="num">R {l.unitCost.toFixed(2)}</td>
                       <td className="num" style={{ fontWeight: 600 }}>R {(l.qty * l.unitCost).toLocaleString('en-ZA')}</td>
