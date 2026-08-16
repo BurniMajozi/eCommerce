@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, fetchCommerceConfig, fetchEngine, runEngineWorkflow, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, fetchCommerceConfig, fetchEngine, runEngineWorkflow, fetchParties, createParty, updateParty, deleteParty, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { ProductThumb } from './ProductThumb';
 import { ProductFormModal } from './ProductFormModal';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -12,7 +12,8 @@ import {
 import {
   Tag, Boxes, ShoppingCart, BadgePercent, Percent, Truck, Upload, Wallet,
   Workflow, Radio, Plus, FileSpreadsheet, CheckCircle2, RotateCw, Globe2,
-  ChevronRight, ChevronDown, Zap, GitBranch, Play, Pencil, Trash2
+  ChevronRight, ChevronDown, Zap, GitBranch, Play, Pencil, Trash2,
+  Factory, Loader2, X, ArrowDownLeft, ArrowUpRight
 } from 'lucide-react';
 
 const cur = (code) => MEDUSA_CURRENCIES.find(c => c.code === code) || MEDUSA_CURRENCIES[0];
@@ -57,6 +58,92 @@ const Connector = () => (
     <svg width="30" height="16" viewBox="0 0 30 16"><line x1="0" y1="8" x2="22" y2="8" stroke="var(--primary)" strokeWidth="2" /><path d="M22 3 L29 8 L22 13 Z" fill="var(--primary)" /></svg>
   </div>
 );
+
+/* ---- Add / edit a trading party (customer or supplier) ---- */
+const PartyModal = ({ type, party, scope, onClose, onSaved, triggerNotification }) => {
+  const editing = !!party;
+  const isSupplier = type === 'supplier';
+  const [form, setForm] = useState({
+    company: party?.company ?? '',
+    email: party?.email && !String(party.email).endsWith('@parties.sightlive.local') ? party.email : '',
+    limit: party?.limit ?? '',
+    currency: party?.currency ?? 'ZAR',
+    taxExempt: party?.taxExempt ?? false,
+    category: party?.category ?? '',
+    leadTime: party?.leadTime ?? '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.company.trim()) { setError('A company name is required.'); return; }
+    setBusy(true); setError(null);
+    const limit = form.limit === '' ? null : Number(form.limit);
+    try {
+      if (editing) {
+        await updateParty(party.id, { company: form.company, limit, currency: form.currency, taxExempt: form.taxExempt, category: form.category, leadTime: form.leadTime }, scope);
+        triggerNotification('Saved', `${form.company} updated.`, 'success');
+      } else {
+        await createParty({ type, company: form.company, email: form.email, limit, currency: form.currency, taxExempt: form.taxExempt, category: form.category, leadTime: form.leadTime }, scope);
+        triggerNotification(isSupplier ? 'Supplier added' : 'Customer added', `${form.company} created.`, 'success');
+      }
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Could not save.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="overlay" onClick={busy ? undefined : onClose}>
+      <form className="modal modal-sm" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+        <div className="modal-hd" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            {isSupplier ? <Factory size={18} style={{ color: 'var(--primary)' }} /> : <Wallet size={18} style={{ color: 'var(--primary)' }} />}
+            <h3>{editing ? 'Edit' : 'Add'} {isSupplier ? 'supplier' : 'customer'}</h3>
+          </div>
+          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close"><X size={17} /></button>
+        </div>
+        <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="field"><label className="field-label">Company</label>
+            <input className="input" value={form.company} onChange={(e) => set('company', e.target.value)} placeholder={isSupplier ? 'DROMEX Africa' : 'Rand Colliery'} autoFocus /></div>
+          {!editing && (
+            <div className="field"><label className="field-label">Contact email <span className="muted">(optional)</span></label>
+              <input type="email" className="input" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="procurement@company.co.za" /></div>
+          )}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div className="field" style={{ flex: '2 1 160px' }}><label className="field-label">{isSupplier ? 'Purchase limit' : 'Spend limit'} (per month)</label>
+              <input type="number" min="0" step="100" className="input" value={form.limit} onChange={(e) => set('limit', e.target.value)} placeholder="e.g. 250000" /></div>
+            <div className="field" style={{ width: 96 }}><label className="field-label">Currency</label>
+              <select className="select" value={form.currency} onChange={(e) => set('currency', e.target.value)}>
+                <option>ZAR</option><option>USD</option><option>BWP</option><option>NAD</option>
+              </select></div>
+          </div>
+          {isSupplier && (
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <div className="field" style={{ flex: '1 1 150px' }}><label className="field-label">Category <span className="muted">(optional)</span></label>
+                <input className="input" value={form.category} onChange={(e) => set('category', e.target.value)} placeholder="Footwear, Gloves…" /></div>
+              <div className="field" style={{ flex: '1 1 120px' }}><label className="field-label">Lead time <span className="muted">(optional)</span></label>
+                <input className="input" value={form.leadTime} onChange={(e) => set('leadTime', e.target.value)} placeholder="5–7 days" /></div>
+            </div>
+          )}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.taxExempt} onChange={(e) => set('taxExempt', e.target.checked)} />
+            {isSupplier ? 'VAT-exempt supplier (imports / zero-rated)' : 'Tax-exempt buyer (zero-rated export)'}
+          </label>
+          {error && <div style={{ color: 'var(--danger)', fontSize: 13 }}>{error}</div>}
+        </div>
+        <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 18px', borderTop: '1px solid var(--border)' }}>
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? <><Loader2 size={15} className="spin" /> Saving…</> : (editing ? 'Save changes' : `Add ${isSupplier ? 'supplier' : 'customer'}`)}</button>
+        </div>
+      </form>
+    </div>
+  );
+};
 
 export const MedusaAdminPortal = ({ view }) => {
   const { products, catalogue, profitability, auth, tenantAccess, taxEnabled, setTaxEnabled, triggerNotification, refreshCatalogue } = useApp();
@@ -115,6 +202,27 @@ export const MedusaAdminPortal = ({ view }) => {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, engineReloadKey]);
+
+  // Trading parties (customers + suppliers) with editable spend/purchase limits.
+  const [parties, setParties] = useState(null);
+  const [partiesReloadKey, setPartiesReloadKey] = useState(0);
+  const [partyModal, setPartyModal] = useState(null); // { type, party? }
+  const [partyDelete, setPartyDelete] = useState(null);
+  useEffect(() => {
+    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setParties(null); return undefined; }
+    let cancelled = false;
+    fetchParties(commerceScope)
+      .then((r) => { if (!cancelled) setParties(r); })
+      .catch(() => { if (!cancelled) setParties(null); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, partiesReloadKey]);
+  const reloadParties = () => setPartiesReloadKey((k) => k + 1);
+  const doDeleteParty = async (p) => {
+    await deleteParty(p.id, commerceScope);
+    triggerNotification('Removed', `${p.company} deleted.`, 'success');
+    reloadParties();
+  };
 
   const runWorkflow = async (fail) => {
     setRunningWf(true); setLastRun(null);
@@ -459,13 +567,61 @@ export const MedusaAdminPortal = ({ view }) => {
     );
   }
 
-  /* ---------------- Fulfilment ---------------- */
+  /* ---------------- Fulfilment (inbound from suppliers + outbound to customers) ---------------- */
   if (view === 'fulfil') {
+    const live = !!parties;
+    const suppliers = live ? (parties.suppliers ?? []) : [];
+    const customers = live ? (parties.customers ?? []) : (liveConfig?.customers ?? MEDUSA_CUSTOMERS);
     return (
       <Wrap>
-        <Head icon={Truck} title="Fulfilment & Shipping" sub="Providers and rates. Store handover for internal issues, couriers for B2B."
-          action={<span className={`badge ${cfgLive(liveConfig?.fulfilment) ? 'badge-success' : 'badge-neutral'}`}>{cfgLive(liveConfig?.fulfilment) ? 'Live' : 'Demo data'}</span>} />
+        <Head icon={Truck} title="Fulfilment & Shipping" sub="Two directions: inbound stock received from external suppliers, and outbound orders delivered to internal customers."
+          action={<span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span>} />
+
+        <div className="cols cols-2">
+          {/* Inbound — from suppliers */}
+          <div className="card">
+            <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ArrowDownLeft size={16} style={{ color: 'var(--success)' }} /><h3>Inbound · from suppliers</h3></div><span className="badge badge-neutral">{suppliers.length}</span></div>
+            <div className="table-wrap">
+              <table className="table">
+                <thead><tr><th>Supplier</th><th>Category</th><th className="num">Lead time</th></tr></thead>
+                <tbody>
+                  {suppliers.length === 0 && <tr><td colSpan={3} className="muted" style={{ textAlign: 'center', padding: 20 }}>{live ? 'No suppliers yet — add them under Suppliers.' : 'Connect the backend to see inbound flows.'}</td></tr>}
+                  {suppliers.map((s) => (
+                    <tr key={s.id}>
+                      <td style={{ fontWeight: 500 }}>{s.company}</td>
+                      <td className="muted">{s.category || '—'}</td>
+                      <td className="num muted">{s.leadTime || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Outbound — to customers */}
+          <div className="card">
+            <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ArrowUpRight size={16} style={{ color: 'var(--primary)' }} /><h3>Outbound · to customers</h3></div><span className="badge badge-neutral">{customers.length}</span></div>
+            <div className="table-wrap">
+              <table className="table">
+                <thead><tr><th>Customer</th><th className="center">Terms</th><th className="num">This month</th></tr></thead>
+                <tbody>
+                  {customers.length === 0 && <tr><td colSpan={3} className="muted" style={{ textAlign: 'center', padding: 20 }}>No customers yet.</td></tr>}
+                  {customers.map((c, i) => (
+                    <tr key={c.id || i}>
+                      <td style={{ fontWeight: 500 }}>{c.company}</td>
+                      <td className="center">{c.taxExempt ? <span className="badge badge-info">0% export</span> : <span className="muted">VAT</span>}</td>
+                      <td className="num tabular muted">{c.spent != null ? money(c.spent, c.currency) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Shipping providers (the rails both directions use) */}
         <div className="card">
+          <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Truck size={16} style={{ color: 'var(--primary)' }} /><h3>Shipping providers</h3></div><span className={`badge ${cfgLive(liveConfig?.fulfilment) ? 'badge-success' : 'badge-neutral'}`}>{cfgLive(liveConfig?.fulfilment) ? 'Live' : 'Demo data'}</span></div>
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>Provider</th><th>Regions</th><th>Rate</th><th>ETA</th><th className="center">Enabled</th></tr></thead>
@@ -531,17 +687,20 @@ export const MedusaAdminPortal = ({ view }) => {
 
   /* ---------------- Customers & spending limits ---------------- */
   if (view === 'customers') {
+    const live = !!parties;
+    const rows = live ? (parties.customers ?? []) : (liveConfig?.customers ?? MEDUSA_CUSTOMERS);
     return (
       <Wrap>
-        <Head icon={Wallet} title="Customers & Spending Limits" sub="B2B company accounts, buyers and per-company spending limits."
-          action={<span className={`badge ${cfgLive(liveConfig?.customers) ? 'badge-success' : 'badge-neutral'}`}>{cfgLive(liveConfig?.customers) ? 'Live' : 'Demo data'}</span>} />
-        {(liveConfig?.customers ?? MEDUSA_CUSTOMERS).length === 0 && (
-          <div className="card"><div className="card-bd muted" style={{ textAlign: 'center', padding: 22 }}>No B2B customer accounts yet.</div></div>
+        <Head icon={Wallet} title="Customers & Spending Limits" sub="Internal B2B buyers you sell PPE to. Set a monthly spend limit per company; spend is tracked live from their orders."
+          action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span>{live && <button className="btn btn-primary" onClick={() => setPartyModal({ type: 'customer' })}><Plus size={16} /> Add customer</button>}</div>} />
+        {rows.length === 0 && (
+          <div className="card"><div className="card-bd muted" style={{ textAlign: 'center', padding: 22 }}>No customer accounts yet.{live && ' Add your first buyer above.'}</div></div>
         )}
         <div className="cols cols-2">
-          {(liveConfig?.customers ?? MEDUSA_CUSTOMERS).map((c, i) => {
-            const hasLimit = c.limit != null && c.spent != null;
-            const pct = hasLimit ? Math.min(100, Math.round((c.spent / c.limit) * 100)) : 0;
+          {rows.map((c, i) => {
+            const hasLimit = c.limit != null;
+            const spent = c.spent ?? 0;
+            const pct = hasLimit && c.limit > 0 ? Math.min(100, Math.round((spent / c.limit) * 100)) : 0;
             const near = pct >= 80;
             return (
               <div key={c.id || i} className="card">
@@ -549,27 +708,76 @@ export const MedusaAdminPortal = ({ view }) => {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 15 }}>{c.company}</div>
-                      <div className="muted" style={{ fontSize: 12.5 }}>{c.buyers} buyer{c.buyers === 1 ? '' : 's'} · {c.currency}{c.taxExempt ? ' · tax-exempt' : ''}{c.email ? ` · ${c.email}` : ''}</div>
+                      <div className="muted" style={{ fontSize: 12.5 }}>{c.currency}{c.taxExempt ? ' · tax-exempt' : ''}{c.email && !String(c.email).endsWith('parties.sightlive.local') ? ` · ${c.email}` : ''}</div>
                     </div>
-                    {c.taxExempt && <span className="badge badge-info">0% export</span>}
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      {c.taxExempt && <span className="badge badge-info">0% export</span>}
+                      {live && <button className="icon-btn" style={{ width: 30, height: 30 }} title="Edit limit" onClick={() => setPartyModal({ type: 'customer', party: c })}><Pencil size={14} /></button>}
+                      {live && <button className="icon-btn" style={{ width: 30, height: 30 }} title="Remove" onClick={() => setPartyDelete(c)}><Trash2 size={14} /></button>}
+                    </div>
                   </div>
                   {hasLimit ? (
                     <>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 14 }}>
                         <span className="muted">Spend this month</span>
-                        <span className="tabular"><strong>{money(c.spent, c.currency)}</strong> / {money(c.limit, c.currency)}</span>
+                        <span className="tabular"><strong>{money(spent, c.currency)}</strong> / {money(c.limit, c.currency)}</span>
                       </div>
                       <div className="progress" style={{ marginTop: 8 }}><span className={near ? 'warn' : ''} style={{ width: `${pct}%`, background: near ? 'var(--warning)' : 'var(--primary)' }} /></div>
                       <div className="eyebrow" style={{ marginTop: 6, color: near ? 'var(--warning)' : 'var(--text-subtle)' }}>{pct}% of limit used</div>
                     </>
                   ) : (
-                    <div className="eyebrow" style={{ marginTop: 12, color: 'var(--text-subtle)' }}>No spending limit set</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                      <span className="eyebrow" style={{ color: 'var(--text-subtle)' }}>No spending limit set</span>
+                      {live && <button className="btn btn-secondary btn-sm" onClick={() => setPartyModal({ type: 'customer', party: c })}>Set limit</button>}
+                    </div>
                   )}
                 </div>
               </div>
             );
           })}
         </div>
+        {partyModal && <PartyModal {...partyModal} scope={commerceScope} triggerNotification={triggerNotification} onClose={() => setPartyModal(null)} onSaved={reloadParties} />}
+        {partyDelete && <ConfirmDialog title={`Remove ${partyDelete.company}?`} message="This deletes the account from the commerce engine. Order history is retained." confirmLabel="Remove" onConfirm={() => doDeleteParty(partyDelete)} onClose={() => setPartyDelete(null)} />}
+      </Wrap>
+    );
+  }
+
+  /* ---------------- Suppliers (external vendors) ---------------- */
+  if (view === 'suppliers') {
+    const live = !!parties;
+    const rows = live ? (parties.suppliers ?? []) : [];
+    return (
+      <Wrap>
+        <Head icon={Factory} title="Suppliers" sub="External vendors the merchant sources stock from. Add suppliers to the tenant and set a monthly purchase limit for each."
+          action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span>{live && <button className="btn btn-primary" onClick={() => setPartyModal({ type: 'supplier' })}><Plus size={16} /> Add supplier</button>}</div>} />
+        {!live && <div className="card"><div className="card-bd muted" style={{ textAlign: 'center', padding: 22 }}>Connect the live backend to manage suppliers.</div></div>}
+        {live && (
+          <div className="card">
+            <div className="table-wrap">
+              <table className="table">
+                <thead><tr><th>Supplier</th><th>Category</th><th>Lead time</th><th className="num">Purchase limit</th><th className="center">Tax</th><th className="center"></th></tr></thead>
+                <tbody>
+                  {rows.length === 0 && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 22 }}>No suppliers yet — add the vendors you buy stock from.</td></tr>}
+                  {rows.map((s) => (
+                    <tr key={s.id}>
+                      <td><div style={{ fontWeight: 600 }}>{s.company}</div>{s.email && !String(s.email).endsWith('parties.sightlive.local') && <div className="eyebrow">{s.email}</div>}</td>
+                      <td className="muted">{s.category || '—'}</td>
+                      <td className="muted">{s.leadTime || '—'}</td>
+                      <td className="num tabular">{s.limit != null ? money(s.limit, s.currency) : <span className="muted">not set</span>}</td>
+                      <td className="center">{s.taxExempt ? <span className="badge badge-info">exempt</span> : <span className="muted">VAT</span>}</td>
+                      <td className="center">
+                        <button className="icon-btn" style={{ width: 30, height: 30 }} title="Edit" onClick={() => setPartyModal({ type: 'supplier', party: s })}><Pencil size={14} /></button>
+                        <button className="icon-btn" style={{ width: 30, height: 30 }} title="Remove" onClick={() => setPartyDelete(s)}><Trash2 size={14} /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        {partyModal && <PartyModal {...partyModal} scope={commerceScope} triggerNotification={triggerNotification} onClose={() => setPartyModal(null)} onSaved={reloadParties} />}
+        {partyDelete && <ConfirmDialog title={`Remove ${partyDelete.company}?`} message="This deletes the supplier from the commerce engine." confirmLabel="Remove" onConfirm={() => doDeleteParty(partyDelete)} onClose={() => setPartyDelete(null)} />}
       </Wrap>
     );
   }

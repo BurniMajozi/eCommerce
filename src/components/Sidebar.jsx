@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import {
   HardHat, ClipboardCheck, PackageOpen, LineChart, Receipt,
   Building2, ShieldEllipsis, Tag, Boxes, ShoppingCart, BadgePercent,
-  Percent, Truck, Upload, Wallet, Workflow, Radio, X
+  Percent, Truck, Upload, Wallet, Workflow, Radio, X, Factory
 } from 'lucide-react';
 
 // Each item declares the capability required to see it. In demo mode and for
@@ -31,7 +31,8 @@ export const NAV_GROUPS = [
       { id: 'MED_TAX', label: 'Tax & VAT', icon: Percent, cap: 'commerce.manage' },
       { id: 'MED_FULFIL', label: 'Fulfilment', icon: Truck, cap: 'commerce.manage' },
       { id: 'MED_IMPORT', label: 'CSV Import', icon: Upload, cap: 'commerce.manage' },
-      { id: 'MED_CUSTOMERS', label: 'Customers & Limits', icon: Wallet, cap: 'commerce.manage' }
+      { id: 'MED_CUSTOMERS', label: 'Customers & Limits', icon: Wallet, cap: 'commerce.manage' },
+      { id: 'MED_SUPPLIERS', label: 'Suppliers', icon: Factory, cap: 'commerce.manage' }
     ]
   },
   {

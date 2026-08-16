@@ -84,6 +84,22 @@ export const fetchProfitability = (scope) => scopedJson('/app/catalogue/profit',
 // Live data for the Promotions / Tax / Fulfilment / Customers admin screens.
 export const fetchCommerceConfig = (scope) => scopedJson('/app/commerce/config', scope);
 
+// Trading parties: internal customers (sell-to) + external suppliers (buy-from),
+// each with an editable spend/purchase limit.
+export const fetchParties = (scope) => scopedJson('/app/commerce/parties', scope);
+
+export const createParty = (party, scope) => scopedJson('/app/commerce/parties', {
+  ...scope, method: 'POST', body: party,
+});
+
+export const updateParty = (id, patch, scope) => scopedJson(`/app/commerce/parties/${id}`, {
+  ...scope, method: 'PATCH', body: patch,
+});
+
+export const deleteParty = (id, scope) => scopedJson(`/app/commerce/parties/${id}`, {
+  ...scope, method: 'DELETE',
+});
+
 // Live workflow engine: registered workflows + recent executions.
 export const fetchEngine = (scope) => scopedJson('/app/engine', scope);
 

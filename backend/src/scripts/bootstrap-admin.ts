@@ -1,6 +1,6 @@
 import type { ExecArgs } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
-import { createTaxRegionsWorkflow, createPromotionsWorkflow, createCustomersWorkflow } from '@medusajs/medusa/core-flows';
+import { createTaxRegionsWorkflow, createPromotionsWorkflow, createCustomersWorkflow, updateCustomersWorkflow } from '@medusajs/medusa/core-flows';
 
 // Seeds the Promotions / Tax / Customers modules so the admin screens show real
 // data. Idempotent-ish: each block is independent and swallows "already exists"
@@ -31,13 +31,35 @@ export default async function bootstrapAdmin({ container }: ExecArgs): Promise<v
     } as Parameters<typeof createPromotionsWorkflow>[0] extends never ? never : any,
   }));
 
+  const CUSTOMERS = [
+    { email: 'procurement@randcolliery.co.za', company_name: 'Rand Colliery', limit: 180000 },
+    { email: 'procurement@debswana.bw', company_name: 'Debswana (Jwaneng)', limit: 420000 },
+    { email: 'procurement@angloplatinum.co.za', company_name: 'Anglo Platinum', limit: 650000 },
+    { email: 'procurement@rossing.com.na', company_name: 'Rössing Uranium', limit: 240000 },
+  ];
   await run('customers', () => createCustomersWorkflow(container).run({
     input: {
+      customersData: CUSTOMERS.map((c) => ({
+        email: c.email, company_name: c.company_name, first_name: 'Procurement', last_name: 'Desk',
+        metadata: { party_type: 'customer', spend_limit: c.limit, currency: 'ZAR' },
+      })),
+    } as Parameters<typeof createCustomersWorkflow>[0] extends never ? never : any,
+  }));
+
+  // Ensure spend limits are set even if the customers were seeded earlier
+  // (before the party metadata existed).
+  for (const c of CUSTOMERS) {
+    await run(`limit:${c.company_name}`, () => updateCustomersWorkflow(container).run({
+      input: { selector: { email: c.email }, update: { metadata: { party_type: 'customer', spend_limit: c.limit, currency: 'ZAR' } } } as Parameters<typeof updateCustomersWorkflow>[0] extends never ? never : any,
+    }));
+  }
+
+  await run('suppliers', () => createCustomersWorkflow(container).run({
+    input: {
       customersData: [
-        { email: 'procurement@randcolliery.co.za', company_name: 'Rand Colliery', first_name: 'Procurement', last_name: 'Desk' },
-        { email: 'procurement@debswana.bw', company_name: 'Debswana (Jwaneng)', first_name: 'Procurement', last_name: 'Desk' },
-        { email: 'procurement@angloplatinum.co.za', company_name: 'Anglo Platinum', first_name: 'Procurement', last_name: 'Desk' },
-        { email: 'procurement@rossing.com.na', company_name: 'Rössing Uranium', first_name: 'Procurement', last_name: 'Desk' },
+        { email: 'sales@dromex.co.za', company_name: 'DROMEX Africa', first_name: 'Sales', last_name: 'Desk', metadata: { party_type: 'supplier', spend_limit: 500000, currency: 'ZAR', category: 'Footwear & Gloves', lead_time: '5–7 days' } },
+        { email: 'orders@cageli.co.za', company_name: 'CageLi Manufacturing', first_name: 'Orders', last_name: 'Desk', metadata: { party_type: 'supplier', spend_limit: 350000, currency: 'ZAR', category: 'Workwear', lead_time: '10–14 days' } },
+        { email: 'trade@sisi-safety.co.za', company_name: 'Sisi Safety Wear', first_name: 'Trade', last_name: 'Desk', metadata: { party_type: 'supplier', spend_limit: 200000, currency: 'ZAR', category: 'Hi-vis & Head', lead_time: '7 days' } },
       ],
     } as Parameters<typeof createCustomersWorkflow>[0] extends never ? never : any,
   }));
