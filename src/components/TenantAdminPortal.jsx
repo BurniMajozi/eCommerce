@@ -5,11 +5,212 @@ import {
   MOCK_TENANT_USERS, MOCK_ENTITLEMENT_RULES
 } from '../data/mockData';
 import { fetchTenantMembers } from '../tenant/adminReads';
-import { FileBarChart, Plus, Play, Save, ArrowRight, Users, ListChecks, ShieldCheck, Trash2, PackageCheck, ClipboardList, GitBranch, ShieldQuestion } from 'lucide-react';
+import { fetchMembers, inviteMember, updateMemberRole, removeMember, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { ConfirmDialog } from './ConfirmDialog';
+import { FileBarChart, Plus, Play, Save, ArrowRight, Users, ListChecks, ShieldCheck, Trash2, PackageCheck, ClipboardList, GitBranch, ShieldQuestion, UserPlus, Mail, KeyRound, Copy, Loader2, RefreshCw } from 'lucide-react';
 
 const SourceBadge = ({ live }) => (
   <span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live · RLS' : 'Demo data'}</span>
 );
+
+// Friendly labels for the tenant-assignable role keys the backend accepts.
+const ROLE_LABELS = {
+  worker: 'Worker', storekeeper: 'Storekeeper', supervisor: 'Supervisor',
+  manager: 'Manager', executive: 'Executive', merchant: 'Merchant', tenant_admin: 'Tenant Admin',
+};
+const roleLabel = (key) => ROLE_LABELS[key] || key || '—';
+
+// In-app member management wired to the Medusa /app/members routes (service-role
+// backed). Tenant admins invite users, change roles, and suspend access here —
+// no Supabase dashboard or SQL. Falls back to the read-only RLS/mock roster when
+// the platform is in demo mode.
+const MembersManager = ({ scope, triggerNotification, fallbackRows }) => {
+  const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
+  const [members, setMembers] = useState(null);
+  const [assignable, setAssignable] = useState(['worker', 'storekeeper', 'supervisor', 'manager', 'executive', 'merchant', 'tenant_admin']);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [invite, setInvite] = useState({ email: '', name: '', role: 'worker' });
+  const [inviting, setInviting] = useState(false);
+  const [lastInvite, setLastInvite] = useState(null); // { email, tempPassword }
+  const [removeTarget, setRemoveTarget] = useState(null);
+
+  const load = () => {
+    if (!live) { setMembers(null); return; }
+    setLoading(true); setError(null);
+    fetchMembers(scope)
+      .then((r) => { setMembers(r.members ?? []); if (Array.isArray(r.assignableRoles) && r.assignableRoles.length) setAssignable(r.assignableRoles); })
+      .catch((e) => setError(e))
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, [live, scope.accessToken, scope.tenantId, scope.siteId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const submitInvite = async (e) => {
+    e.preventDefault();
+    if (!invite.email.trim()) return;
+    setInviting(true); setError(null); setLastInvite(null);
+    try {
+      const res = await inviteMember({ email: invite.email.trim(), name: invite.name.trim(), role: invite.role }, scope);
+      triggerNotification('Member invited', `${invite.email} added as ${roleLabel(invite.role)}.`, 'success');
+      if (res.tempPassword) setLastInvite({ email: res.email, tempPassword: res.tempPassword });
+      setInvite({ email: '', name: '', role: invite.role });
+      load();
+    } catch (err) {
+      setError(err);
+      triggerNotification('Invite failed', err.message || 'Could not invite the member.', 'danger');
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const changeRole = async (m, role) => {
+    if (role === m.role) return;
+    setBusyId(m.membershipId);
+    try {
+      await updateMemberRole(m.membershipId, role, scope);
+      triggerNotification('Role updated', `${m.name} is now ${roleLabel(role)}.`, 'success');
+      setMembers((prev) => prev.map((x) => (x.membershipId === m.membershipId ? { ...x, role } : x)));
+    } catch (err) {
+      triggerNotification('Update failed', err.message || 'Could not change the role.', 'danger');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const doRemove = async (m) => {
+    await removeMember(m.membershipId, scope);
+    triggerNotification('Access suspended', `${m.name} can no longer sign in to this tenant.`, 'success');
+    setMembers((prev) => prev.map((x) => (x.membershipId === m.membershipId ? { ...x, status: 'suspended' } : x)));
+  };
+
+  const copyPassword = () => {
+    if (lastInvite?.tempPassword && navigator.clipboard) {
+      navigator.clipboard.writeText(lastInvite.tempPassword).then(() => triggerNotification('Copied', 'Temporary password copied to clipboard.', 'info')).catch(() => {});
+    }
+  };
+
+  const rows = live ? (members ?? []) : (fallbackRows ?? []);
+
+  return (
+    <div className="card">
+      <div className="card-hd">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Users size={17} style={{ color: 'var(--primary)' }} /><h3>Users &amp; roles</h3><SourceBadge live={live} />
+        </div>
+        {live && (
+          <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading} aria-label="Refresh members">
+            {loading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
+          </button>
+        )}
+      </div>
+
+      {/* Invite form — only in live mode (needs the service-role backend). */}
+      {live && (
+        <form onSubmit={submitInvite} className="card-bd" style={{ borderBottom: '1px solid var(--border)', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div className="field" style={{ flex: '2 1 220px' }}>
+            <label className="field-label">Email</label>
+            <input type="email" required className="input" placeholder="new.user@mine.co.za" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} />
+          </div>
+          <div className="field" style={{ flex: '2 1 180px' }}>
+            <label className="field-label">Full name</label>
+            <input type="text" className="input" placeholder="Thabo Mokoena" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} />
+          </div>
+          <div className="field" style={{ flex: '1 1 150px' }}>
+            <label className="field-label">Role</label>
+            <select className="select" value={invite.role} onChange={(e) => setInvite({ ...invite, role: e.target.value })}>
+              {assignable.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
+            </select>
+          </div>
+          <button type="submit" className="btn btn-primary" disabled={inviting}>
+            {inviting ? <Loader2 size={16} className="spin" /> : <UserPlus size={16} />} Invite user
+          </button>
+        </form>
+      )}
+
+      {/* Temp-password hand-off banner (shown once after a new user is created). */}
+      {lastInvite && (
+        <div className="card-bd" style={{ borderBottom: '1px solid var(--border)', background: 'var(--primary-weak)' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+            <KeyRound size={18} style={{ color: 'var(--primary)', marginTop: 2 }} />
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>Temporary password for {lastInvite.email}</div>
+              <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>Share this securely. They sign in, then change it and enrol 2FA. It won’t be shown again.</div>
+              <code style={{ display: 'inline-block', marginTop: 8, padding: '5px 10px', background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 8, fontSize: 13, letterSpacing: '.02em' }}>{lastInvite.tempPassword}</code>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="btn btn-secondary btn-sm" onClick={copyPassword}><Copy size={14} /> Copy</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setLastInvite(null)}>Dismiss</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {error && !inviting && (
+        <div className="card-bd" style={{ borderBottom: '1px solid var(--border)' }}>
+          <p className="muted" style={{ fontSize: 12.5, margin: 0, color: 'var(--danger)' }}>{error.message || 'Could not load members.'}</p>
+        </div>
+      )}
+
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr><th>Name</th>{live && <th>Email</th>}<th>Role</th><th className="center">State</th>{live && <th className="center"></th>}</tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && (
+              <tr><td colSpan={live ? 5 : 4} className="muted" style={{ textAlign: 'center', padding: 24 }}>{loading ? 'Loading members…' : 'No members yet — invite your first user above.'}</td></tr>
+            )}
+            {live ? rows.map((m) => (
+              <tr key={m.membershipId} style={{ opacity: m.status === 'suspended' ? 0.55 : 1 }}>
+                <td><div style={{ fontWeight: 500 }}>{m.name}</div></td>
+                <td className="muted" style={{ fontSize: 12.5 }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Mail size={12} />{m.email || '—'}</span></td>
+                <td>
+                  <select className="select" style={{ padding: '4px 8px', fontSize: 12.5, width: 'auto' }} value={m.role || ''} disabled={busyId === m.membershipId || m.status === 'suspended'} onChange={(e) => changeRole(m, e.target.value)}>
+                    {!m.role && <option value="">—</option>}
+                    {assignable.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
+                  </select>
+                </td>
+                <td className="center"><span className={`badge ${m.status === 'active' ? 'badge-success' : 'badge-warning'}`}>{m.status}</span></td>
+                <td className="center">
+                  {m.status !== 'suspended' && (
+                    <button className="icon-btn" style={{ width: 30, height: 30 }} disabled={busyId === m.membershipId} onClick={() => setRemoveTarget(m)} aria-label={`Suspend ${m.name}`}>
+                      {busyId === m.membershipId ? <Loader2 size={14} className="spin" /> : <Trash2 size={15} />}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            )) : rows.map((u) => (
+              <tr key={u.id}>
+                <td><div style={{ fontWeight: 500 }}>{u.name}</div><div className="eyebrow">{u.id}</div></td>
+                <td>{u.role}</td>
+                <td className="muted">{u.dept}</td>
+                <td className="center"><span className={`badge ${u.status === 'active' ? 'badge-success' : 'badge-warning'}`}>{u.status}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {!live && (
+        <div className="card-bd" style={{ paddingTop: 0 }}>
+          <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Connect the live backend to invite and manage users in-app. In demo mode this roster is read-only.</p>
+        </div>
+      )}
+
+      {removeTarget && (
+        <ConfirmDialog
+          title="Suspend member access"
+          message={`Suspend ${removeTarget.name}? They keep their history but can no longer sign in to this tenant. You can re-invite them later to restore access.`}
+          confirmLabel="Suspend access"
+          danger
+          onConfirm={() => doRemove(removeTarget)}
+          onClose={() => setRemoveTarget(null)}
+        />
+      )}
+    </div>
+  );
+};
 
 const ROLE_OPTS = ['Underground Driller', 'Electrical Tech', 'Storeman', 'Supervisor', 'Visitor', 'All roles'];
 const ITEM_OPTS = ['Safety boots', 'Gloves (nitrile)', 'Arc flash kit', 'Dust mask FFP2', 'Hi-vis workwear', 'Ear protection'];
@@ -22,7 +223,12 @@ const permCell = (v, hot) => {
 };
 
 export const TenantAdminPortal = () => {
-  const { activePlant, runScheduledReport, triggerNotification, integrationMode, tenantAccess } = useApp();
+  const { activePlant, runScheduledReport, triggerNotification, integrationMode, tenantAccess, auth } = useApp();
+  const commerceScope = {
+    accessToken: auth?.session?.access_token,
+    tenantId: tenantAccess?.activeTenantId,
+    siteId: tenantAccess?.activeSiteId,
+  };
   const [activeReport, setActiveReport] = useState('consumption');
   const [groupBy, setGroupBy] = useState('crew');
   const [rules, setRules] = useState(MOCK_ENTITLEMENT_RULES);
@@ -39,7 +245,6 @@ export const TenantAdminPortal = () => {
   }, [integrationMode, activeTenantId]);
 
   const memberRows = liveMembers ?? MOCK_TENANT_USERS;
-  const membersLive = liveMembers !== null;
 
   const addRule = () => {
     setRules(prev => [...prev, { ...nr, threshold: 'auto' }]);
@@ -178,31 +383,8 @@ export const TenantAdminPortal = () => {
         </div>
       </div>
 
-      {/* Users & roles */}
-      <div>
-        <div className="card">
-          <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Users size={17} style={{ color: 'var(--primary)' }} /><h3>Users &amp; roles</h3><SourceBadge live={membersLive} /></div></div>
-          <div className="table-wrap">
-            <table className="table">
-              <thead><tr><th>Name</th><th>Role</th><th>Dept</th><th className="center">State</th></tr></thead>
-              <tbody>
-                {memberRows.length === 0 && (
-                  <tr><td colSpan={4} className="muted" style={{ textAlign: 'center', padding: 24 }}>No members visible for this tenant.</td></tr>
-                )}
-                {memberRows.map(u => (
-                  <tr key={u.id}>
-                    <td><div style={{ fontWeight: 500 }}>{u.name}</div><div className="eyebrow">{u.id}</div></td>
-                    <td>{u.role}</td>
-                    <td className="muted">{u.dept}</td>
-                    <td className="center"><span className={`badge ${u.status === 'active' ? 'badge-success' : 'badge-warning'}`}>{u.status}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </div>
+      {/* Users & roles — in-app member management (invite / role / suspend) */}
+      <MembersManager scope={commerceScope} triggerNotification={triggerNotification} fallbackRows={memberRows} />
 
       {/* Entitlement rules — journey + builder */}
       <div className="card">

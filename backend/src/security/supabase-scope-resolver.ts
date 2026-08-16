@@ -10,7 +10,7 @@ function required(name: string): string {
   return value;
 }
 
-function getServiceClient(): SupabaseClient {
+export function getServiceClient(): SupabaseClient {
   if (!serviceClient) {
     serviceClient = createClient(required('SUPABASE_URL'), required('SUPABASE_SERVICE_ROLE_KEY'), {
       auth: { autoRefreshToken: false, persistSession: false },

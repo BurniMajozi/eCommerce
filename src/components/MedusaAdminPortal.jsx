@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, fetchCommerceConfig, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { ProductThumb } from './ProductThumb';
 import { ProductFormModal } from './ProductFormModal';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -84,6 +84,19 @@ export const MedusaAdminPortal = ({ view }) => {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId]);
+  // Live Promotions / Tax / Fulfilment / Customers (falls back to mock in demo mode).
+  const [liveConfig, setLiveConfig] = useState(null);
+  useEffect(() => {
+    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setLiveConfig(null); return undefined; }
+    let cancelled = false;
+    fetchCommerceConfig(commerceScope)
+      .then((r) => { if (!cancelled) setLiveConfig(r); })
+      .catch(() => { if (!cancelled) setLiveConfig(null); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId]);
+  const cfgLive = (arr) => Array.isArray(arr);
+
   const [selectedWf, setSelectedWf] = useState(MEDUSA_WORKFLOWS[0].id);
   const [eventLog, setEventLog] = useState([]);
   const [firing, setFiring] = useState(null);
@@ -342,22 +355,25 @@ export const MedusaAdminPortal = ({ view }) => {
   /* ---------------- Promotions ---------------- */
   if (view === 'promos') {
     const sb = { active: 'badge-success', scheduled: 'badge-info', expired: 'badge-neutral' };
+    const promos = liveConfig?.promotions ?? MEDUSA_PROMOTIONS;
+    const live = cfgLive(liveConfig?.promotions);
     return (
       <Wrap>
         <Head icon={BadgePercent} title="Promotions" sub="Discount codes and campaign rules."
-          action={<button className="btn btn-primary" onClick={() => triggerNotification('New promotion', 'Blank promotion opened.', 'info')}><Plus size={16} /> New promotion</button>} />
+          action={<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span><button className="btn btn-primary" onClick={() => triggerNotification('New promotion', 'Blank promotion opened.', 'info')}><Plus size={16} /> New promotion</button></div>} />
         <div className="card">
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Applies to</th><th className="center">Status</th><th className="num">Used</th></tr></thead>
               <tbody>
-                {MEDUSA_PROMOTIONS.map(p => (
+                {promos.length === 0 && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 22 }}>No promotions yet.</td></tr>}
+                {promos.map(p => (
                   <tr key={p.code}>
                     <td style={{ fontWeight: 600 }}>{p.code}</td>
                     <td>{p.type}</td>
                     <td className="muted">{p.value}</td>
                     <td className="muted">{p.applies}</td>
-                    <td className="center"><span className={`badge ${sb[p.status]}`}>{p.status}</span></td>
+                    <td className="center"><span className={`badge ${sb[p.status] || 'badge-neutral'}`}>{p.status}</span></td>
                     <td className="num">{p.used}</td>
                   </tr>
                 ))}
@@ -387,13 +403,14 @@ export const MedusaAdminPortal = ({ view }) => {
           </div>
         </div>
         <div className="card">
-          <div className="card-hd"><h3>Tax regions</h3><span className={`badge ${taxEnabled ? 'badge-success' : 'badge-warning'}`}>{taxEnabled ? 'VAT applied' : 'VAT off'}</span></div>
+          <div className="card-hd"><h3>Tax regions</h3><div style={{ display: 'flex', gap: 8 }}><span className={`badge ${cfgLive(liveConfig?.taxRegions) ? 'badge-success' : 'badge-neutral'}`}>{cfgLive(liveConfig?.taxRegions) ? 'Live' : 'Demo data'}</span><span className={`badge ${taxEnabled ? 'badge-success' : 'badge-warning'}`}>{taxEnabled ? 'VAT applied' : 'VAT off'}</span></div></div>
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>Region</th><th className="center">Code</th><th>Tax name</th><th className="num">Rate</th><th className="center">Default</th></tr></thead>
               <tbody>
-                {MEDUSA_TAX_REGIONS.map(t => (
-                  <tr key={t.code}>
+                {(liveConfig?.taxRegions ?? MEDUSA_TAX_REGIONS).length === 0 && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 22 }}>No tax regions configured.</td></tr>}
+                {(liveConfig?.taxRegions ?? MEDUSA_TAX_REGIONS).map((t, i) => (
+                  <tr key={t.code || i}>
                     <td style={{ fontWeight: 500 }}>{t.region}</td>
                     <td className="center muted">{t.code}</td>
                     <td>{t.name}</td>
@@ -413,14 +430,16 @@ export const MedusaAdminPortal = ({ view }) => {
   if (view === 'fulfil') {
     return (
       <Wrap>
-        <Head icon={Truck} title="Fulfilment & Shipping" sub="Providers and rates. Store handover for internal issues, couriers for B2B." />
+        <Head icon={Truck} title="Fulfilment & Shipping" sub="Providers and rates. Store handover for internal issues, couriers for B2B."
+          action={<span className={`badge ${cfgLive(liveConfig?.fulfilment) ? 'badge-success' : 'badge-neutral'}`}>{cfgLive(liveConfig?.fulfilment) ? 'Live' : 'Demo data'}</span>} />
         <div className="card">
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>Provider</th><th>Regions</th><th>Rate</th><th>ETA</th><th className="center">Enabled</th></tr></thead>
               <tbody>
-                {MEDUSA_FULFILMENT.map(f => (
-                  <tr key={f.provider}>
+                {(liveConfig?.fulfilment ?? MEDUSA_FULFILMENT).length === 0 && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 22 }}>No fulfilment providers registered.</td></tr>}
+                {(liveConfig?.fulfilment ?? MEDUSA_FULFILMENT).map((f, i) => (
+                  <tr key={f.provider || i}>
                     <td style={{ fontWeight: 500 }}>{f.provider}</td>
                     <td className="muted">{f.regions}</td>
                     <td>{f.rate}</td>
@@ -481,27 +500,38 @@ export const MedusaAdminPortal = ({ view }) => {
   if (view === 'customers') {
     return (
       <Wrap>
-        <Head icon={Wallet} title="Customers & Spending Limits" sub="B2B company accounts, buyers and per-company spending limits." />
+        <Head icon={Wallet} title="Customers & Spending Limits" sub="B2B company accounts, buyers and per-company spending limits."
+          action={<span className={`badge ${cfgLive(liveConfig?.customers) ? 'badge-success' : 'badge-neutral'}`}>{cfgLive(liveConfig?.customers) ? 'Live' : 'Demo data'}</span>} />
+        {(liveConfig?.customers ?? MEDUSA_CUSTOMERS).length === 0 && (
+          <div className="card"><div className="card-bd muted" style={{ textAlign: 'center', padding: 22 }}>No B2B customer accounts yet.</div></div>
+        )}
         <div className="cols cols-2">
-          {MEDUSA_CUSTOMERS.map(c => {
-            const pct = Math.min(100, Math.round((c.spent / c.limit) * 100));
+          {(liveConfig?.customers ?? MEDUSA_CUSTOMERS).map((c, i) => {
+            const hasLimit = c.limit != null && c.spent != null;
+            const pct = hasLimit ? Math.min(100, Math.round((c.spent / c.limit) * 100)) : 0;
             const near = pct >= 80;
             return (
-              <div key={c.id} className="card">
+              <div key={c.id || i} className="card">
                 <div className="card-bd">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 15 }}>{c.company}</div>
-                      <div className="muted" style={{ fontSize: 12.5 }}>{c.buyers} buyers · {c.currency}{c.taxExempt ? ' · tax-exempt' : ''}</div>
+                      <div className="muted" style={{ fontSize: 12.5 }}>{c.buyers} buyer{c.buyers === 1 ? '' : 's'} · {c.currency}{c.taxExempt ? ' · tax-exempt' : ''}{c.email ? ` · ${c.email}` : ''}</div>
                     </div>
                     {c.taxExempt && <span className="badge badge-info">0% export</span>}
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 14 }}>
-                    <span className="muted">Spend this month</span>
-                    <span className="tabular"><strong>{money(c.spent, c.currency)}</strong> / {money(c.limit, c.currency)}</span>
-                  </div>
-                  <div className="progress" style={{ marginTop: 8 }}><span className={near ? 'warn' : ''} style={{ width: `${pct}%`, background: near ? 'var(--warning)' : 'var(--primary)' }} /></div>
-                  <div className="eyebrow" style={{ marginTop: 6, color: near ? 'var(--warning)' : 'var(--text-subtle)' }}>{pct}% of limit used</div>
+                  {hasLimit ? (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 14 }}>
+                        <span className="muted">Spend this month</span>
+                        <span className="tabular"><strong>{money(c.spent, c.currency)}</strong> / {money(c.limit, c.currency)}</span>
+                      </div>
+                      <div className="progress" style={{ marginTop: 8 }}><span className={near ? 'warn' : ''} style={{ width: `${pct}%`, background: near ? 'var(--warning)' : 'var(--primary)' }} /></div>
+                      <div className="eyebrow" style={{ marginTop: 6, color: near ? 'var(--warning)' : 'var(--text-subtle)' }}>{pct}% of limit used</div>
+                    </>
+                  ) : (
+                    <div className="eyebrow" style={{ marginTop: 12, color: 'var(--text-subtle)' }}>No spending limit set</div>
+                  )}
                 </div>
               </div>
             );

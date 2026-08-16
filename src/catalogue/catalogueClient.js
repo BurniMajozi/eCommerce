@@ -81,6 +81,9 @@ async function scopedJson(path, { accessToken, tenantId, siteId = null, signal, 
 
 export const fetchProfitability = (scope) => scopedJson('/app/catalogue/profit', scope);
 
+// Live data for the Promotions / Tax / Fulfilment / Customers admin screens.
+export const fetchCommerceConfig = (scope) => scopedJson('/app/commerce/config', scope);
+
 // Uploads a product photo (base64) and returns its public URL.
 export const uploadProductImage = ({ sku, filename, contentType, dataBase64 }, scope) => scopedJson('/app/products/image', {
   ...scope,
@@ -118,6 +121,26 @@ export const createOrder = (order, scope) => scopedJson('/app/orders', {
   ...scope,
   method: 'POST',
   body: order,
+});
+
+// In-app member management (Tenant Admin) — list/invite/update/remove users.
+export const fetchMembers = (scope) => scopedJson('/app/members', scope);
+
+export const inviteMember = (member, scope) => scopedJson('/app/members', {
+  ...scope,
+  method: 'POST',
+  body: member,
+});
+
+export const updateMemberRole = (membershipId, role, scope) => scopedJson(`/app/members/${membershipId}`, {
+  ...scope,
+  method: 'PATCH',
+  body: { role },
+});
+
+export const removeMember = (membershipId, scope) => scopedJson(`/app/members/${membershipId}`, {
+  ...scope,
+  method: 'DELETE',
 });
 
 export const fetchImportStatus = (scope) => scopedJson('/app/catalogue/import/status', scope);
