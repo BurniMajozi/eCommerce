@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, fetchCommerceConfig, fetchEngine, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, fetchCommerceConfig, fetchEngine, runEngineWorkflow, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { ProductThumb } from './ProductThumb';
 import { ProductFormModal } from './ProductFormModal';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -103,6 +103,9 @@ export const MedusaAdminPortal = ({ view }) => {
 
   // Live workflow engine (registered workflows + recent executions).
   const [engine, setEngine] = useState(null);
+  const [engineReloadKey, setEngineReloadKey] = useState(0);
+  const [runningWf, setRunningWf] = useState(false);
+  const [lastRun, setLastRun] = useState(null);
   useEffect(() => {
     if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setEngine(null); return undefined; }
     let cancelled = false;
@@ -111,7 +114,25 @@ export const MedusaAdminPortal = ({ view }) => {
       .catch(() => { if (!cancelled) setEngine(null); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId]);
+  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, engineReloadKey]);
+
+  const runWorkflow = async (fail) => {
+    setRunningWf(true); setLastRun(null);
+    try {
+      const res = await runEngineWorkflow({ quantity: 5, sku: 'DROMEX-BOOT', fail }, commerceScope);
+      setLastRun(res);
+      triggerNotification(
+        fail ? 'Saga compensated' : 'Workflow executed',
+        fail ? `ppe-issue-saga rolled back in reverse (state: ${res.state}).` : `ppe-issue-saga completed (state: ${res.state}, txn ${String(res.transactionId).slice(0, 12)}…).`,
+        fail ? 'warning' : 'success',
+      );
+      setTimeout(() => setEngineReloadKey((k) => k + 1), 600); // let the execution row persist
+    } catch (err) {
+      triggerNotification('Workflow failed', err.message || 'Could not execute the workflow.', 'danger');
+    } finally {
+      setRunningWf(false);
+    }
+  };
 
   const medusaScope = {
     accessToken: auth.session?.access_token,
@@ -576,8 +597,21 @@ export const MedusaAdminPortal = ({ view }) => {
           <div className="card">
             <div className="card-hd">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Zap size={16} style={{ color: 'var(--success)' }} /><h3>Live engine</h3></div>
-              <span className="badge badge-neutral">{engine.executionsTotal} execution{engine.executionsTotal === 1 ? '' : 's'} recorded</span>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span className="badge badge-neutral">{engine.executionsTotal} execution{engine.executionsTotal === 1 ? '' : 's'} recorded</span>
+                <button className="btn btn-primary btn-sm" disabled={runningWf} onClick={() => runWorkflow(false)}><Play size={13} /> {runningWf ? 'Running…' : 'Run saga'}</button>
+                <button className="btn btn-secondary btn-sm" disabled={runningWf} onClick={() => runWorkflow(true)} title="Trigger a downstream failure to watch the saga compensate"><RotateCw size={13} /> Run + fail</button>
+              </div>
             </div>
+            {lastRun && (
+              <div className="card-bd" style={{ borderBottom: '1px solid var(--border)', background: lastRun.state === 'done' ? 'var(--success-weak)' : 'var(--danger-weak)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13 }}>
+                  <span className={`badge ${lastRun.state === 'done' ? 'badge-success' : 'badge-danger'}`}>{lastRun.state}</span>
+                  <span>Executed <strong>{lastRun.workflowId}</strong> live · txn <code style={{ fontSize: 12 }}>{String(lastRun.transactionId || '—').slice(0, 18)}</code></span>
+                  {lastRun.errors?.length > 0 && <span className="muted" style={{ fontSize: 12 }}>· compensated: {lastRun.errors[0]}</span>}
+                </div>
+              </div>
+            )}
             <div className="card-bd" style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 300px', minWidth: 280 }}>
                 <div className="eyebrow" style={{ marginBottom: 8 }}>Recent executions</div>

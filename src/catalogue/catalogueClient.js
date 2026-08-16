@@ -87,6 +87,14 @@ export const fetchCommerceConfig = (scope) => scopedJson('/app/commerce/config',
 // Live workflow engine: registered workflows + recent executions.
 export const fetchEngine = (scope) => scopedJson('/app/engine', scope);
 
+// Execute the PPE issue saga workflow live. Pass { fail: true } to exercise the
+// compensation (rollback) path.
+export const runEngineWorkflow = (body, scope) => scopedJson('/app/engine/run', {
+  ...scope,
+  method: 'POST',
+  body,
+});
+
 // Uploads a product photo (base64) and returns its public URL.
 export const uploadProductImage = ({ sku, filename, contentType, dataBase64 }, scope) => scopedJson('/app/products/image', {
   ...scope,
