@@ -121,9 +121,15 @@ async function scopedJson(path, { accessToken, tenantId, siteId = null, signal, 
   } else {
     // Invalidate relevant cache on writes
     if (path.includes('/parties')) invalidateCache('/app/commerce/parties');
-    if (path.includes('/purchase-orders')) invalidateCache('/app/commerce/purchase-orders');
+    if (path.includes('/purchase-orders') || path.includes('/orders')) {
+      invalidateCache('/app/commerce/purchase-orders');
+      invalidateCache('/app/orders');
+      invalidateCache('catalogue:');
+      invalidateCache('/app/catalogue');
+      invalidateCache('/app/catalogue/profit');
+      invalidateCache('/app/reports/summary');
+    }
     if (path.includes('/promotions')) invalidateCache('/app/commerce/promotions');
-    if (path.includes('/orders')) invalidateCache('/app/orders');
     if (path.includes('/members')) invalidateCache('/app/members');
     if (path.includes('/products')) {
       invalidateCache('catalogue:');

@@ -336,11 +336,28 @@ export const AppProvider = ({ children }) => {
     triggerNotification('Invoice Generated', `B2B Tax Invoice ${invoiceData.invoiceNumber} created!`, 'success');
   };
 
+  const receiveStockDirectly = (lines) => {
+    if (!lines || !lines.length) return;
+    setProducts((prev) => prev.map((p) => {
+      const matched = lines.find((l) => l.sku === p.sku || (l.name && p.name?.toLowerCase() === l.name?.toLowerCase()));
+      if (matched) {
+        const qty = Number(matched.qty ?? matched.quantity ?? 1);
+        return {
+          ...p,
+          stockOnHand: (p.stockOnHand ?? 0) + (isNaN(qty) ? 1 : qty),
+        };
+      }
+      return p;
+    }));
+  };
+
   return (
     <AppContext.Provider value={{
       theme,
       toggleTheme,
       products,
+      setProducts,
+      receiveStockDirectly,
       catalogue,
       profitability,
       activePlant,
@@ -348,6 +365,7 @@ export const AppProvider = ({ children }) => {
       activeRole,
       setActiveRole,
       activeEmployee,
+      setActiveEmployee,
       requests,
       quotations,
       selectedInvoice,

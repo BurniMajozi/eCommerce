@@ -273,7 +273,9 @@ export const QuotationInvoicingPortal = () => {
                         {o.supplier && <div style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 500 }}>Supplier: {o.supplier}</div>}
                         <div className="muted" style={{ fontSize: 12 }}>{(o.createdAt || '').substring(0, 10)} · PO {o.poNumber || '—'}</div>
                       </div>
-                      <span className="badge badge-warning">{o.status || 'pending'}</span>
+                      <span className={`badge ${o.status === 'received' ? 'badge-success' : (o.status === 'approved' ? 'badge-info' : 'badge-warning')}`}>
+                        {o.status === 'received' ? 'Stock Received' : (o.status === 'approved' ? 'Approved' : (o.status || 'pending'))}
+                      </span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border)', marginTop: 10, paddingTop: 10 }}>
                       <span className="muted" style={{ fontSize: 12.5 }}>Total {o.taxEnabled === false ? '(no VAT)' : 'incl VAT'}</span>

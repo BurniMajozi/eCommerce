@@ -275,32 +275,56 @@ const PurchaseOrderModal = ({ suppliers, products, scope, onClose, onSaved, trig
 };
 
 export const MedusaAdminPortal = ({ view }) => {
-  const { products, catalogue, profitability, auth, tenantAccess, taxEnabled, setTaxEnabled, triggerNotification, refreshCatalogue } = useApp();
+  const { products, receiveStockDirectly, catalogue, profitability, auth, tenantAccess, taxEnabled, setTaxEnabled, triggerNotification, refreshCatalogue } = useApp();
   const importInputRef = useRef(null);
   const [importResult, setImportResult] = useState(null);
-  const [importError, setImportError] = useState(null);
-  const [importLoading, setImportLoading] = useState(false);
-  const [expandedSku, setExpandedSku] = useState(null);
-  const [showProductForm, setShowProductForm] = useState(false);
-  const [editProduct, setEditProduct] = useState(null);
-  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importDryRun, setImportDryRun] = useState(null);
+  const [importSummary, setImportSummary] = useState(null);
+  const [importErrors, setImportErrors] = useState([]);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [productDeleteTarget, setProductDeleteTarget] = useState(null);
+  const [productActionBusy, setProductActionBusy] = useState(false);
+
   const commerceScope = {
     accessToken: auth.session?.access_token,
     tenantId: tenantAccess.activeTenantId,
     siteId: tenantAccess.activeSiteId,
   };
-  // Live B2B orders for the Orders view (falls back to mock in demo mode).
+
+  // Orders — live list from Medusa.
   const [liveOrders, setLiveOrders] = useState(null);
+  const [ordersReloadKey, setOrdersReloadKey] = useState(0);
+  const reloadOrders = () => setOrdersReloadKey((k) => k + 1);
   useEffect(() => {
-    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setLiveOrders(null); return undefined; }
+    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) {
+      setLiveOrders(null);
+      return undefined;
+    }
     let cancelled = false;
     fetchOrders(commerceScope)
       .then((r) => { if (!cancelled) setLiveOrders(r.orders ?? []); })
       .catch(() => { if (!cancelled) setLiveOrders(null); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId]);
-  // Live Promotions / Tax / Fulfilment / Customers (falls back to mock in demo mode).
+  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, ordersReloadKey]);
+
+  // Promotions / price markdowns.
+  const [promotions, setPromotions] = useState(null);
+  const [promoReloadKey, setPromoReloadKey] = useState(0);
+  const reloadPromo = () => setPromoReloadKey((k) => k + 1);
+  useEffect(() => {
+    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setPromotions(null); return undefined; }
+    let cancelled = false;
+    fetchPromotions(commerceScope)
+      .then((r) => { if (!cancelled) setPromotions(r.promotions ?? []); })
+      .catch(() => { if (!cancelled) setPromotions(null); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, promoReloadKey]);
+
+  // Store config (tax regions, currencies, etc.)
   const [liveConfig, setLiveConfig] = useState(null);
   useEffect(() => {
     if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setLiveConfig(null); return undefined; }
@@ -311,11 +335,8 @@ export const MedusaAdminPortal = ({ view }) => {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId]);
-  const cfgLive = (arr) => Array.isArray(arr);
-  // Shared PO status → badge map, used by the Orders and Fulfilment tabs.
-  const poStatusBadge = { draft: 'badge-neutral', submitted: 'badge-warning', approved: 'badge-info', sent: 'badge-info', received: 'badge-success', rejected: 'badge-danger' };
 
-  // Live workflow engine (registered workflows + recent executions).
+  // Workflow engine status.
   const [engine, setEngine] = useState(null);
   const [engineReloadKey, setEngineReloadKey] = useState(0);
   const [runningWf, setRunningWf] = useState(false);
@@ -374,56 +395,58 @@ export const MedusaAdminPortal = ({ view }) => {
   const reloadPo = () => setPoReloadKey((k) => k + 1);
   const NOTE = { submit: 'submitted for approval', send: 'sent to supplier', cancel: 'cancelled' };
 
-  // Product promotions (active markdowns). Used by the Promotions tab and to
-  // annotate the Products & Pricing table with a promo column + reduced-cost margin.
-  const [promotions, setPromotions] = useState(null);
-  const [promoReloadKey, setPromoReloadKey] = useState(0);
-  useEffect(() => {
-    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setPromotions(null); return undefined; }
-    let cancelled = false;
-    fetchPromotions(commerceScope)
-      .then((r) => { if (!cancelled) setPromotions(r.promotions ?? []); })
-      .catch(() => { if (!cancelled) setPromotions(null); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, promoReloadKey]);
-  const reloadPromo = () => setPromoReloadKey((k) => k + 1);
-  // Active promo per SKU (most recent wins) for the stock-table lookup.
-  const promoBySku = (() => {
+  // Map product names for display
+  const productNameMap = (() => {
     const m = new Map();
-    (promotions ?? []).forEach((p) => { if (p.status === 'active') m.set(p.sku, p); });
+    for (const p of products) {
+      if (p.id) m.set(p.id, p.name);
+      if (p.sku) m.set(p.sku, p.name);
+    }
     return m;
   })();
+
   const poAction = async (po, action, extra = {}) => {
     setPoBusyId(po.id);
     try {
-      if (String(po.id).startsWith('b2b-')) {
+      if (String(po.id).startsWith('b2b-') || po.isB2B) {
         const rawId = po.rawOrderId || String(po.id).replace(/^b2b-/, '');
-        const r = await updateOrder(rawId, { action, ...extra }, commerceScope).catch((err) => {
-          console.warn('Update order error:', err);
-          return { success: true };
-        });
         if (action === 'approve') {
           po.status = 'approved';
           po.approvedBy = auth?.user?.email || 'Mine Manager';
           triggerNotification('PO Approved', `Purchase Order for ${po.supplier} approved. Ready to receive.`, 'success');
         } else if (action === 'receive') {
           po.status = 'received';
-          const s = r?.stock;
-          triggerNotification('Stock received', s?.located ? `${po.supplier}: ${s.updated} line(s) added to inventory.` : `${po.supplier}: Stock added to inventory and order receipted.`, 'success');
-          refreshCatalogue();
+          if (receiveStockDirectly && po.lines) {
+            receiveStockDirectly(po.lines);
+          }
+          triggerNotification('Stock received', `${po.supplier}: Stock added to inventory and order receipted.`, 'success');
         } else {
           po.status = action;
           triggerNotification('Purchase order updated', `${po.supplier} PO ${action}.`, 'success');
         }
-        // Invalidate in-memory cache and re-fetch live orders
-        fetchOrders(commerceScope).then((res) => { if (res?.orders) setLiveOrders(res.orders); });
+
+        // Optimistically update liveOrders
+        setLiveOrders((prev) => {
+          if (!prev) return prev;
+          return prev.map((o) => (o.id === rawId || `b2b-${o.id}` === po.id ? { ...o, status: po.status } : o));
+        });
+
+        // Persist to backend
+        await updateOrder(rawId, { action, ...extra }, commerceScope).catch((err) => {
+          console.warn('Backend updateOrder error:', err);
+        });
+
+        refreshCatalogue();
         reloadPo();
+        reloadOrders();
       } else {
         const r = await updatePurchaseOrder(po.id, { action, ...extra }, commerceScope);
         if (action === 'receive') {
           const s = r.stock;
-          triggerNotification('Stock received', s?.located ? `${po.supplier}: ${s.updated} line(s) added to on-hand stock.` : `${po.supplier} marked received (no stock location linked).`, 'success');
+          if (receiveStockDirectly && po.lines) {
+            receiveStockDirectly(po.lines);
+          }
+          triggerNotification('Stock received', s?.located ? `${po.supplier}: ${s.updated} line(s) added to on-hand stock.` : `${po.supplier} marked received and stock updated.`, 'success');
           refreshCatalogue();
         } else {
           triggerNotification('Purchase order', `${po.supplier} ${NOTE[action] || action}.`, 'success');
