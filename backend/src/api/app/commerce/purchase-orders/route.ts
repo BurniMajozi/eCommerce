@@ -76,6 +76,8 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
     }
     if (!supplierName) throw new ScopeError(400, 'invalid_supplier', 'A supplier is required.');
 
+    const isMinePlant = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi/i.test(supplierName);
+    const initialStatus = isMinePlant ? 'pending_approval' : 'sent';
     const total = lines.reduce((a, l) => a + (l.qty ?? 0) * (l.unit_cost ?? 0), 0);
     const id = randomUUID();
     await pg(req)('purchase_orders').insert({
@@ -83,15 +85,16 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
       tenant_id: scope.tenantId,
       supplier_id: supplierId,
       supplier_name: supplierName,
-      status: 'draft',
+      status: initialStatus,
       currency: (b.currency || 'ZAR').toString(),
       reference: (b.reference ?? '').toString().trim() || null,
       expected_date: b.expectedDate || null,
       lines: JSON.stringify(lines),
       total,
       created_by: scope.userId,
+      ...(isMinePlant ? { submitted_at: new Date() } : { sent_at: new Date(), approved_by: 'B2B Auto-Dispatch (External Vendor)', approved_at: new Date() }),
     });
-    res.status(201).json({ id, supplier: supplierName, total, status: 'draft', lineCount: lines.length });
+    res.status(201).json({ id, supplier: supplierName, total, status: initialStatus, lineCount: lines.length });
   } catch (error) {
     if (error instanceof ScopeError) { res.status(error.status).json({ code: error.code, message: error.message }); return; }
     res.status(500).json({ code: 'po_create_failed', message: (error as Error).message });

@@ -1268,7 +1268,13 @@ export const MedusaAdminPortal = ({ view }) => {
 
     const directPos = (purchaseOrders ?? []).map((p) => {
       const override = orderStatusOverrides[p.id] || orderStatusOverrides[p.reference];
-      return override ? { ...p, status: override } : p;
+      const isMine = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi/i.test(p.supplier || '');
+      let st = override || p.status;
+      // If external vendor (not a mine plant), it does not require internal mine manager approval
+      if (!isMine && (st === 'draft' || st === 'submit' || st === 'submitted' || st === 'pending_approval')) {
+        st = 'sent';
+      }
+      return { ...p, status: st, isMinePlant: isMine };
     });
     const directPoRefs = new Set(directPos.map((p) => p.reference || p.id));
     const mergedB2bPos = b2bPoRows.filter((p) => !directPoRefs.has(p.reference));
@@ -1334,9 +1340,7 @@ export const MedusaAdminPortal = ({ view }) => {
                     <td className="center" style={{ whiteSpace: 'nowrap' }}>
                       {po.status === 'draft' && <button className="btn btn-secondary btn-sm" disabled={busy(po)} onClick={() => poAction(po, 'submit')}>{busy(po) ? <Loader2 size={13} className="spin" /> : <Send size={13} />} Submit for approval</button>}
                       {(po.status === 'pending_approval' || po.status === 'submitted' || po.status === 'submit') && (
-                        <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                          <button className="btn btn-primary btn-sm" disabled={busy(po)} onClick={() => poAction(po, 'approve')}>{busy(po) ? <Loader2 size={13} className="spin" /> : <Check size={13} />} Approve</button>
-                        </div>
+                        <span className="muted" style={{ fontSize: 12, fontStyle: 'italic' }}>Awaiting manager sign-off in Approvals</span>
                       )}
                       {po.status === 'rejected' && <button className="btn btn-secondary btn-sm" disabled={busy(po)} onClick={() => poAction(po, 'submit')}>Re-submit</button>}
                       {(po.status === 'approved' || po.status === 'sent') && <>
@@ -1345,7 +1349,7 @@ export const MedusaAdminPortal = ({ view }) => {
                         <button className="btn btn-primary btn-sm" style={{ marginLeft: 6 }} disabled={busy(po)} onClick={() => poAction(po, 'receive')}>{busy(po) ? <Loader2 size={13} className="spin" /> : <PackageCheck size={13} />} Receive stock</button>
                       </>}
                       {po.status === 'received' && <button className="btn btn-secondary btn-sm" title="Print / PDF" onClick={() => printPo(po)}><Printer size={13} /></button>}
-                      {po.status !== 'received' && po.status !== 'pending_approval' && po.status !== 'submitted' && po.status !== 'submit' && <button className="icon-btn" style={{ width: 30, height: 30, marginLeft: 6 }} title="Delete" onClick={() => setPoDelete(po)}><Trash2 size={14} /></button>}
+                      {po.status !== 'received' && <button className="icon-btn" style={{ width: 30, height: 30, marginLeft: 6 }} title="Delete" onClick={() => setPoDelete(po)}><Trash2 size={14} /></button>}
                     </td>
                   </tr>
                 ))}
