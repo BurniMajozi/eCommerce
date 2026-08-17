@@ -49,7 +49,7 @@ function toOrderSummary(order: Record<string, unknown>) {
   return {
     id: order.id,
     displayId: order.display_id ?? null,
-    status: order.status ?? null,
+    status: (meta.status as string) || (order.status as string) || 'pending',
     isDraft: order.is_draft_order ?? true,
     currencyCode: order.currency_code ?? 'zar',
     email: order.email ?? null,

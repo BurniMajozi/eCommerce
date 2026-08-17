@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { fetchPurchaseOrders, updatePurchaseOrder, fetchPromotions, updatePromotion, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { fetchPurchaseOrders, updatePurchaseOrder, fetchOrders, updateOrder, fetchPromotions, updatePromotion, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { SignaturePad } from './SignaturePad';
 import {
   Bell, ShieldCheck, AlertTriangle, Check, X, Eye, ArrowRight, ClipboardList, ClipboardCheck, PenLine, Loader2, Factory, BadgePercent
@@ -8,9 +8,8 @@ import {
 
 const rands = (n, cur = 'ZAR') => `${cur === 'ZAR' ? 'R' : cur + ' '}${Number(n || 0).toLocaleString('en-ZA')}`;
 
-// Live purchase-order approvals for managers. A PO submitted by the merchant
-// lands here; the manager approves it with a captured signature or rejects it
-// with a reason. Approval releases the PO back to the merchant to send.
+// Live purchase-order approvals for managers. Internal mine transfers / POs
+// land here for the mine manager to approve with a captured signature or reject.
 const PoApprovals = () => {
   const { auth, tenantAccess, triggerNotification } = useApp();
   const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
@@ -28,7 +27,37 @@ const PoApprovals = () => {
   useEffect(() => {
     if (!live) return;
     let active = true;
-    fetchPurchaseOrders(scope).then((r) => { if (active) setOrders((r.orders ?? []).filter((p) => p.status === 'pending_approval')); }).catch(() => { if (active) setOrders([]); });
+    Promise.all([
+      fetchPurchaseOrders(scope).catch(() => ({ orders: [] })),
+      fetchOrders(scope).catch(() => ({ orders: [] })),
+    ]).then(([poRes, orderRes]) => {
+      if (!active) return;
+      const directPos = (poRes.orders ?? []).filter((p) => p.status === 'pending_approval');
+      
+      const mineOrders = (orderRes.orders ?? [])
+        .filter((o) => {
+          const supplierName = (o.supplier || '').trim();
+          const isMine = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi/i.test(supplierName);
+          return isMine && o.status !== 'approved' && o.status !== 'received' && o.status !== 'rejected';
+        })
+        .map((o) => ({
+          id: `b2b-${o.id}`,
+          rawOrderId: o.id,
+          isB2B: true,
+          supplier: o.supplier || 'Internal Mine Plant',
+          reference: `B2B Order #${o.displayId || o.id?.slice(0, 8)} (${o.clientName || 'Storefront'})`,
+          lines: (o.items ?? []).map((i) => ({ sku: i.sku, name: i.name, qty: i.qty, unit_cost: i.unitPrice })),
+          lineCount: (o.items ?? []).length || 1,
+          total: o.total || 0,
+          currency: (o.currencyCode || 'ZAR').toUpperCase(),
+          status: 'pending_approval',
+          createdAt: (o.createdAt || '').slice(0, 10),
+        }));
+
+      const directPoRefs = new Set(directPos.map((p) => p.reference || p.id));
+      const filteredMine = mineOrders.filter((m) => !directPoRefs.has(m.reference));
+      setOrders([...directPos, ...filteredMine]);
+    });
     return () => { active = false; };
   }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -36,18 +65,28 @@ const PoApprovals = () => {
     if (!signature) { triggerNotification('Signature required', 'Please sign to approve the purchase order.', 'warning'); return; }
     setBusy(true);
     try {
-      await updatePurchaseOrder(signing.id, { action: 'approve', approverName, signature }, scope);
-      triggerNotification('PO approved', `${signing.supplier} approved & signed — released to the merchant.`, 'success');
+      if (signing.isB2B || String(signing.id).startsWith('b2b-')) {
+        const rawId = signing.rawOrderId || String(signing.id).replace(/^b2b-/, '');
+        await updateOrder(rawId, { action: 'approve', approverName, signature }, scope);
+      } else {
+        await updatePurchaseOrder(signing.id, { action: 'approve', approverName, signature }, scope);
+      }
+      triggerNotification('PO approved', `${signing.supplier} approved & signed — ready for receipting.`, 'success');
       setSigning(null); setSignature(''); setReloadKey((k) => k + 1);
     } catch (e) { triggerNotification('Approval failed', e.message || 'Could not approve.', 'danger'); } finally { setBusy(false); }
   };
   const reject = async () => {
     setBusy(true);
     try {
-      await updatePurchaseOrder(rejecting.id, { action: 'reject', reason: reason || 'Rejected' }, scope);
-      triggerNotification('PO rejected', `${rejecting.supplier} sent back to the merchant.`, 'info');
+      if (rejecting.isB2B || String(rejecting.id).startsWith('b2b-')) {
+        const rawId = rejecting.rawOrderId || String(rejecting.id).replace(/^b2b-/, '');
+        await updateOrder(rawId, { action: 'reject', reason: reason.trim() || 'Rejected by mine manager' }, scope);
+      } else {
+        await updatePurchaseOrder(rejecting.id, { action: 'reject', reason: reason.trim() || 'Rejected by mine manager' }, scope);
+      }
+      triggerNotification('PO rejected', `${rejecting.supplier} rejected.`, 'info');
       setRejecting(null); setReason(''); setReloadKey((k) => k + 1);
-    } catch (e) { triggerNotification('Reject failed', e.message || 'Could not reject.', 'danger'); } finally { setBusy(false); }
+    } catch (e) { triggerNotification('Rejection failed', e.message || 'Could not reject.', 'danger'); } finally { setBusy(false); }
   };
 
   if (!live) return null;

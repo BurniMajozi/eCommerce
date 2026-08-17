@@ -161,6 +161,10 @@ export const updatePurchaseOrder = (id, patch, scope) => scopedJson(`/app/commer
   ...scope, method: 'PATCH', body: patch,
 });
 
+export const updateOrder = (id, patch, scope) => scopedJson(`/app/orders/${id}`, {
+  ...scope, method: 'PATCH', body: patch,
+});
+
 export const deletePurchaseOrder = (id, scope) => scopedJson(`/app/commerce/purchase-orders/${id}`, {
   ...scope, method: 'DELETE',
 });

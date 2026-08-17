@@ -22,13 +22,20 @@ async function receiveStock(req: TenantScopedRequest, scope: NonNullable<TenantS
   const locationId = data.context.stockLocationId;
   if (!locationId) return { updated: 0, skipped: lines.length, located: false };
 
+  const itemBySku = new Map<string, { itemId: string; required: number }>();
   const itemByProduct = new Map<string, { itemId: string; required: number }>();
+
   for (const p of data.products) {
     for (const v of p.variants ?? []) {
       const link = (v.inventory_items ?? [])[0];
-      if (p.id && link?.inventory_item_id) { itemByProduct.set(p.id, { itemId: link.inventory_item_id, required: Math.max(1, finite(link.required_quantity) || 1) }); break; }
+      if (link?.inventory_item_id) {
+        const itemInfo = { itemId: link.inventory_item_id, required: Math.max(1, finite(link.required_quantity) || 1) };
+        if (v.sku) itemBySku.set(v.sku.toLowerCase(), itemInfo);
+        if (p.id) itemByProduct.set(p.id, itemInfo);
+      }
     }
   }
+
   const stockedByItem = new Map<string, number>();
   for (const lvl of data.inventoryLevels) {
     if (lvl.inventory_item_id && lvl.location_id === locationId) stockedByItem.set(lvl.inventory_item_id, finite(lvl.stocked_quantity));
@@ -36,7 +43,8 @@ async function receiveStock(req: TenantScopedRequest, scope: NonNullable<TenantS
 
   const updates: Array<{ inventory_item_id: string; location_id: string; stocked_quantity: number }> = [];
   for (const l of lines) {
-    const map = l.product_id ? itemByProduct.get(l.product_id) : null;
+    const skuKey = (l.sku ?? '').toString().toLowerCase();
+    const map = (l.sku && itemBySku.get(skuKey)) || (l.product_id && itemByProduct.get(l.product_id)) || (l.variant_id && itemByProduct.get(l.variant_id));
     if (!map) { skipped++; continue; }
     const current = stockedByItem.get(map.itemId) ?? 0;
     updates.push({ inventory_item_id: map.itemId, location_id: locationId, stocked_quantity: current + finite(l.qty) * map.required });

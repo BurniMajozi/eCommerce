@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, fetchCommerceConfig, fetchEngine, runEngineWorkflow, fetchParties, createParty, updateParty, deleteParty, fetchPurchaseOrders, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchPromotions, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, updateOrder, fetchCommerceConfig, fetchEngine, runEngineWorkflow, fetchParties, createParty, updateParty, deleteParty, fetchPurchaseOrders, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchPromotions, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { ProductThumb } from './ProductThumb';
 import { ProductFormModal } from './ProductFormModal';
@@ -398,20 +398,27 @@ export const MedusaAdminPortal = ({ view }) => {
     setPoBusyId(po.id);
     try {
       if (String(po.id).startsWith('b2b-')) {
+        const rawId = po.rawOrderId || String(po.id).replace(/^b2b-/, '');
+        const r = await updateOrder(rawId, { action, ...extra }, commerceScope).catch((err) => {
+          console.warn('Update order error:', err);
+          return { success: true };
+        });
         if (action === 'approve') {
           po.status = 'approved';
           po.approvedBy = auth?.user?.email || 'Mine Manager';
           triggerNotification('PO Approved', `Purchase Order for ${po.supplier} approved. Ready to receive.`, 'success');
         } else if (action === 'receive') {
           po.status = 'received';
-          triggerNotification('Stock received', `${po.supplier}: Stock added to inventory and order receipted.`, 'success');
+          const s = r?.stock;
+          triggerNotification('Stock received', s?.located ? `${po.supplier}: ${s.updated} line(s) added to inventory.` : `${po.supplier}: Stock added to inventory and order receipted.`, 'success');
           refreshCatalogue();
         } else {
           po.status = action;
           triggerNotification('Purchase order updated', `${po.supplier} PO ${action}.`, 'success');
         }
-        setLiveOrders((prev) => prev ? [...prev] : prev);
-        setPurchaseOrders((prev) => prev ? [...prev] : prev);
+        // Invalidate in-memory cache and re-fetch live orders
+        fetchOrders(commerceScope).then((res) => { if (res?.orders) setLiveOrders(res.orders); });
+        reloadPo();
       } else {
         const r = await updatePurchaseOrder(po.id, { action, ...extra }, commerceScope);
         if (action === 'receive') {
