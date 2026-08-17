@@ -336,6 +336,17 @@ export const MedusaAdminPortal = ({ view }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId]);
 
+  const cfgLive = (arr) => Array.isArray(arr);
+  // Shared PO status → badge map, used by the Orders and Fulfilment tabs.
+  const poStatusBadge = { draft: 'badge-neutral', submitted: 'badge-warning', pending_approval: 'badge-warning', approved: 'badge-info', sent: 'badge-info', received: 'badge-success', rejected: 'badge-danger', cancelled: 'badge-neutral' };
+
+  // Active promo per SKU (most recent wins) for the stock-table lookup.
+  const promoBySku = (() => {
+    const m = new Map();
+    (promotions ?? []).forEach((p) => { if (p.status === 'active') m.set(p.sku, p); });
+    return m;
+  })();
+
   // Workflow engine status.
   const [engine, setEngine] = useState(null);
   const [engineReloadKey, setEngineReloadKey] = useState(0);
