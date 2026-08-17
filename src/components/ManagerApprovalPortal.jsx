@@ -38,14 +38,15 @@ const PoApprovals = () => {
     ]).then(([poRes, orderRes]) => {
       if (!active) return;
       const directPos = (poRes.orders ?? []).filter((p) => {
-        const isPending = p.status === 'pending_approval' || p.status === 'submit' || p.status === 'submitted';
-        return isPending && !isDecided(p.id, p.reference);
+        const isPending = p.status === 'pending_approval' || p.status === 'submit' || p.status === 'submitted' || p.status === 'draft';
+        const isMine = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi|internal|site/i.test(p.supplier || '');
+        return (isPending || isMine) && p.status !== 'approved' && p.status !== 'sent' && p.status !== 'received' && p.status !== 'rejected' && !isDecided(p.id, p.reference);
       });
       
       const mineOrders = (orderRes.orders ?? [])
         .filter((o) => {
           const supplierName = (o.supplier || '').trim();
-          const isMine = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi/i.test(supplierName);
+          const isMine = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi|internal|site/i.test(supplierName);
           const rawStatus = orderStatusOverrides?.[o.id] || orderStatusOverrides?.[`b2b-${o.id}`] || o.status;
           return isMine && rawStatus !== 'approved' && rawStatus !== 'received' && rawStatus !== 'rejected';
         })

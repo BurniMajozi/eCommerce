@@ -200,11 +200,11 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
 
     // Sync B2B Order to Purchase Orders table
     try {
-      const pg = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as any;
+      const db = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as any;
       const supplierName = (body.supplier || '').trim() || 'Dromex Safety (Pty) Ltd';
       
       // Determine if supplier is from the mine or external
-      const isMinePlant = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi/i.test(supplierName);
+      const isMinePlant = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi|internal|site/i.test(supplierName);
       // If mine plant -> requires approval logic ('pending_approval')
       // If external -> receipt trigger only ('sent', ready for receipting)
       const poStatus = isMinePlant ? 'pending_approval' : 'sent';
@@ -219,7 +219,7 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
 
       const poId = randomUUID();
       const displayRef = (result as any)?.display_id ? `#${(result as any)?.display_id}` : (body.poNumber?.trim() || 'B2B');
-      await pg(req)('purchase_orders').insert({
+      await db('purchase_orders').insert({
         id: poId,
         tenant_id: scope.tenantId,
         supplier_id: null,
@@ -237,8 +237,8 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
           ? { submitted_at: new Date() }
           : { sent_at: new Date(), approved_by: 'B2B Auto-Dispatch (External Vendor)', approved_at: new Date() }),
       });
-    } catch {
-      // ignore PO sync failure if table is being created
+    } catch (err) {
+      console.warn('PO sync error in orders route:', err);
     }
 
     res.status(201).json({ order: toOrderSummary(result as unknown as Record<string, unknown>) });
