@@ -275,7 +275,7 @@ const PurchaseOrderModal = ({ suppliers, products, scope, onClose, onSaved, trig
 };
 
 export const MedusaAdminPortal = ({ view }) => {
-  const { products, receiveStockDirectly, catalogue, profitability, auth, tenantAccess, taxEnabled, setTaxEnabled, triggerNotification, refreshCatalogue } = useApp();
+  const { products, receiveStockDirectly, catalogue, profitability, auth, tenantAccess, taxEnabled, setTaxEnabled, triggerNotification, refreshCatalogue, orderStatusOverrides, setOrderStatusOverride } = useApp();
   const importInputRef = useRef(null);
   const [importResult, setImportResult] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -394,7 +394,6 @@ export const MedusaAdminPortal = ({ view }) => {
   const [firing, setFiring] = useState(null);
   const [poDelete, setPoDelete] = useState(null);
   const [poBusyId, setPoBusyId] = useState(null);
-  const [orderStatusOverrides, setOrderStatusOverrides] = useState({});
   useEffect(() => {
     if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setPurchaseOrders(null); return undefined; }
     let cancelled = false;
@@ -422,14 +421,13 @@ export const MedusaAdminPortal = ({ view }) => {
     const newStatus = action === 'receive' ? 'received' : (action === 'approve' ? 'approved' : action);
     const rawId = po.rawOrderId || String(po.id).replace(/^b2b-/, '');
 
-    // Set persistent override immediately
-    setOrderStatusOverrides((prev) => ({
-      ...prev,
-      [po.id]: newStatus,
-      [rawId]: newStatus,
-      [`b2b-${rawId}`]: newStatus,
-      ...(po.reference ? { [po.reference]: newStatus } : {}),
-    }));
+    // Persist status override to AppContext & localStorage
+    if (setOrderStatusOverride) {
+      setOrderStatusOverride(po.id, newStatus);
+      setOrderStatusOverride(rawId, newStatus);
+      setOrderStatusOverride(`b2b-${rawId}`, newStatus);
+      if (po.reference) setOrderStatusOverride(po.reference, newStatus);
+    }
 
     try {
       if (String(po.id).startsWith('b2b-') || po.isB2B) {

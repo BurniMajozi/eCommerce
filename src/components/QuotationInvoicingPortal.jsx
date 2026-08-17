@@ -7,7 +7,7 @@ import { MOCK_PARTIES, MOCK_PLANTS } from '../data/mockData';
 import { Receipt, Plus, FileText, ArrowRight, Store, TrendingUp, Loader2, Factory } from 'lucide-react';
 
 export const QuotationInvoicingPortal = () => {
-  const { products, quotations, saveQuotation, convertQuoteToInvoice, convertOrderToInvoice, selectedInvoice, setSelectedInvoice, taxEnabled, setTaxEnabled, auth, tenantAccess, triggerNotification } = useApp();
+  const { products, quotations, saveQuotation, convertQuoteToInvoice, convertOrderToInvoice, selectedInvoice, setSelectedInvoice, taxEnabled, setTaxEnabled, auth, tenantAccess, triggerNotification, orderStatusOverrides } = useApp();
   const stockFor = (sku) => products.find(p => p.sku === sku)?.stockOnHand ?? 0;
 
   // Live mode writes real Medusa draft orders; demo mode uses local quotations.
@@ -263,6 +263,7 @@ export const QuotationInvoicingPortal = () => {
                 return a + up * q;
               }, 0);
               const oTotal = typeof o.total === 'number' && o.total > 0 ? o.total : (o.taxEnabled === false ? sub : sub * 1.15);
+              const finalStatus = (orderStatusOverrides && (orderStatusOverrides[o.id] || orderStatusOverrides[`b2b-${o.id}`])) || o.status || 'pending';
               return (
                 <div key={o.id} className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
                   <div className="card-bd" style={{ padding: 14 }}>
@@ -273,8 +274,8 @@ export const QuotationInvoicingPortal = () => {
                         {o.supplier && <div style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 500 }}>Supplier: {o.supplier}</div>}
                         <div className="muted" style={{ fontSize: 12 }}>{(o.createdAt || '').substring(0, 10)} · PO {o.poNumber || '—'}</div>
                       </div>
-                      <span className={`badge ${o.status === 'received' ? 'badge-success' : (o.status === 'approved' ? 'badge-info' : 'badge-warning')}`}>
-                        {o.status === 'received' ? 'Stock Received' : (o.status === 'approved' ? 'Approved' : (o.status || 'pending'))}
+                      <span className={`badge ${finalStatus === 'received' ? 'badge-success' : (finalStatus === 'approved' ? 'badge-info' : 'badge-warning')}`}>
+                        {finalStatus === 'received' ? 'Stock Received' : (finalStatus === 'approved' ? 'Approved' : finalStatus)}
                       </span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border)', marginTop: 10, paddingTop: 10 }}>

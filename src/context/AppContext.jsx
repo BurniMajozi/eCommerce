@@ -44,6 +44,24 @@ export const AppProvider = ({ children }) => {
   const [catalogueReloadKey, setCatalogueReloadKey] = useState(0);
   const refreshCatalogue = () => setCatalogueReloadKey((k) => k + 1);
 
+  const [orderStatusOverrides, setOrderStatusOverridesState] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sightlive_order_status_overrides');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const setOrderStatusOverride = (id, status) => {
+    if (!id) return;
+    setOrderStatusOverridesState((prev) => {
+      const next = { ...prev, [id]: status };
+      try { localStorage.setItem('sightlive_order_status_overrides', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
   useEffect(() => {
     const accessToken = auth.session?.access_token;
     const tenantId = tenantAccess.activeTenantId;
@@ -396,7 +414,9 @@ export const AppProvider = ({ children }) => {
       tenantAccess,
       integrationMode: tenantAccess.mode,
       canManageCommerce,
-      refreshCatalogue
+      refreshCatalogue,
+      orderStatusOverrides,
+      setOrderStatusOverride
     }}>
       {children}
     </AppContext.Provider>

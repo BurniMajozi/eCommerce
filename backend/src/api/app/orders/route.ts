@@ -219,7 +219,7 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
 
       const poId = randomUUID();
       const displayRef = (result as any)?.display_id ? `#${(result as any)?.display_id}` : (body.poNumber?.trim() || 'B2B');
-      await pg('purchase_orders').insert({
+      await pg(req)('purchase_orders').insert({
         id: poId,
         tenant_id: scope.tenantId,
         supplier_id: null,
