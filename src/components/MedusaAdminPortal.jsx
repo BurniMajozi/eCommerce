@@ -601,27 +601,24 @@ export const MedusaAdminPortal = ({ view }) => {
     const liveProfitBySku = new Map((profitability.items ?? []).map(item => [item.sku, item]));
     const liveCatalogue = catalogue.source === 'medusa';
     const rows = products.map(p => {
-      let costPrice = p.costPrice;
-      let sellingPrice = p.sellingPrice;
-      let margin = p.sellingPrice ? ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100 : 0;
-      let profit = p.sellingPrice - p.costPrice;
-      if (liveCatalogue) {
-        const financial = liveProfitBySku.get(p.sku);
-        costPrice = financial?.averageCost ?? null;
-        sellingPrice = financial?.averageSellingPrice ?? p.sellingPrice;
-        margin = financial?.marginPercent ?? null;
-        profit = financial?.averageCost == null || financial?.averageSellingPrice == null
-          ? null : financial.averageSellingPrice - financial.averageCost;
-      }
-      // Apply an active promotion: the discount reduces the COST BASIS (decision:
-      // promo narrows margin by lowering cost), selling price is unchanged.
+      const financial = liveProfitBySku.get(p.sku);
+      let costPrice = financial?.averageCost ?? p.costPrice ?? null;
+      let sellingPrice = financial?.averageSellingPrice ?? p.sellingPrice ?? 0;
+      let profit = (costPrice != null && sellingPrice != null)
+        ? (sellingPrice - costPrice)
+        : (financial?.averageCost != null && financial?.averageSellingPrice != null
+            ? financial.averageSellingPrice - financial.averageCost
+            : (p.sellingPrice && p.costPrice != null ? p.sellingPrice - p.costPrice : null));
+      let margin = financial?.marginPercent ?? (sellingPrice > 0 && costPrice != null ? ((sellingPrice - costPrice) / sellingPrice) * 100 : (p.sellingPrice && p.costPrice != null ? ((p.sellingPrice - p.costPrice) / p.sellingPrice) * 100 : null));
+
+      // Apply an active promotion: the discount reduces the COST BASIS
       const promo = promoBySku.get(p.sku) || null;
       let promoCost = costPrice;
       let promoMargin = margin;
       let promoProfit = profit;
       if (promo && costPrice != null && sellingPrice) {
         promoCost = costPrice * (1 - Number(promo.discountPct) / 100);
-        promoMargin = sellingPrice ? ((sellingPrice - promoCost) / sellingPrice) * 100 : null;
+        promoMargin = sellingPrice > 0 ? ((sellingPrice - promoCost) / sellingPrice) * 100 : null;
         promoProfit = sellingPrice - promoCost;
       }
       return { ...p, costPrice, sellingPrice, margin, profit, promo, promoCost, promoMargin, promoProfit };
