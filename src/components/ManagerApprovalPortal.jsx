@@ -30,44 +30,60 @@ const PoApprovals = () => {
   };
 
   useEffect(() => {
-    if (!live) return;
     let active = true;
-    Promise.all([
-      fetchPurchaseOrders(scope).catch(() => ({ orders: [] })),
-      fetchOrders(scope).catch(() => ({ orders: [] })),
-    ]).then(([poRes, orderRes]) => {
-      if (!active) return;
-      const directPos = (poRes.orders ?? []).filter((p) => {
-        const isPending = p.status === 'pending_approval' || p.status === 'submit' || p.status === 'submitted' || p.status === 'draft';
-        const isMine = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi|internal|site/i.test(p.supplier || '');
-        return (isPending || isMine) && p.status !== 'approved' && p.status !== 'sent' && p.status !== 'received' && p.status !== 'rejected' && !isDecided(p.id, p.reference);
-      });
-      
-      const mineOrders = (orderRes.orders ?? [])
-        .filter((o) => {
-          const supplierName = (o.supplier || '').trim();
-          const isMine = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi|internal|site/i.test(supplierName);
-          const rawStatus = orderStatusOverrides?.[o.id] || orderStatusOverrides?.[`b2b-${o.id}`] || o.status;
-          return isMine && rawStatus !== 'approved' && rawStatus !== 'received' && rawStatus !== 'rejected';
-        })
-        .map((o) => ({
-          id: `b2b-${o.id}`,
-          rawOrderId: o.id,
-          isB2B: true,
-          supplier: o.supplier || 'Internal Mine Plant',
-          reference: `B2B Order #${o.displayId || o.id?.slice(0, 8)} (${o.clientName || 'Storefront'})`,
-          lines: (o.items ?? []).map((i) => ({ sku: i.sku, name: i.name, qty: i.qty, unit_cost: i.unitPrice })),
-          lineCount: (o.items ?? []).length || 1,
-          total: o.total || 0,
-          currency: (o.currencyCode || 'ZAR').toUpperCase(),
-          status: 'pending_approval',
-          createdAt: (o.createdAt || '').slice(0, 10),
-        }));
+    const loadApprovals = async () => {
+      let directPos = [];
+      let mineOrders = [];
 
-      const directPoRefs = new Set(directPos.map((p) => p.reference || p.id));
-      const filteredMine = mineOrders.filter((m) => !directPoRefs.has(m.reference) && !isDecided(m.id, m.reference));
-      setOrders([...directPos, ...filteredMine]);
-    });
+      if (live) {
+        try {
+          const [poRes, orderRes] = await Promise.all([
+            fetchPurchaseOrders(scope).catch(() => ({ orders: [] })),
+            fetchOrders(scope).catch(() => ({ orders: [] })),
+          ]);
+          directPos = (poRes.orders ?? []).filter((p) => {
+            const isPending = p.status === 'pending_approval' || p.status === 'submit' || p.status === 'submitted' || p.status === 'draft';
+            return isPending && p.status !== 'approved' && p.status !== 'sent' && p.status !== 'received' && p.status !== 'rejected' && !isDecided(p.id, p.reference);
+          });
+          mineOrders = (orderRes.orders ?? [])
+            .filter((o) => {
+              const supplierName = (o.supplier || '').trim();
+              const isMine = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi|internal|site|cageli/i.test(supplierName);
+              const rawStatus = orderStatusOverrides?.[o.id] || orderStatusOverrides?.[`b2b-${o.id}`] || o.status;
+              return isMine && rawStatus !== 'approved' && rawStatus !== 'received' && rawStatus !== 'rejected';
+            })
+            .map((o) => ({
+              id: `b2b-${o.id}`,
+              rawOrderId: o.id,
+              isB2B: true,
+              supplier: o.supplier || 'Internal Mine Plant',
+              reference: `B2B Order #${o.displayId || o.id?.slice(0, 8)} (${o.clientName || 'Storefront'})`,
+              lines: (o.items ?? []).map((i) => ({ sku: i.sku, name: i.name, qty: i.qty, unit_cost: i.unitPrice })),
+              lineCount: (o.items ?? []).length || 1,
+              total: o.total || 0,
+              currency: (o.currencyCode || 'ZAR').toUpperCase(),
+              status: 'pending_approval',
+              createdAt: (o.createdAt || '').slice(0, 10),
+            }));
+        } catch {}
+      }
+
+      if (active) {
+        const directPoRefs = new Set(directPos.map((p) => p.reference || p.id));
+        const filteredMine = mineOrders.filter((m) => !directPoRefs.has(m.reference) && !isDecided(m.id, m.reference));
+        // Deduplicate
+        const seen = new Set();
+        const combined = [];
+        for (const it of [...directPos, ...filteredMine]) {
+          if (!seen.has(it.id)) {
+            seen.add(it.id);
+            combined.push(it);
+          }
+        }
+        setOrders(combined);
+      }
+    };
+    loadApprovals();
     return () => { active = false; };
   }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey, orderStatusOverrides]); // eslint-disable-line react-hooks/exhaustive-deps
 
