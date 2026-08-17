@@ -284,9 +284,9 @@ export const MedusaAdminPortal = ({ view }) => {
   const [importDryRun, setImportDryRun] = useState(null);
   const [importSummary, setImportSummary] = useState(null);
   const [importErrors, setImportErrors] = useState([]);
-  const [showProductModal, setShowProductModal] = useState(false);
-  const [editingProduct, setEditingProduct] = useState(null);
-  const [productDeleteTarget, setProductDeleteTarget] = useState(null);
+  const [showProductForm, setShowProductForm] = useState(false);
+  const [editProduct, setEditProduct] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [productActionBusy, setProductActionBusy] = useState(false);
   const [expandedSku, setExpandedSku] = useState(null);
 
