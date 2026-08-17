@@ -3,7 +3,7 @@ import { Eraser } from 'lucide-react';
 
 // Lightweight canvas signature pad (mouse + touch). Calls onChange with a PNG
 // data URL as the user draws, and '' when cleared. No external dependency.
-export const SignaturePad = ({ onChange, height = 150 }) => {
+export const SignaturePad = ({ onChange, height = 105 }) => {
   const canvasRef = useRef(null);
   const drawing = useRef(false);
   const last = useRef({ x: 0, y: 0 });

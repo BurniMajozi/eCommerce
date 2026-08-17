@@ -11,7 +11,7 @@ const rands = (n, cur = 'ZAR') => `${cur === 'ZAR' ? 'R' : cur + ' '}${Number(n 
 // Live purchase-order approvals for managers. Internal mine transfers / POs
 // land here for the mine manager to approve with a captured signature or reject.
 const PoApprovals = () => {
-  const { auth, tenantAccess, triggerNotification } = useApp();
+  const { auth, tenantAccess, triggerNotification, orderStatusOverrides, setOrderStatusOverride, refreshCatalogue } = useApp();
   const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
   const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
   const me = auth?.session?.user?.user_metadata?.display_name || auth?.session?.user?.email || 'Manager';
@@ -24,6 +24,11 @@ const PoApprovals = () => {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const isDecided = (id, ref) => {
+    const st = (orderStatusOverrides && (orderStatusOverrides[id] || (ref && orderStatusOverrides[ref]))) || null;
+    return st === 'approved' || st === 'received' || st === 'rejected' || st === 'cancelled';
+  };
+
   useEffect(() => {
     if (!live) return;
     let active = true;
@@ -32,13 +37,17 @@ const PoApprovals = () => {
       fetchOrders(scope).catch(() => ({ orders: [] })),
     ]).then(([poRes, orderRes]) => {
       if (!active) return;
-      const directPos = (poRes.orders ?? []).filter((p) => p.status === 'pending_approval');
+      const directPos = (poRes.orders ?? []).filter((p) => {
+        const isPending = p.status === 'pending_approval' || p.status === 'submit' || p.status === 'submitted';
+        return isPending && !isDecided(p.id, p.reference);
+      });
       
       const mineOrders = (orderRes.orders ?? [])
         .filter((o) => {
           const supplierName = (o.supplier || '').trim();
           const isMine = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi/i.test(supplierName);
-          return isMine && o.status !== 'approved' && o.status !== 'received' && o.status !== 'rejected';
+          const rawStatus = orderStatusOverrides?.[o.id] || orderStatusOverrides?.[`b2b-${o.id}`] || o.status;
+          return isMine && rawStatus !== 'approved' && rawStatus !== 'received' && rawStatus !== 'rejected';
         })
         .map((o) => ({
           id: `b2b-${o.id}`,
@@ -55,11 +64,11 @@ const PoApprovals = () => {
         }));
 
       const directPoRefs = new Set(directPos.map((p) => p.reference || p.id));
-      const filteredMine = mineOrders.filter((m) => !directPoRefs.has(m.reference));
+      const filteredMine = mineOrders.filter((m) => !directPoRefs.has(m.reference) && !isDecided(m.id, m.reference));
       setOrders([...directPos, ...filteredMine]);
     });
     return () => { active = false; };
-  }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey, orderStatusOverrides]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const approve = async () => {
     if (!signature) { triggerNotification('Signature required', 'Please sign to approve the purchase order.', 'warning'); return; }
@@ -68,11 +77,22 @@ const PoApprovals = () => {
       if (signing.isB2B || String(signing.id).startsWith('b2b-')) {
         const rawId = signing.rawOrderId || String(signing.id).replace(/^b2b-/, '');
         await updateOrder(rawId, { action: 'approve', approverName, signature }, scope);
+        if (setOrderStatusOverride) {
+          setOrderStatusOverride(signing.id, 'approved');
+          setOrderStatusOverride(rawId, 'approved');
+          setOrderStatusOverride(`b2b-${rawId}`, 'approved');
+          if (signing.reference) setOrderStatusOverride(signing.reference, 'approved');
+        }
       } else {
         await updatePurchaseOrder(signing.id, { action: 'approve', approverName, signature }, scope);
+        if (setOrderStatusOverride) {
+          setOrderStatusOverride(signing.id, 'approved');
+          if (signing.reference) setOrderStatusOverride(signing.reference, 'approved');
+        }
       }
       triggerNotification('PO approved', `${signing.supplier} approved & signed — ready for receipting.`, 'success');
       setSigning(null); setSignature(''); setReloadKey((k) => k + 1);
+      if (refreshCatalogue) refreshCatalogue();
     } catch (e) { triggerNotification('Approval failed', e.message || 'Could not approve.', 'danger'); } finally { setBusy(false); }
   };
   const reject = async () => {
@@ -81,11 +101,22 @@ const PoApprovals = () => {
       if (rejecting.isB2B || String(rejecting.id).startsWith('b2b-')) {
         const rawId = rejecting.rawOrderId || String(rejecting.id).replace(/^b2b-/, '');
         await updateOrder(rawId, { action: 'reject', reason: reason.trim() || 'Rejected by mine manager' }, scope);
+        if (setOrderStatusOverride) {
+          setOrderStatusOverride(rejecting.id, 'rejected');
+          setOrderStatusOverride(rawId, 'rejected');
+          setOrderStatusOverride(`b2b-${rawId}`, 'rejected');
+          if (rejecting.reference) setOrderStatusOverride(rejecting.reference, 'rejected');
+        }
       } else {
         await updatePurchaseOrder(rejecting.id, { action: 'reject', reason: reason.trim() || 'Rejected by mine manager' }, scope);
+        if (setOrderStatusOverride) {
+          setOrderStatusOverride(rejecting.id, 'rejected');
+          if (rejecting.reference) setOrderStatusOverride(rejecting.reference, 'rejected');
+        }
       }
       triggerNotification('PO rejected', `${rejecting.supplier} rejected.`, 'info');
       setRejecting(null); setReason(''); setReloadKey((k) => k + 1);
+      if (refreshCatalogue) refreshCatalogue();
     } catch (e) { triggerNotification('Rejection failed', e.message || 'Could not reject.', 'danger'); } finally { setBusy(false); }
   };
 
@@ -125,24 +156,24 @@ const PoApprovals = () => {
       {/* Approve + signature modal */}
       {signing && (
         <div className="overlay" onClick={busy ? undefined : () => setSigning(null)}>
-          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal-sm" style={{ maxHeight: 'min(82vh, 480px)', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-hd" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><PenLine size={18} style={{ color: 'var(--primary)' }} /><h3>Approve purchase order</h3></div>
               <button className="icon-btn" onClick={() => setSigning(null)} aria-label="Close"><X size={17} /></button>
             </div>
-            <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '14px 18px' }}>
               <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
-                <div className="card-bd" style={{ padding: 12, fontSize: 13 }}>
+                <div className="card-bd" style={{ padding: '8px 12px', fontSize: 13 }}>
                   <div style={{ fontWeight: 600 }}>{signing.supplier}</div>
                   <div className="muted">{signing.lineCount} line(s) · <strong>{rands(signing.total, signing.currency)}</strong>{signing.reference ? ` · ${signing.reference}` : ''}</div>
                 </div>
               </div>
-              <div className="field"><label className="field-label">Approver</label>
+              <div className="field" style={{ margin: 0 }}><label className="field-label" style={{ marginBottom: 4 }}>Approver</label>
                 <input className="input" value={approverName} onChange={(e) => setApproverName(e.target.value)} /></div>
-              <div className="field"><label className="field-label">Signature</label>
-                <SignaturePad onChange={setSignature} /></div>
+              <div className="field" style={{ margin: 0 }}><label className="field-label" style={{ marginBottom: 4 }}>Signature</label>
+                <SignaturePad onChange={setSignature} height={95} /></div>
             </div>
-            <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 18px', borderTop: '1px solid var(--border)' }}>
+            <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
               <button className="btn btn-secondary" onClick={() => setSigning(null)} disabled={busy}>Cancel</button>
               <button className="btn btn-primary" onClick={approve} disabled={busy || !signature}>{busy ? <><Loader2 size={15} className="spin" /> Approving…</> : 'Approve & release'}</button>
             </div>
@@ -153,14 +184,14 @@ const PoApprovals = () => {
       {/* Reject modal */}
       {rejecting && (
         <div className="overlay" onClick={busy ? undefined : () => setRejecting(null)}>
-          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal-sm" style={{ maxHeight: 'min(80vh, 420px)', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-hd"><h3>Reject purchase order</h3></div>
-            <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <p className="muted" style={{ fontSize: 13 }}>{rejecting.supplier} · {rands(rejecting.total, rejecting.currency)}. The merchant can revise and re-submit.</p>
-              <div className="field"><label className="field-label">Reason</label>
+            <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '14px 18px' }}>
+              <p className="muted" style={{ fontSize: 13, margin: 0 }}>{rejecting.supplier} · {rands(rejecting.total, rejecting.currency)}. The merchant can revise and re-submit.</p>
+              <div className="field" style={{ margin: 0 }}><label className="field-label">Reason</label>
                 <textarea className="input" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. over budget for Q3 — reduce boot quantity" /></div>
             </div>
-            <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 18px', borderTop: '1px solid var(--border)' }}>
+            <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
               <button className="btn btn-secondary" onClick={() => setRejecting(null)} disabled={busy}>Cancel</button>
               <button className="btn btn-danger" onClick={reject} disabled={busy}>{busy ? <><Loader2 size={15} className="spin" /> Rejecting…</> : 'Reject PO'}</button>
             </div>

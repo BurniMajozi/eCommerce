@@ -205,35 +205,35 @@ const PurchaseOrderModal = ({ suppliers, products, scope, onClose, onSaved, trig
 
   return (
     <div className="overlay" onClick={busy ? undefined : onClose}>
-      <div className="modal" style={{ maxWidth: 620, maxHeight: 'min(88vh, 680px)', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-hd" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+      <div className="modal" style={{ maxWidth: 620, maxHeight: 'min(82vh, 560px)', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-hd" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, padding: '12px 18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><ClipboardCheck size={18} style={{ color: 'var(--primary)' }} /><h3>New purchase order</h3></div>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={17} /></button>
         </div>
-        <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: '1 1 auto', overflowY: 'auto', padding: '18px 22px' }}>
+        <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: '1 1 auto', overflowY: 'auto', padding: '14px 18px' }}>
           {suppliers.length === 0 && <div style={{ color: 'var(--warning)', fontSize: 13 }}>Add a supplier first (Suppliers tab).</div>}
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div className="field" style={{ flex: '2 1 220px' }}><label className="field-label">Supplier</label>
+            <div className="field" style={{ flex: '2 1 220px', margin: 0 }}><label className="field-label" style={{ marginBottom: 4 }}>Supplier</label>
               <select className="select" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
                 {suppliers.map((s) => <option key={s.id} value={s.id}>{s.company}</option>)}
               </select></div>
-            <div className="field" style={{ flex: '1 1 130px' }}><label className="field-label">Expected date</label>
+            <div className="field" style={{ flex: '1 1 130px', margin: 0 }}><label className="field-label" style={{ marginBottom: 4 }}>Expected date</label>
               <input type="date" className="input" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} /></div>
           </div>
-          <div className="field"><label className="field-label">Reference <span className="muted">(optional)</span></label>
+          <div className="field" style={{ margin: 0 }}><label className="field-label" style={{ marginBottom: 4 }}>Reference <span className="muted">(optional)</span></label>
             <input className="input" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. Q3 boot restock" /></div>
 
           {/* Line builder */}
           <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
-            <div className="card-bd" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', padding: 12 }}>
-              <div className="field" style={{ flex: '2 1 200px', margin: 0 }}><label className="field-label">Product</label>
+            <div className="card-bd" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', padding: 10 }}>
+              <div className="field" style={{ flex: '2 1 200px', margin: 0 }}><label className="field-label" style={{ marginBottom: 4 }}>Product</label>
                 <input className="input" style={{ marginBottom: 6 }} placeholder="Search SKU or name…" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} />
                 <select className="select" value={pick.productId} onChange={(e) => onPickProduct(e.target.value)}>
                   {filteredProducts.map((p) => <option key={p.id} value={p.id}>{p.sku} · {p.name}{p.costPrice != null ? ` (R${Number(p.costPrice).toFixed(2)})` : ''}</option>)}
                 </select></div>
-              <div className="field" style={{ width: 70, margin: 0 }}><label className="field-label">Qty</label>
+              <div className="field" style={{ width: 70, margin: 0 }}><label className="field-label" style={{ marginBottom: 4 }}>Qty</label>
                 <input type="number" min="1" className="input" value={pick.qty} onChange={(e) => setPick({ ...pick, qty: parseInt(e.target.value) || 0 })} /></div>
-              <div className="field" style={{ width: 110, margin: 0 }}><label className="field-label">Unit cost</label>
+              <div className="field" style={{ width: 110, margin: 0 }}><label className="field-label" style={{ marginBottom: 4 }}>Unit cost</label>
                 <input type="number" min="0" step="0.01" className="input" value={pick.unitCost} onChange={(e) => setPick({ ...pick, unitCost: parseFloat(e.target.value) || 0 })} /></div>
               <button className="btn btn-secondary" onClick={addLine} disabled={!products.length}><Plus size={15} /> Add</button>
             </div>
@@ -265,7 +265,7 @@ const PurchaseOrderModal = ({ suppliers, products, scope, onClose, onSaved, trig
           )}
           {error && <div style={{ color: 'var(--danger)', fontSize: 13 }}>{error}</div>}
         </div>
-        <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 18px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+        <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '10px 18px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
           <button className="btn btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
           <button className="btn btn-primary" onClick={submit} disabled={busy || !lines.length || !supplierId}>{busy ? <><Loader2 size={15} className="spin" /> Creating…</> : 'Create PO'}</button>
         </div>
@@ -418,7 +418,17 @@ export const MedusaAdminPortal = ({ view }) => {
 
   const poAction = async (po, action, extra = {}) => {
     setPoBusyId(po.id);
-    const newStatus = action === 'receive' ? 'received' : (action === 'approve' ? 'approved' : action);
+    const newStatus = action === 'receive'
+      ? 'received'
+      : (action === 'approve'
+          ? 'approved'
+          : (action === 'submit'
+              ? 'pending_approval'
+              : (action === 'send'
+                  ? 'sent'
+                  : (action === 'reject'
+                      ? 'rejected'
+                      : (action === 'cancel' ? 'cancelled' : action)))));
     const rawId = po.rawOrderId || String(po.id).replace(/^b2b-/, '');
 
     // Persist status override to AppContext & localStorage
@@ -1263,8 +1273,28 @@ export const MedusaAdminPortal = ({ view }) => {
       ? [...directPos, ...mergedB2bPos].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
       : [];
 
-    const stat = { draft: 'badge-neutral', pending_approval: 'badge-warning', approved: 'badge-info', sent: 'badge-info', received: 'badge-success', rejected: 'badge-danger', cancelled: 'badge-neutral' };
-    const label = { pending_approval: 'Awaiting Mine Approval', approved: 'Approved (Ready to Receive)', sent: 'Awaiting Receipt', received: 'Stock Received', rejected: 'Rejected', draft: 'Draft', cancelled: 'Cancelled' };
+    const stat = {
+      draft: 'badge-neutral',
+      submit: 'badge-warning',
+      submitted: 'badge-warning',
+      pending_approval: 'badge-warning',
+      approved: 'badge-info',
+      sent: 'badge-info',
+      received: 'badge-success',
+      rejected: 'badge-danger',
+      cancelled: 'badge-neutral',
+    };
+    const label = {
+      draft: 'Draft',
+      submit: 'Awaiting Mine Approval',
+      submitted: 'Awaiting Mine Approval',
+      pending_approval: 'Awaiting Mine Approval',
+      approved: 'Approved (Ready to Receive)',
+      sent: 'Awaiting Receipt',
+      received: 'Stock Received',
+      rejected: 'Rejected',
+      cancelled: 'Cancelled',
+    };
     const canCreate = live && suppliers.length > 0 && products.length > 0;
     const busy = (po) => poBusyId === po.id;
     return (
@@ -1300,7 +1330,7 @@ export const MedusaAdminPortal = ({ view }) => {
                     </td>
                     <td className="center" style={{ whiteSpace: 'nowrap' }}>
                       {po.status === 'draft' && <button className="btn btn-secondary btn-sm" disabled={busy(po)} onClick={() => poAction(po, 'submit')}>{busy(po) ? <Loader2 size={13} className="spin" /> : <Send size={13} />} Submit for approval</button>}
-                      {po.status === 'pending_approval' && (
+                      {(po.status === 'pending_approval' || po.status === 'submitted' || po.status === 'submit') && (
                         <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                           <button className="btn btn-primary btn-sm" disabled={busy(po)} onClick={() => poAction(po, 'approve')}>{busy(po) ? <Loader2 size={13} className="spin" /> : <Check size={13} />} Approve</button>
                         </div>
@@ -1312,7 +1342,7 @@ export const MedusaAdminPortal = ({ view }) => {
                         <button className="btn btn-primary btn-sm" style={{ marginLeft: 6 }} disabled={busy(po)} onClick={() => poAction(po, 'receive')}>{busy(po) ? <Loader2 size={13} className="spin" /> : <PackageCheck size={13} />} Receive stock</button>
                       </>}
                       {po.status === 'received' && <button className="btn btn-secondary btn-sm" title="Print / PDF" onClick={() => printPo(po)}><Printer size={13} /></button>}
-                      {po.status !== 'received' && po.status !== 'pending_approval' && <button className="icon-btn" style={{ width: 30, height: 30, marginLeft: 6 }} title="Delete" onClick={() => setPoDelete(po)}><Trash2 size={14} /></button>}
+                      {po.status !== 'received' && po.status !== 'pending_approval' && po.status !== 'submitted' && po.status !== 'submit' && <button className="icon-btn" style={{ width: 30, height: 30, marginLeft: 6 }} title="Delete" onClick={() => setPoDelete(po)}><Trash2 size={14} /></button>}
                     </td>
                   </tr>
                 ))}
