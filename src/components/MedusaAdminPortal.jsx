@@ -15,7 +15,7 @@ import {
   Tag, Boxes, ShoppingCart, BadgePercent, Percent, Truck, Upload, Wallet,
   Workflow, Radio, Plus, FileSpreadsheet, CheckCircle2, RotateCw, Globe2,
   ChevronRight, ChevronDown, Zap, GitBranch, Play, Pencil, Trash2,
-  Factory, Loader2, X, ArrowDownLeft, ArrowUpRight, Download,
+  Factory, Loader2, X, ArrowDownLeft, ArrowUpRight, Download, Check,
   ClipboardCheck, ClipboardList, Send, PackageCheck, Printer, Mail, PenLine
 } from 'lucide-react';
 
@@ -279,6 +279,8 @@ export const MedusaAdminPortal = ({ view }) => {
   const importInputRef = useRef(null);
   const [importResult, setImportResult] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState(null);
   const [importDryRun, setImportDryRun] = useState(null);
   const [importSummary, setImportSummary] = useState(null);
   const [importErrors, setImportErrors] = useState([]);
@@ -286,6 +288,7 @@ export const MedusaAdminPortal = ({ view }) => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [productDeleteTarget, setProductDeleteTarget] = useState(null);
   const [productActionBusy, setProductActionBusy] = useState(false);
+  const [expandedSku, setExpandedSku] = useState(null);
 
   const commerceScope = {
     accessToken: auth.session?.access_token,
