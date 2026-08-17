@@ -1,8 +1,8 @@
 import type { MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
-import { updateInventoryLevelsWorkflow } from '@medusajs/medusa/core-flows';
+import { updateInventoryLevelsWorkflow, updateOrderWorkflow } from '@medusajs/medusa/core-flows';
 import { readCatalogueData } from '../../../../catalogue/read';
-import { assertCapability, assertAnyCapability, ScopeError } from '../../../../security/tenant-scope';
+import { assertAnyCapability, ScopeError } from '../../../../security/tenant-scope';
 import type { TenantScopedRequest } from '../../../middlewares/tenant-scope';
 
 const finite = (v: any): number => (typeof v === 'number' && Number.isFinite(v) ? v : (v == null || isNaN(Number(v)) ? 0 : Number(v)));
@@ -108,11 +108,22 @@ export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Prom
       updatedMeta.status = b.status.toString();
     }
 
+    try {
+      await updateOrderWorkflow(req.scope).run({
+        input: {
+          id: orderId,
+          metadata: updatedMeta,
+        } as any,
+      });
+    } catch {
+      // ignore
+    }
+
     // Direct Postgres update for resilient order metadata persistence
     try {
       const db = pg(req);
       await db('order').where({ id: orderId }).update({
-        metadata: JSON.stringify(updatedMeta),
+        metadata: updatedMeta,
         updated_at: new Date()
       });
 

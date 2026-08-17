@@ -394,6 +394,7 @@ export const MedusaAdminPortal = ({ view }) => {
   const [firing, setFiring] = useState(null);
   const [poDelete, setPoDelete] = useState(null);
   const [poBusyId, setPoBusyId] = useState(null);
+  const [orderStatusOverrides, setOrderStatusOverrides] = useState({});
   useEffect(() => {
     if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setPurchaseOrders(null); return undefined; }
     let cancelled = false;
@@ -418,9 +419,20 @@ export const MedusaAdminPortal = ({ view }) => {
 
   const poAction = async (po, action, extra = {}) => {
     setPoBusyId(po.id);
+    const newStatus = action === 'receive' ? 'received' : (action === 'approve' ? 'approved' : action);
+    const rawId = po.rawOrderId || String(po.id).replace(/^b2b-/, '');
+
+    // Set persistent override immediately
+    setOrderStatusOverrides((prev) => ({
+      ...prev,
+      [po.id]: newStatus,
+      [rawId]: newStatus,
+      [`b2b-${rawId}`]: newStatus,
+      ...(po.reference ? { [po.reference]: newStatus } : {}),
+    }));
+
     try {
       if (String(po.id).startsWith('b2b-') || po.isB2B) {
-        const rawId = po.rawOrderId || String(po.id).replace(/^b2b-/, '');
         if (action === 'approve') {
           po.status = 'approved';
           po.approvedBy = auth?.user?.email || 'Mine Manager';
@@ -439,7 +451,7 @@ export const MedusaAdminPortal = ({ view }) => {
         // Optimistically update liveOrders
         setLiveOrders((prev) => {
           if (!prev) return prev;
-          return prev.map((o) => (o.id === rawId || `b2b-${o.id}` === po.id ? { ...o, status: po.status } : o));
+          return prev.map((o) => (o.id === rawId || `b2b-${o.id}` === po.id ? { ...o, status: newStatus } : o));
         });
 
         // Persist to backend
@@ -448,21 +460,21 @@ export const MedusaAdminPortal = ({ view }) => {
         });
 
         refreshCatalogue();
-        reloadPo();
-        reloadOrders();
       } else {
         const r = await updatePurchaseOrder(po.id, { action, ...extra }, commerceScope);
         if (action === 'receive') {
-          const s = r.stock;
           if (receiveStockDirectly && po.lines) {
             receiveStockDirectly(po.lines);
           }
-          triggerNotification('Stock received', s?.located ? `${po.supplier}: ${s.updated} line(s) added to on-hand stock.` : `${po.supplier} marked received and stock updated.`, 'success');
+          triggerNotification('Stock received', `${po.supplier}: Stock added to on-hand inventory.`, 'success');
           refreshCatalogue();
         } else {
           triggerNotification('Purchase order', `${po.supplier} ${NOTE[action] || action}.`, 'success');
         }
-        reloadPo();
+        setPurchaseOrders((prev) => {
+          if (!prev) return prev;
+          return prev.map((p) => (p.id === po.id ? { ...p, status: newStatus } : p));
+        });
       }
     } catch (err) {
       triggerNotification('Action failed', err.message || 'Could not update the PO.', 'danger');
@@ -801,6 +813,9 @@ export const MedusaAdminPortal = ({ view }) => {
 
           const totalItemsCount = parsedItems.reduce((a, i) => a + i.qty, 0);
 
+          const override = orderStatusOverrides[o.id] || orderStatusOverrides[`b2b-${o.id}`];
+          const finalStatus = override || o.status || 'pending';
+
           return {
             id: o.displayId ? `#${o.displayId}` : (o.id?.slice(0, 12) ?? '—'),
             direction: 'out',
@@ -808,23 +823,27 @@ export const MedusaAdminPortal = ({ view }) => {
             currency: (o.currencyCode || 'zar').toUpperCase(),
             total: rawTotal,
             items: totalItemsCount > 0 ? totalItemsCount : (o.items?.length || 1),
-            status: o.status || 'pending',
-            fulfil: 'not_fulfilled',
+            status: finalStatus,
+            fulfil: finalStatus === 'received' ? 'received' : 'not_fulfilled',
             date: (o.createdAt || '').substring(0, 10) || new Date().toISOString().substring(0, 10),
           };
         })
       : MEDUSA_ORDERS.map(o => ({ ...o, direction: 'out' }));
-    const poRows = (purchaseOrders ?? []).map(p => ({
-      id: p.reference || (p.id?.slice(0, 12) ?? '—'),
-      direction: 'in',
-      customer: p.supplier || 'Supplier',
-      currency: (p.currency || 'zar').toUpperCase(),
-      total: Number(p.total ?? 0),
-      items: p.lineCount ?? (p.lines ?? []).length,
-      status: p.status || 'draft',
-      fulfil: p.status === 'received' ? 'received' : 'inbound',
-      date: (p.createdAt || p.submittedAt || '').substring(0, 10),
-    }));
+    const poRows = (purchaseOrders ?? []).map(p => {
+      const override = orderStatusOverrides[p.id] || orderStatusOverrides[p.reference];
+      const pStatus = override || p.status || 'draft';
+      return {
+        id: p.reference || (p.id?.slice(0, 12) ?? '—'),
+        direction: 'in',
+        customer: p.supplier || 'Supplier',
+        currency: (p.currency || 'zar').toUpperCase(),
+        total: Number(p.total ?? 0),
+        items: p.lineCount ?? (p.lines ?? []).length,
+        status: pStatus,
+        fulfil: pStatus === 'received' ? 'received' : 'inbound',
+        date: (p.createdAt || p.submittedAt || '').substring(0, 10),
+      };
+    });
     const rows = [...orderRows, ...poRows];
     return (
       <Wrap>
@@ -1212,11 +1231,10 @@ export const MedusaAdminPortal = ({ view }) => {
       const calcTotal = parsedLines.reduce((sum, l) => sum + l.qty * l.unit_cost, 0);
       const orderTotal = typeof o.total === 'number' && o.total > 0 ? o.total : (calcTotal > 0 ? calcTotal : 1450);
 
-      // Routing logic:
-      // If Mine Plant -> follows approval logic (status = 'pending_approval' or 'approved')
-      // If External Vendor -> receipt trigger only (status = 'sent' or 'approved', ready for receipt)
+      const override = orderStatusOverrides[`b2b-${o.id}`] || orderStatusOverrides[o.id] || (o.displayId ? orderStatusOverrides[`#${o.displayId}`] : null);
       let initialStatus = isMine ? 'pending_approval' : 'sent';
-      if (o.status === 'received') initialStatus = 'received';
+      if (override) initialStatus = override;
+      else if (o.status === 'received') initialStatus = 'received';
       else if (o.status === 'approved') initialStatus = 'approved';
 
       return {
@@ -1237,7 +1255,10 @@ export const MedusaAdminPortal = ({ view }) => {
       };
     });
 
-    const directPos = purchaseOrders ?? [];
+    const directPos = (purchaseOrders ?? []).map((p) => {
+      const override = orderStatusOverrides[p.id] || orderStatusOverrides[p.reference];
+      return override ? { ...p, status: override } : p;
+    });
     const directPoRefs = new Set(directPos.map((p) => p.reference || p.id));
     const mergedB2bPos = b2bPoRows.filter((p) => !directPoRefs.has(p.reference));
     const rows = live
