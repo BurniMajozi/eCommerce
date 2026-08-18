@@ -435,13 +435,15 @@ export const ManagerApprovalPortal = () => {
                   </div>
                 </div>
 
-                {req.isEarlyReplacement && req.photoProofUrl && (
+                {(req.photoProofUrl || req.staffCardPhotoUrl) && (
                   <div className="card" style={{ marginTop: 14, boxShadow: 'none', background: 'var(--danger-weak)', borderColor: 'var(--primary-weak-bd)' }}>
                     <div className="card-bd" style={{ padding: 12, display: 'flex', gap: 12, alignItems: 'center' }}>
-                      <div className="thumb" style={{ width: 84, height: 56 }}><Eye size={20} /></div>
+                      <img src={req.photoProofUrl || req.staffCardPhotoUrl} alt="Photo proof" style={{ width: 84, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }} />
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: 13 }}>Photo evidence attached</div>
-                        <a href={req.photoProofUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 4 }}>View damaged item <ArrowRight size={13} /></a>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>Staff card / Photo evidence attached</div>
+                        <a href={req.photoProofUrl || req.staffCardPhotoUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          View full image <ArrowRight size={13} />
+                        </a>
                       </div>
                     </div>
                   </div>

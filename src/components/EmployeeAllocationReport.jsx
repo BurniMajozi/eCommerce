@@ -1,14 +1,16 @@
 import React, { useState, useMemo } from 'react';
-import { MOCK_EMPLOYEE_ALLOCATIONS } from '../data/mockData';
+import { useApp } from '../context/AppContext';
 import { DateRangePicker } from './DateRangePicker';
 import {
   User, ShieldCheck, Printer, Download, Search, CheckCircle2, AlertCircle, FileSpreadsheet,
-  Building2, Hash, HardHat, CalendarRange
+  Building2, Hash, HardHat, CalendarRange, Camera, Image
 } from 'lucide-react';
 
 export const EmployeeAllocationReport = ({ embedded = false }) => {
+  const { employeeAllocations } = useApp();
   const [selectedEmpId, setSelectedEmpId] = useState('EM-8492'); // John Sibanda default
   const [search, setSearch] = useState('');
+  const [previewPhoto, setPreviewPhoto] = useState(null);
   const [dateRange, setDateRange] = useState({
     preset: 30,
     startDate: '2026-07-17',
@@ -16,9 +18,10 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
     label: 'Last 30 days',
   });
 
+  const list = employeeAllocations || [];
   const employee = useMemo(() => {
-    return MOCK_EMPLOYEE_ALLOCATIONS.find((e) => e.employeeId === selectedEmpId) || MOCK_EMPLOYEE_ALLOCATIONS[0];
-  }, [selectedEmpId]);
+    return list.find((e) => e.employeeId === selectedEmpId) || list[0] || { employeeId: selectedEmpId, employeeName: 'Staff Member', allocations: [] };
+  }, [list, selectedEmpId]);
 
   const filteredAllocations = useMemo(() => {
     if (!employee?.allocations) return [];
@@ -99,7 +102,7 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
               onChange={(e) => setSelectedEmpId(e.target.value)}
               style={{ fontWeight: 600 }}
             >
-              {MOCK_EMPLOYEE_ALLOCATIONS.map((e) => (
+              {list.map((e) => (
                 <option key={e.employeeId} value={e.employeeId}>
                   {e.employeeName} ({e.employeeId}) · {e.department}
                 </option>
@@ -153,6 +156,7 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
                   <th className="num">Unit price (RP)</th>
                   <th className="num">Total value (RP)</th>
                   <th>Issue date</th>
+                  <th>Audit Photos</th>
                   <th>Serial / Tag</th>
                   <th className="center">Status</th>
                   <th>Signed by</th>
@@ -171,6 +175,21 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
                     <td className="num tabular">R {a.unitPrice.toFixed(2)}</td>
                     <td className="num tabular" style={{ fontWeight: 700 }}>R {a.totalValue.toFixed(2)}</td>
                     <td className="muted" style={{ fontSize: 12.5 }}>{a.issueDate}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {a.staffCardPhotoUrl && (
+                          <button type="button" className="badge badge-info" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 6px' }} onClick={() => setPreviewPhoto({ title: `Staff Card Photo — ${employee.employeeName}`, url: a.staffCardPhotoUrl })}>
+                            <Camera size={11} /> Card
+                          </button>
+                        )}
+                        {a.handoverPhotoUrl && (
+                          <button type="button" className="badge badge-success" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 6px' }} onClick={() => setPreviewPhoto({ title: `Handover Photo — ${a.name}`, url: a.handoverPhotoUrl })}>
+                            <Image size={11} /> Handover
+                          </button>
+                        )}
+                        {!a.staffCardPhotoUrl && !a.handoverPhotoUrl && <span className="muted" style={{ fontSize: 11 }}>Badge scan</span>}
+                      </div>
+                    </td>
                     <td style={{ fontSize: 12 }}><span className="badge badge-neutral">{a.serialNumber || '—'}</span></td>
                     <td className="center">
                       <span className="badge badge-success" style={{ fontSize: 11 }}>{a.status}</span>
@@ -200,6 +219,20 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
           </div>
         )}
       </div>
+
+      {previewPhoto && (
+        <div className="overlay" onClick={() => setPreviewPhoto(null)}>
+          <div className="modal modal-sm" style={{ maxHeight: 'min(82vh, 520px)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-hd" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: 15 }}>{previewPhoto.title}</h3>
+              <button type="button" className="icon-btn" onClick={() => setPreviewPhoto(null)}><CheckCircle2 size={16} /></button>
+            </div>
+            <div className="modal-bd" style={{ textAlign: 'center', padding: 14 }}>
+              <img src={previewPhoto.url} alt={previewPhoto.title} style={{ maxWidth: '100%', maxHeight: 340, objectFit: 'contain', borderRadius: 6 }} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

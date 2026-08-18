@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { CAGELI_PRODUCTS, MOCK_EMPLOYEES, MOCK_REQUESTS, MOCK_QUOTATIONS, MOCK_PLANTS, MOCK_TENANTS, MOCK_MODULES } from '../data/mockData';
+import { CAGELI_PRODUCTS, MOCK_EMPLOYEES, MOCK_REQUESTS, MOCK_QUOTATIONS, MOCK_PLANTS, MOCK_TENANTS, MOCK_MODULES, MOCK_EMPLOYEE_ALLOCATIONS } from '../data/mockData';
 import { useAuthSession } from '../auth/AuthSessionContext';
 import { useTenantAccess } from '../tenant/TenantAccessContext';
 import { fetchCatalogue, fetchProfitability, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
@@ -43,6 +43,46 @@ export const AppProvider = ({ children }) => {
   // Bumped after a catalogue write (new product) to re-run the live reads.
   const [catalogueReloadKey, setCatalogueReloadKey] = useState(0);
   const refreshCatalogue = () => setCatalogueReloadKey((k) => k + 1);
+
+  const [employeeAllocations, setEmployeeAllocations] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sightlive_employee_allocations');
+      return saved ? JSON.parse(saved) : MOCK_EMPLOYEE_ALLOCATIONS;
+    } catch {
+      return MOCK_EMPLOYEE_ALLOCATIONS;
+    }
+  });
+
+  const recordEmployeeAllocation = (allocData) => {
+    setEmployeeAllocations((prev) => {
+      let found = false;
+      const next = prev.map((emp) => {
+        if (emp.employeeId === allocData.employeeId) {
+          found = true;
+          return {
+            ...emp,
+            employeeName: allocData.employeeName || emp.employeeName,
+            department: allocData.department || emp.department,
+            allocations: [allocData.allocation, ...(emp.allocations || [])]
+          };
+        }
+        return emp;
+      });
+      if (!found) {
+        next.push({
+          employeeId: allocData.employeeId,
+          employeeName: allocData.employeeName,
+          department: allocData.department,
+          role: allocData.role || 'Mine Worker',
+          plant: allocData.plant || 'Kumba Iron Ore - Plant Alpha',
+          quotaUtilization: 50,
+          allocations: [allocData.allocation]
+        });
+      }
+      try { localStorage.setItem('sightlive_employee_allocations', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const [orderStatusOverrides, setOrderStatusOverridesState] = useState(() => {
     try {
@@ -184,7 +224,7 @@ export const AppProvider = ({ children }) => {
     triggerNotification('Request Declined', `Request ${reqId} was declined: ${reason}`, 'error');
   };
 
-  const issueStockAndDeduct = (reqId) => {
+  const issueStockAndDeduct = (reqId, extraAudit = {}) => {
     const targetReq = requests.find(r => r.id === reqId);
     if (!targetReq) return;
 
@@ -192,7 +232,7 @@ export const AppProvider = ({ children }) => {
     setProducts(prev => prev.map(p => p.sku === targetReq.sku ? { ...p, stockOnHand: Math.max(0, p.stockOnHand - 1) } : p));
     
     // Mark request fulfilled
-    setRequests(prev => prev.map(r => r.id === reqId ? { ...r, status: 'FULFILLED_DISPATCHED' } : r));
+    setRequests(prev => prev.map(r => r.id === reqId ? { ...r, status: 'FULFILLED_DISPATCHED', ...extraAudit } : r));
 
     // Update custody register
     setActiveEmployee(prev => ({
@@ -210,9 +250,38 @@ export const AppProvider = ({ children }) => {
       ]
     }));
 
+    // Update employee allocation register
+    const allocItem = {
+      id: `ALC-${Math.floor(10000 + Math.random() * 90000)}`,
+      sku: targetReq.sku,
+      name: targetReq.itemName,
+      category: targetReq.category || 'Mine PPE',
+      qty: 1,
+      unitPrice: targetReq.sellingPrice || targetReq.unitPrice || 0,
+      totalValue: targetReq.sellingPrice || targetReq.unitPrice || 0,
+      issueDate: new Date().toISOString().substring(0, 10),
+      issuedBy: extraAudit.issuedBy || targetReq.issuedBy || 'S. Dlamini (Store 2)',
+      serialNumber: `${(targetReq.sku || 'PPE').split('-')[0]}-${(targetReq.employeeId || '8492').replace('EM-', '')}-${Math.floor(10 + Math.random() * 90)}`,
+      status: 'Active (In Use)',
+      condition: 'New Issue',
+      nextEligibleDate: new Date(Date.now() + 180 * 86400000).toISOString().substring(0, 10),
+      signedBy: extraAudit.signedBy || targetReq.employeeName,
+      approvalRef: targetReq.approvalTierRequired === 2 ? `APV-${targetReq.id} (Tier 2 Approved)` : (targetReq.approvalRef || 'Compliant (Auto-dispensed)'),
+      staffCardPhotoUrl: extraAudit.staffCardPhotoUrl || targetReq.staffCardPhotoUrl || null,
+      handoverPhotoUrl: extraAudit.handoverPhotoUrl || targetReq.handoverPhotoUrl || null,
+    };
+    recordEmployeeAllocation({
+      employeeId: targetReq.employeeId,
+      employeeName: targetReq.employeeName,
+      department: targetReq.department,
+      role: targetReq.role,
+      plant: targetReq.plant,
+      allocation: allocItem,
+    });
+
     triggerNotification(
       'Stock Dispensed Successfully',
-      `1 unit of ${targetReq.itemName} handed over to ${targetReq.employeeName}. Active custody register updated.`,
+      `1 unit of ${targetReq.itemName} handed over to ${targetReq.employeeName}. Active custody & employee allocation register updated.`,
       'success'
     );
   };
@@ -408,8 +477,9 @@ export const AppProvider = ({ children }) => {
       provisionTenant,
       runScheduledReport,
       modules: MOCK_MODULES,
-      // Phase 1 integration state. Existing UI actions intentionally continue
-      // to use local mock state until their Medusa workflows are implemented.
+      employees: MOCK_EMPLOYEES,
+      employeeAllocations,
+      recordEmployeeAllocation,
       auth,
       tenantAccess,
       integrationMode: tenantAccess.mode,
