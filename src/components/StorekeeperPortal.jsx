@@ -21,7 +21,7 @@ export const StorekeeperPortal = () => {
     createRequest, triggerNotification
   } = useApp();
 
-  const [portalTab, setPortalTab] = useState('queue'); // 'queue' | 'walkin'
+  const [portalTab, setPortalTab] = useState('walkin'); // 'walkin' default | 'queue'
   const [otp, setOtp] = useState('');
   const [scanned, setScanned] = useState(null);
   const [oldReturned, setOldReturned] = useState(true);
