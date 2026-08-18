@@ -42,17 +42,22 @@ export async function GET(req: TenantScopedRequest, res: MedusaResponse): Promis
       pagination: { skip: 0, take: 200 },
     } as Parameters<typeof query.graph>[0]);
 
-    // Live spend per customer from their orders.
+    // Live spend per customer from their orders. Medusa leaves the persisted
+    // `total` at 0 for these B2B draft orders, so fall back to the authoritative
+    // total we store in metadata (subtotal+VAT), then to a line-item computation.
     const spentByCustomer = new Map<string, number>();
     try {
       const { data: orders } = await query.graph({
         entity: 'order',
-        fields: ['id', 'customer_id', 'total'],
+        fields: ['id', 'customer_id', 'total', 'metadata', 'items.quantity', 'items.unit_price'],
         pagination: { skip: 0, take: 1000 },
       } as Parameters<typeof query.graph>[0]);
       for (const o of orders ?? []) {
         if (!o.customer_id) continue;
-        spentByCustomer.set(o.customer_id, (spentByCustomer.get(o.customer_id) ?? 0) + Number(o.total ?? 0));
+        const meta = (o.metadata ?? {}) as Record<string, any>;
+        const itemsSum = ((o.items ?? []) as Array<Record<string, any>>).reduce((a, i) => a + Number(i.unit_price ?? 0) * Number(i.quantity ?? 0), 0);
+        const value = Number(o.total ?? 0) || Number(meta.total ?? 0) || Number(meta.subtotal ?? 0) || itemsSum;
+        spentByCustomer.set(o.customer_id, (spentByCustomer.get(o.customer_id) ?? 0) + value);
       }
     } catch { /* orders unavailable */ }
 

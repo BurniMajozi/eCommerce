@@ -19,6 +19,7 @@
     "bootstrap:promo": "medusa exec ./src/scripts/bootstrap-promo.ts",
     "bootstrap:link-tables": "medusa exec ./src/scripts/bootstrap-links-tables.ts",
     "inspect:state": "medusa exec ./src/scripts/inspect-state.ts",
+    "verify:order": "medusa exec ./src/scripts/verify-order.ts",
     "provision:check": "medusa exec ./src/scripts/provision-check.ts",
     "run:saga": "medusa exec ./src/scripts/run-saga.ts",
     "config:check": "node scripts/check-config.mjs",
