@@ -19,12 +19,17 @@ create table if not exists product_promotions (
   price_at_create numeric,
   status text not null default 'active',
   created_by text,
+  acknowledged_by text,
+  acknowledged_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 create index if not exists product_promotions_tenant_idx on product_promotions(tenant_id);
 create index if not exists product_promotions_sku_idx on product_promotions(sku);
 create index if not exists product_promotions_product_idx on product_promotions(product_id);
+-- Idempotent for tables created before manager-acknowledge existed.
+alter table product_promotions add column if not exists acknowledged_by text;
+alter table product_promotions add column if not exists acknowledged_at timestamptz;
 `;
 
 export default async function bootstrapPromo({ container }: ExecArgs): Promise<void> {
