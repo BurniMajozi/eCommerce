@@ -1,6 +1,7 @@
 /* oxlint-disable react/only-export-components -- single-purpose gate component */
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAuthSession } from './AuthSessionContext';
+import { LandingPage } from '../components/LandingPage';
 
 // Gates the app behind Supabase auth ONLY when Supabase is configured. In demo
 // mode it renders children immediately. Commerce management (cost/profit +
@@ -18,6 +19,7 @@ export const LoginGate = ({ children }) => {
   const [stage, setStage] = useState(null);       // null | 'challenge' | 'offer' | 'enroll'
   const [checked, setChecked] = useState(false);
   const [skipped, setSkipped] = useState(false);
+  const [showLogin, setShowLogin] = useState(false); // false = show marketing landing first
   const [factorId, setFactorId] = useState(null);
   const [qr, setQr] = useState(null);
   const [secret, setSecret] = useState(null);
@@ -150,6 +152,9 @@ export const LoginGate = ({ children }) => {
   if (auth.user && (skipped || (checked && !stage))) return children;
   if (auth.user && !checked) return shell('Signing in…', 'Checking your security level…', <div className="muted" style={{ marginTop: 18, fontSize: 13 }}>One moment…</div>);
 
+  // Marketing front page first; the Sign in / Get started buttons reveal the form.
+  if (!showLogin) return <LandingPage onSignIn={() => setShowLogin(true)} />;
+
   return shell('Sign in', 'Use your SightLive account. Access is scoped to your tenant by row-level security.',
     auth.loading
       ? <div className="muted" style={{ marginTop: 22, fontSize: 13 }}>Connecting…</div>
@@ -159,6 +164,7 @@ export const LoginGate = ({ children }) => {
           <div className="field"><label className="field-label">Password</label><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
           {errBox}
           <button className="btn btn-primary btn-block" type="submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</button>
+          <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={() => setShowLogin(false)}>← Back to home</button>
         </form>
       ));
 };
