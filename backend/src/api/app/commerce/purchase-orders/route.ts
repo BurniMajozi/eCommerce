@@ -35,6 +35,7 @@ const toApi = (po: any) => ({
   sentAt: po.sent_at,
   sentTo: po.sent_to,
   receivedAt: po.received_at,
+  receivedLines: po.received_lines ?? null,
   createdAt: po.created_at,
 });
 

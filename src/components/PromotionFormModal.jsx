@@ -17,6 +17,7 @@ export const PromotionFormModal = ({ products, onClose, onCreated, scope }) => {
   const [search, setSearch] = useState('');
   const [promoType, setPromoType] = useState('markdown');
   const [discountPct, setDiscountPct] = useState(10);
+  const [endDate, setEndDate] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -45,6 +46,7 @@ export const PromotionFormModal = ({ products, onClose, onCreated, scope }) => {
         sku: selected.sku,
         promoType,
         discountPct: pct,
+        endDate: endDate || null,
       }, scope);
       onCreated();
     } catch (e) {
@@ -104,9 +106,15 @@ export const PromotionFormModal = ({ products, onClose, onCreated, scope }) => {
             </div>
           </div>
 
-          <div className="field" style={{ maxWidth: 220 }}>
-            <label className="field-label">Discount %</label>
-            <input className="input" type="number" min="1" max="100" value={discountPct} onChange={(e) => setDiscountPct(e.target.value)} />
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div className="field" style={{ flex: '1 1 160px', margin: 0 }}>
+              <label className="field-label">Discount %</label>
+              <input className="input" type="number" min="1" max="100" value={discountPct} onChange={(e) => setDiscountPct(e.target.value)} />
+            </div>
+            <div className="field" style={{ flex: '1 1 160px', margin: 0 }}>
+              <label className="field-label">End date <span className="muted">(optional)</span></label>
+              <input className="input" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            </div>
           </div>
 
           {selected && pct > 0 && (

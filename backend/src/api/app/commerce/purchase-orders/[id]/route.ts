@@ -106,12 +106,31 @@ export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Prom
         patch.status = 'sent'; patch.sent_at = now();
         if (b.email) patch.sent_to = String(b.email).slice(0, 320);
         break;
-      case 'receive':
+      case 'receive': {
         assertCapability(scope, 'commerce.manage');
         expect('approved', 'sent');
-        stockResult = await receiveStock(req, scope, po.lines ?? []);
+        // Capture the units actually received per line (can be short or over).
+        // receivedLines: [{ sku, qty }]. Missing lines fall back to ordered qty.
+        const ordered = (po.lines ?? []) as any[];
+        const recvMap = new Map<string, number>();
+        if (Array.isArray(b.receivedLines)) {
+          for (const r of b.receivedLines) {
+            const key = (r.sku ?? r.product_id ?? '').toString();
+            if (key) recvMap.set(key, Math.max(0, Math.floor(Number(r.qty ?? r.received ?? 0))));
+          }
+        }
+        const receivedQty = (l: any) => {
+          const key = (l.sku ?? l.product_id ?? '').toString();
+          return recvMap.has(key) ? (recvMap.get(key) as number) : Math.floor(Number(l.qty ?? 0));
+        };
+        const effectiveLines = ordered.map((l) => ({ ...l, qty: receivedQty(l) })).filter((l) => l.qty > 0);
+        stockResult = await receiveStock(req, scope, effectiveLines);
         patch.status = 'received'; patch.received_at = now();
+        patch.received_lines = JSON.stringify(ordered.map((l) => ({
+          sku: l.sku, name: l.name, ordered: Math.floor(Number(l.qty ?? 0)), received: receivedQty(l),
+        })));
         break;
+      }
       case 'cancel':
         assertCapability(scope, 'commerce.manage');
         if (po.status === 'received') throw new ScopeError(409, 'invalid_transition', 'A received PO cannot be cancelled.');

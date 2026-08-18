@@ -19,20 +19,26 @@ const pg = (req: TenantScopedRequest) => req.scope.resolve(ContainerRegistration
 const now = () => new Date().toISOString();
 const num = (v: any): number => (v == null || v === '' || isNaN(Number(v)) ? 0 : Number(v));
 
-const toApi = (p: any) => ({
-  id: p.id,
-  productId: p.product_id,
-  sku: p.sku,
-  promoType: p.promo_type,
-  discountPct: num(p.discount_pct),
-  costAtCreate: num(p.cost_at_create),
-  priceAtCreate: num(p.price_at_create),
-  status: p.status,
-  createdBy: p.created_by,
-  acknowledgedBy: p.acknowledged_by ?? null,
-  acknowledgedAt: p.acknowledged_at ?? null,
-  createdAt: p.created_at,
-});
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const toApi = (p: any) => {
+  const expired = p.end_date && String(p.end_date).slice(0, 10) < todayStr();
+  return {
+    id: p.id,
+    productId: p.product_id,
+    sku: p.sku,
+    promoType: p.promo_type,
+    discountPct: num(p.discount_pct),
+    costAtCreate: num(p.cost_at_create),
+    priceAtCreate: num(p.price_at_create),
+    status: expired ? 'expired' : p.status,
+    endDate: p.end_date ? String(p.end_date).slice(0, 10) : null,
+    expired: !!expired,
+    createdBy: p.created_by,
+    acknowledgedBy: p.acknowledged_by ?? null,
+    acknowledgedAt: p.acknowledged_at ?? null,
+    createdAt: p.created_at,
+  };
+};
 
 // Resolve a catalogue product by id or sku to snapshot its cost + price at the
 // moment the promo is created. Cost comes from variant metadata (MFA-gated in
@@ -100,6 +106,7 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
       cost_at_create: snap.cost || null,
       price_at_create: snap.price || null,
       status: 'active',
+      end_date: b.endDate || null,
       created_by: scope.userId ?? null,
       created_at: now(),
       updated_at: now(),

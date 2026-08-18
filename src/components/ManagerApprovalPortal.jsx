@@ -412,9 +412,9 @@ export const ManagerApprovalPortal = () => {
                 <div className="cols cols-3">
                   <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
                     <div className="card-bd" style={{ padding: 14 }}>
-                      <div className="eyebrow">Financial impact</div>
-                      <div style={{ fontSize: 20, fontWeight: 700, marginTop: 5, fontVariantNumeric: 'tabular-nums' }}>R {(req.costPrice ?? 0).toFixed(2)}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>Selling R {(req.sellingPrice ?? 0).toFixed(2)}</div>
+                      <div className="eyebrow">Cost to the mine</div>
+                      <div style={{ fontSize: 20, fontWeight: 700, marginTop: 5, fontVariantNumeric: 'tabular-nums' }}>R {(req.sellingPrice ?? req.costPrice ?? 0).toFixed(2)}</div>
+                      <div className="muted" style={{ fontSize: 12 }}>what the plant pays per unit</div>
                     </div>
                   </div>
                   <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>

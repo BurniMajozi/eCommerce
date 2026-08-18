@@ -32,6 +32,8 @@ alter table purchase_orders add column if not exists approval_signature text;
 alter table purchase_orders add column if not exists rejection_reason text;
 alter table purchase_orders add column if not exists sent_at timestamptz;
 alter table purchase_orders add column if not exists sent_to text;
+-- Per-line quantities actually received (short or over) at receipt time.
+alter table purchase_orders add column if not exists received_lines jsonb;
 `;
 
 export default async function bootstrapPo({ container }: ExecArgs): Promise<void> {

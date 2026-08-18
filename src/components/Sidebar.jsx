@@ -3,7 +3,8 @@ import { useApp } from '../context/AppContext';
 import {
   HardHat, ClipboardCheck, PackageOpen, LineChart, Receipt,
   Building2, ShieldEllipsis, Tag, Boxes, ShoppingCart, BadgePercent,
-  Percent, Truck, Upload, Wallet, Workflow, Radio, X, Factory, ClipboardList
+  Percent, Truck, Upload, Wallet, Workflow, Radio, X, Factory, ClipboardList,
+  PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 
 // Each item declares the capability required to see it. In demo mode and for
@@ -62,6 +63,14 @@ export function visibleNavGroups(tenantAccess) {
 
 export const Sidebar = ({ open, onClose }) => {
   const { activeRole, setActiveRole, tenantAccess } = useApp();
+  const [collapsed, setCollapsed] = React.useState(() => {
+    try { return localStorage.getItem('sl_sidebar_collapsed') === '1'; } catch { return false; }
+  });
+  const toggleCollapsed = () => setCollapsed((c) => {
+    const next = !c;
+    try { localStorage.setItem('sl_sidebar_collapsed', next ? '1' : '0'); } catch { /* ignore */ }
+    return next;
+  });
 
   const groups = React.useMemo(() => visibleNavGroups(tenantAccess), [tenantAccess]);
   const visibleIds = React.useMemo(() => groups.flatMap((g) => g.items.map((i) => i.id)), [groups]);
@@ -77,23 +86,26 @@ export const Sidebar = ({ open, onClose }) => {
   return (
     <>
       <div className={`scrim ${open ? 'show' : ''}`} onClick={onClose} />
-      <aside className={`sidebar ${open ? 'open' : ''}`}>
+      <aside className={`sidebar ${open ? 'open' : ''} ${collapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-brand" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <img src="/sightlive-logo.svg" alt="SightLive" style={{ height: 26 }} />
+          <div className="brand-row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <img src="/sightlive-logo.svg" alt="SightLive" style={{ height: 26, flex: 'none' }} />
+            <button className="collapse-btn" onClick={toggleCollapsed} title={collapsed ? 'Expand menu' : 'Collapse menu'} aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} style={{ marginLeft: 'auto' }}>
+              {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            </button>
             <button className="icon-btn sidebar-close" onClick={onClose} aria-label="Close menu" style={{ marginLeft: 'auto' }}><X size={18} /></button>
           </div>
-          <div className="eyebrow" style={{ fontSize: 9.5 }}>PPE Stock Platform</div>
+          <div className="eyebrow sidebar-sub" style={{ fontSize: 9.5 }}>PPE Stock Platform</div>
         </div>
 
         <nav className="sidebar-nav">
           {groups.map(group => (
             <div key={group.label}>
-              <div className="nav-group-label">{group.label}</div>
+              <div className="nav-group-label"><span>{group.label}</span></div>
               {group.items.map(item => {
                 const Icon = item.icon;
                 return (
-                  <button key={item.id} className={`nav-item ${activeRole === item.id ? 'active' : ''}`} onClick={() => pick(item.id)}>
+                  <button key={item.id} className={`nav-item ${activeRole === item.id ? 'active' : ''}`} onClick={() => pick(item.id)} title={collapsed ? item.label : undefined}>
                     <Icon size={17} />
                     <span>{item.label}</span>
                   </button>

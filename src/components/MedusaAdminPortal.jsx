@@ -274,6 +274,59 @@ const PurchaseOrderModal = ({ suppliers, products, scope, onClose, onSaved, trig
   );
 };
 
+/* ---- Receive a PO: capture units actually received (short or over) ---- */
+const ReceivePoModal = ({ po, busy, onClose, onConfirm }) => {
+  const lines = po.lines ?? [];
+  const [qty, setQty] = useState(() => {
+    const init = {};
+    lines.forEach((l, i) => { init[l.sku ?? i] = Math.floor(Number(l.qty ?? 0)); });
+    return init;
+  });
+  const key = (l, i) => l.sku ?? i;
+  const set = (k, v) => setQty((q) => ({ ...q, [k]: Math.max(0, parseInt(v) || 0) }));
+  const anyDiff = lines.some((l, i) => (qty[key(l, i)] ?? 0) !== Math.floor(Number(l.qty ?? 0)));
+  const submit = () => onConfirm(lines.map((l, i) => ({ sku: l.sku, qty: qty[key(l, i)] ?? 0 })));
+
+  return (
+    <div className="overlay" onClick={busy ? undefined : onClose}>
+      <div className="modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-hd" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><PackageCheck size={18} style={{ color: 'var(--primary)' }} /><h3>Receive stock — {po.supplier}</h3></div>
+          <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={17} /></button>
+        </div>
+        <div className="modal-bd">
+          <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>Confirm the units actually delivered. Short or over deliveries are captured against the order and the received quantity is what’s added to stock.</p>
+          <div className="table-wrap card" style={{ boxShadow: 'none' }}>
+            <table className="table">
+              <thead><tr><th>Item</th><th className="num">Ordered</th><th className="num">Received</th><th className="center">Δ</th></tr></thead>
+              <tbody>
+                {lines.map((l, i) => {
+                  const ordered = Math.floor(Number(l.qty ?? 0));
+                  const rec = qty[key(l, i)] ?? 0;
+                  const diff = rec - ordered;
+                  return (
+                    <tr key={key(l, i)}>
+                      <td>{l.name || l.sku}<div className="eyebrow">{l.sku}</div></td>
+                      <td className="num muted">{ordered}</td>
+                      <td className="num"><input type="number" min="0" className="input" style={{ width: 84, padding: '4px 8px', textAlign: 'right' }} value={rec} onChange={(e) => set(key(l, i), e.target.value)} /></td>
+                      <td className="center">{diff === 0 ? <span className="muted">—</span> : <span className={`badge ${diff < 0 ? 'badge-warning' : 'badge-info'}`}>{diff > 0 ? `+${diff} over` : `${diff} short`}</span>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {anyDiff && <div style={{ fontSize: 12.5, color: 'var(--warning)', marginTop: 10 }}>Quantities differ from the order — this is recorded as a short/over receipt.</div>}
+        </div>
+        <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 18px', borderTop: '1px solid var(--border)' }}>
+          <button className="btn btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="btn btn-primary" onClick={submit} disabled={busy}>{busy ? <><Loader2 size={15} className="spin" /> Receiving…</> : 'Confirm receipt'}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const MedusaAdminPortal = ({ view }) => {
   const { products, receiveStockDirectly, catalogue, profitability, auth, tenantAccess, taxEnabled, setTaxEnabled, triggerNotification, refreshCatalogue, orderStatusOverrides, setOrderStatusOverride } = useApp();
   const importInputRef = useRef(null);
@@ -396,6 +449,7 @@ export const MedusaAdminPortal = ({ view }) => {
   const [eventLog, setEventLog] = useState([]);
   const [firing, setFiring] = useState(null);
   const [poDelete, setPoDelete] = useState(null);
+  const [poReceive, setPoReceive] = useState(null);
   const [poBusyId, setPoBusyId] = useState(null);
   useEffect(() => {
     if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setPurchaseOrders(null); return undefined; }
@@ -898,9 +952,9 @@ export const MedusaAdminPortal = ({ view }) => {
         <div className="card">
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Product</th><th>Type</th><th className="num">Discount</th><th className="num">Cost was → now</th><th className="num">Margin impact</th><th className="center">Status</th><th>Created</th></tr></thead>
+              <thead><tr><th>Product</th><th>Type</th><th className="num">Discount</th><th className="num">Cost was → now</th><th className="num">Margin impact</th><th className="center">Status</th><th>Created</th><th>Ends</th></tr></thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 22 }}>{live ? 'No promotions yet — add one with “New promotion”.' : 'Connect the backend to manage promotions.'}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 22 }}>{live ? 'No promotions yet — add one with “New promotion”.' : 'Connect the backend to manage promotions.'}</td></tr>}
                 {rows.map((p, idx) => {
                   if (!p) return null;
                   const cost = Number(p.costAtCreate ?? 0);
@@ -916,6 +970,7 @@ export const MedusaAdminPortal = ({ view }) => {
                       <td className="num muted">cost basis −{validPct}%</td>
                       <td className="center"><span className={`badge ${sb[p.status] || 'badge-neutral'}`}>{String(p.status || 'active').replace(/_/g, ' ')}</span></td>
                       <td className="muted">{(p.createdAt || '').substring(0, 10)}</td>
+                      <td className="muted">{p.endDate ? <span style={p.expired ? { color: 'var(--danger)', fontWeight: 600 } : undefined}>{p.endDate}{p.expired ? ' · expired' : ''}</span> : '—'}</td>
                     </tr>
                   );
                 })}
@@ -1343,7 +1398,7 @@ export const MedusaAdminPortal = ({ view }) => {
                       {(po.status === 'approved' || po.status === 'sent') && <>
                         <button className="btn btn-secondary btn-sm" title="Print / PDF" onClick={() => printPo(po)}><Printer size={13} /></button>
                         <button className="btn btn-secondary btn-sm" style={{ marginLeft: 6 }} title="Email to supplier" disabled={busy(po)} onClick={() => emailPo(po)}><Mail size={13} /></button>
-                        <button className="btn btn-primary btn-sm" style={{ marginLeft: 6 }} disabled={busy(po)} onClick={() => poAction(po, 'receive')}>{busy(po) ? <Loader2 size={13} className="spin" /> : <PackageCheck size={13} />} Receive stock</button>
+                        <button className="btn btn-primary btn-sm" style={{ marginLeft: 6 }} disabled={busy(po)} onClick={() => setPoReceive(po)}>{busy(po) ? <Loader2 size={13} className="spin" /> : <PackageCheck size={13} />} Receive stock</button>
                       </>}
                       {po.status === 'received' && <button className="btn btn-secondary btn-sm" title="Print / PDF" onClick={() => printPo(po)}><Printer size={13} /></button>}
                       {po.status !== 'received' && <button className="icon-btn" style={{ width: 30, height: 30, marginLeft: 6 }} title="Delete" onClick={() => setPoDelete(po)}><Trash2 size={14} /></button>}
@@ -1355,6 +1410,7 @@ export const MedusaAdminPortal = ({ view }) => {
           </div>
         </div>
         {showPoModal && <PurchaseOrderModal suppliers={suppliers} products={products} scope={commerceScope} triggerNotification={triggerNotification} onClose={() => setShowPoModal(false)} onSaved={reloadPo} />}
+        {poReceive && <ReceivePoModal po={poReceive} busy={busy(poReceive)} onClose={() => setPoReceive(null)} onConfirm={(receivedLines) => { poAction(poReceive, 'receive', { receivedLines }); setPoReceive(null); }} />}
         {poDelete && <ConfirmDialog title="Delete purchase order" message={`Delete the ${poDelete.supplier} purchase order? This cannot be undone.`} confirmLabel="Delete" onConfirm={() => doDeletePo(poDelete)} onClose={() => setPoDelete(null)} />}
       </Wrap>
     );

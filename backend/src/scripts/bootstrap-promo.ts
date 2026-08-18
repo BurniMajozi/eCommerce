@@ -30,6 +30,8 @@ create index if not exists product_promotions_product_idx on product_promotions(
 -- Idempotent for tables created before manager-acknowledge existed.
 alter table product_promotions add column if not exists acknowledged_by text;
 alter table product_promotions add column if not exists acknowledged_at timestamptz;
+-- Optional promo end date (auto-expires the markdown).
+alter table product_promotions add column if not exists end_date date;
 `;
 
 export default async function bootstrapPromo({ container }: ExecArgs): Promise<void> {

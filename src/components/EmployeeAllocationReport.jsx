@@ -8,8 +8,7 @@ import {
 
 export const EmployeeAllocationReport = ({ embedded = false }) => {
   const { employeeAllocations } = useApp();
-  const [selectedEmpId, setSelectedEmpId] = useState('EM-8492'); // John Sibanda default
-  const [search, setSearch] = useState('');
+  const [selectedEmpId, setSelectedEmpId] = useState('ALL'); // default: all employees
   const [previewPhoto, setPreviewPhoto] = useState(null);
   const [dateRange, setDateRange] = useState({
     preset: 30,
@@ -19,18 +18,26 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
   });
 
   const list = employeeAllocations || [];
+  const isAll = selectedEmpId === 'ALL';
   const employee = useMemo(() => {
+    if (isAll) return { employeeId: 'ALL', employeeName: 'All employees', department: 'All departments', role: `${list.length} staff`, quotaUtilization: null, allocations: [] };
     return list.find((e) => e.employeeId === selectedEmpId) || list[0] || { employeeId: selectedEmpId, employeeName: 'Staff Member', allocations: [] };
-  }, [list, selectedEmpId]);
+  }, [list, selectedEmpId, isAll]);
 
+  // In "all" mode, flatten every employee's allocations and tag each row with
+  // who it belongs to so the table can show an Employee column.
   const filteredAllocations = useMemo(() => {
-    if (!employee?.allocations) return [];
-    return employee.allocations.filter((a) => {
-      if (dateRange.startDate && a.issueDate < dateRange.startDate) return false;
-      if (dateRange.endDate && a.issueDate > dateRange.endDate) return false;
-      return true;
-    });
-  }, [employee, dateRange]);
+    const source = isAll
+      ? list.flatMap((e) => (e.allocations || []).map((a) => ({ ...a, _empName: e.employeeName, _empId: e.employeeId, _empDept: e.department })))
+      : (employee?.allocations || []);
+    return source
+      .filter((a) => {
+        if (dateRange.startDate && a.issueDate < dateRange.startDate) return false;
+        if (dateRange.endDate && a.issueDate > dateRange.endDate) return false;
+        return true;
+      })
+      .sort((a, b) => (b.issueDate || '').localeCompare(a.issueDate || ''));
+  }, [isAll, list, employee, dateRange]);
 
   const totalValue = filteredAllocations.reduce((sum, a) => sum + (a.totalValue || 0), 0);
   const totalItems = filteredAllocations.reduce((sum, a) => sum + (a.qty || 0), 0);
@@ -39,9 +46,9 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
     const headers = ['Allocation ID', 'Employee ID', 'Employee Name', 'Department', 'SKU', 'Item Name', 'Category', 'Qty', 'Unit Price (RP)', 'Total Value (RP)', 'Issue Date', 'Issued By', 'Serial #', 'Status', 'Signed By', 'Approval Ref'];
     const rows = filteredAllocations.map((a) => [
       a.id,
-      employee.employeeId,
-      employee.employeeName,
-      employee.department,
+      a._empId || employee.employeeId,
+      a._empName || employee.employeeName,
+      a._empDept || employee.department,
       a.sku,
       `"${a.name.replace(/"/g, '""')}"`,
       a.category,
@@ -102,6 +109,7 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
               onChange={(e) => setSelectedEmpId(e.target.value)}
               style={{ fontWeight: 600 }}
             >
+              <option value="ALL">All employees ({list.length})</option>
               {list.map((e) => (
                 <option key={e.employeeId} value={e.employeeId}>
                   {e.employeeName} ({e.employeeId}) · {e.department}
@@ -120,15 +128,19 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
               <div style={{ fontWeight: 500, fontSize: 13.5 }}>{employee.role}</div>
             </div>
             <div>
-              <div className="eyebrow" style={{ fontSize: 10.5 }}>Entitlement quota</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className={`badge ${employee.quotaUtilization > 100 ? 'badge-danger' : 'badge-success'}`} style={{ fontSize: 11 }}>
-                  {employee.quotaUtilization}%
-                </span>
-                <span className="muted" style={{ fontSize: 11.5 }}>
-                  {employee.quotaUtilization > 100 ? 'Exceeded' : 'Normal'}
-                </span>
-              </div>
+              <div className="eyebrow" style={{ fontSize: 10.5 }}>{isAll ? 'Allocations' : 'Entitlement quota'}</div>
+              {isAll ? (
+                <div style={{ fontWeight: 600, fontSize: 13.5 }}>{filteredAllocations.length} in range</div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span className={`badge ${employee.quotaUtilization > 100 ? 'badge-danger' : 'badge-success'}`} style={{ fontSize: 11 }}>
+                    {employee.quotaUtilization}%
+                  </span>
+                  <span className="muted" style={{ fontSize: 11.5 }}>
+                    {employee.quotaUtilization > 100 ? 'Exceeded' : 'Normal'}
+                  </span>
+                </div>
+              )}
             </div>
             <div>
               <div className="eyebrow" style={{ fontSize: 10.5 }}>Period value (@ RP)</div>
@@ -149,6 +161,7 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
             <table className="table">
               <thead>
                 <tr>
+                  {isAll && <th>Employee</th>}
                   <th>Allocation ID</th>
                   <th>Item description</th>
                   <th>Category</th>
@@ -164,7 +177,10 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
               </thead>
               <tbody>
                 {filteredAllocations.map((a) => (
-                  <tr key={a.id}>
+                  <tr key={`${a._empId || employee.employeeId}-${a.id}`}>
+                    {isAll && (
+                      <td><div style={{ fontWeight: 600, fontSize: 12.5 }}>{a._empName}</div><div className="muted" style={{ fontSize: 10.5 }}>{a._empId} · {a._empDept}</div></td>
+                    )}
                     <td style={{ fontWeight: 600, fontSize: 12.5 }} className="muted">{a.id}</td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{a.name}</div>
@@ -206,13 +222,13 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
               </tbody>
               <tfoot>
                 <tr style={{ background: 'var(--surface-2)', fontWeight: 700 }}>
-                  <td colSpan={3} style={{ textAlign: 'right' }}>Total allocated in range:</td>
+                  <td colSpan={isAll ? 4 : 3} style={{ textAlign: 'right' }}>Total allocated in range:</td>
                   <td className="num tabular">{totalItems}</td>
                   <td></td>
                   <td className="num tabular" style={{ color: 'var(--primary)' }}>
                     R {totalValue.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
-                  <td colSpan={4}></td>
+                  <td colSpan={5}></td>
                 </tr>
               </tfoot>
             </table>
