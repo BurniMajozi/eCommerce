@@ -16,10 +16,10 @@ export default async function inspectState({ container }: ExecArgs): Promise<voi
       pagination: { skip: 0, take: 20, order: { created_at: 'DESC' } },
     } as any);
     log('ORDERS count(<=20 shown):', (orders ?? []).length);
-    for (const o of (orders ?? []).slice(0, 8)) {
-      const items = (o.items ?? []) as any[];
-      const computed = items.reduce((a, i) => a + Number(i.unit_price ?? 0) * Number(i.quantity ?? 0), 0);
-      log(` order ${o.display_id ?? o.id?.slice(0, 8)} draft=${o.is_draft_order} customer_id=${o.customer_id ?? 'NULL'} total=${o.total ?? 'null'} item_total=${o.item_total ?? 'null'} computedFromItems=${computed} items=${items.length}`);
+    for (const o of (orders ?? []).slice(0, 5)) {
+      const m = (o.metadata ?? {}) as any;
+      const mItems = (m.items ?? []) as any[];
+      log(` order ${o.display_id ?? o.id?.slice(0, 8)} orderTotal=${o.total ?? 'null'} META subtotal=${m.subtotal ?? 'none'} total=${m.total ?? 'none'} metaItem0_unit=${mItems[0]?.unit_price ?? mItems[0]?.unitPrice ?? 'none'}`);
     }
   } catch (e) { log('ORDERS query failed:', (e as Error).message); }
 
@@ -38,6 +38,17 @@ export default async function inspectState({ container }: ExecArgs): Promise<voi
     log('CUSTOMERS:', parties.length, ' (with spend_limit:', parties.filter((c: any) => c.metadata?.spend_limit != null).length, ')');
     for (const c of parties.slice(0, 8)) log(` cust ${c.company_name} limit=${c.metadata?.spend_limit ?? 'none'} spentFromOrders=${spent.get(c.id) ?? 0}`);
   } catch (e) { log('CUSTOMERS query failed:', (e as Error).message); }
+
+  // Where do prices live — Medusa price sets vs variant metadata?
+  try {
+    const { data: prods } = await query.graph({ entity: 'product', fields: ['title', 'variants.sku', 'variants.prices.*', 'variants.metadata'], pagination: { skip: 0, take: 3 } } as any);
+    for (const p of prods ?? []) {
+      for (const v of ((p.variants ?? []) as any[]).slice(0, 1)) {
+        const prices = (v.prices ?? []) as any[];
+        log(` product "${String(p.title).slice(0, 24)}" sku=${v.sku} priceSet=[${prices.map((x) => `${x.amount}${x.currency_code}`).join(',')}] meta.selling=${v.metadata?.selling_price ?? 'none'} meta.cost=${v.metadata?.cost_price ?? 'none'}`);
+      }
+    }
+  } catch (e) { log('PRICES query failed:', (e as Error).message); }
 
   // Purchase orders + promotions (raw tables in medusa schema).
   try {
