@@ -23,6 +23,12 @@ import {
 const cur = (code) => MEDUSA_CURRENCIES.find(c => c.code === code) || MEDUSA_CURRENCIES[0];
 const money = (amount, code) => `${cur(code).symbol} ${amount.toLocaleString('en-ZA')}`;
 
+// A B2B order and its auto-derived purchase order share the same display number
+// (e.g. "B2B Order #26"). This canonical key lets a status change on the PO
+// propagate to the Orders + B2B Sales panels (and vice-versa).
+export const orderKeyFromDisplay = (displayId) => (displayId != null && displayId !== '' ? `ord#${displayId}` : null);
+export const orderKeyFromRef = (ref) => { const m = /#\s*(\d+)/.exec(String(ref || '')); return m ? `ord#${m[1]}` : null; };
+
 const Head = ({ icon: Icon, title, sub, action }) => (
   <div className="page-head">
     <div>
@@ -467,15 +473,18 @@ export const MedusaAdminPortal = ({ view }) => {
   const reloadPo = () => setPoReloadKey((k) => k + 1);
   const NOTE = { submit: 'submitted for approval', send: 'sent to supplier', cancel: 'cancelled' };
 
-  // Map product names for display
-  const productNameMap = (() => {
+  // Product lookups built once per render — used for name display AND to price
+  // order lines without an O(orders × items × products) find() scan.
+  const productNameMap = React.useMemo(() => {
     const m = new Map();
-    for (const p of products) {
-      if (p.id) m.set(p.id, p.name);
-      if (p.sku) m.set(p.sku, p.name);
-    }
+    for (const p of products) { if (p.id) m.set(p.id, p.name); if (p.sku) m.set(p.sku, p.name); }
     return m;
-  })();
+  }, [products]);
+  const productBySku = React.useMemo(() => {
+    const bySku = new Map(); const byName = new Map();
+    for (const p of products) { if (p.sku) bySku.set(p.sku, p); if (p.name) byName.set(p.name.toLowerCase(), p); }
+    return { bySku, byName };
+  }, [products]);
 
   const poAction = async (po, action, extra = {}) => {
     setPoBusyId(po.id);
@@ -492,12 +501,15 @@ export const MedusaAdminPortal = ({ view }) => {
                       : (action === 'cancel' ? 'cancelled' : action)))));
     const rawId = po.rawOrderId || String(po.id).replace(/^b2b-/, '');
 
-    // Persist status override to AppContext & localStorage
+    // Persist status override to AppContext & localStorage, including the shared
+    // "ord#NN" key so the Orders + B2B Sales panels track a received PO too.
     if (setOrderStatusOverride) {
       setOrderStatusOverride(po.id, newStatus);
       setOrderStatusOverride(rawId, newStatus);
       setOrderStatusOverride(`b2b-${rawId}`, newStatus);
       if (po.reference) setOrderStatusOverride(po.reference, newStatus);
+      const sharedKey = orderKeyFromDisplay(po.displayId) || orderKeyFromRef(po.reference);
+      if (sharedKey) setOrderStatusOverride(sharedKey, newStatus);
     }
 
     try {
@@ -864,13 +876,21 @@ export const MedusaAdminPortal = ({ view }) => {
     if (expectingLive && liveOrders === null && !dataErr.orders) {
       return (<Wrap><Head icon={ShoppingCart} title="Orders" sub="Live B2B orders (outbound) and purchase orders (inbound)." /><InlineLoading label="Loading orders…" /></Wrap>);
     }
+    // A sale order's fulfilment status is the LIVE status of its linked mine PO
+    // (keyed by the shared #NN), so a received PO heals the Orders panel even for
+    // POs received before this link existed.
+    const poStatusByOrderKey = {};
+    (purchaseOrders ?? []).forEach((p) => {
+      const k = orderKeyFromRef(p.reference);
+      if (k) poStatusByOrderKey[k] = orderStatusOverrides[p.id] || orderStatusOverrides[p.reference] || orderStatusOverrides[k] || p.status;
+    });
     // Normalise live B2B orders and mock orders to one row shape. Purchase orders
     // are a separate inbound (procurement) flow but the user expects them visible
     // here too, so we merge them as PO rows marked with direction: 'in'.
     const orderRows = live
       ? liveOrders.map(o => {
           const parsedItems = (o.items ?? []).map(i => {
-            const prod = products.find(p => p.sku === i.sku || (i.name && p.name.toLowerCase() === i.name.toLowerCase()));
+            const prod = productBySku.bySku.get(i.sku) || (i.name && productBySku.byName.get(i.name.toLowerCase()));
             const up = Number(i.unitPrice) > 0 ? Number(i.unitPrice) : (prod?.sellingPrice ?? 145);
             const q = Number(i.qty) > 0 ? Number(i.qty) : 1;
             return { ...i, qty: q, unitPrice: up, total: up * q };
@@ -885,8 +905,8 @@ export const MedusaAdminPortal = ({ view }) => {
 
           const totalItemsCount = parsedItems.reduce((a, i) => a + i.qty, 0);
 
-          const override = orderStatusOverrides[o.id] || orderStatusOverrides[`b2b-${o.id}`];
-          const finalStatus = override || o.status || 'pending';
+          const override = orderStatusOverrides[o.id] || orderStatusOverrides[`b2b-${o.id}`] || orderStatusOverrides[orderKeyFromDisplay(o.displayId)];
+          const finalStatus = override || poStatusByOrderKey[orderKeyFromDisplay(o.displayId)] || o.status || 'pending';
 
           return {
             id: o.displayId ? `#${o.displayId}` : (o.id?.slice(0, 12) ?? '—'),
@@ -902,7 +922,7 @@ export const MedusaAdminPortal = ({ view }) => {
         })
       : MEDUSA_ORDERS.map(o => ({ ...o, direction: 'out' }));
     const poRows = (purchaseOrders ?? []).map(p => {
-      const override = orderStatusOverrides[p.id] || orderStatusOverrides[p.reference];
+      const override = orderStatusOverrides[p.id] || orderStatusOverrides[p.reference] || orderStatusOverrides[orderKeyFromRef(p.reference)];
       const pStatus = override || p.status || 'draft';
       return {
         id: p.reference || (p.id?.slice(0, 12) ?? '—'),

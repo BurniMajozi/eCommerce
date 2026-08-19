@@ -87,6 +87,9 @@ const PoApprovals = () => {
     return () => { active = false; };
   }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey, orderStatusOverrides]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Shared "ord#NN" key so approving/rejecting a mine order propagates to the
+  // Orders + B2B Sales panels (which key by the order's display number).
+  const sharedKey = (ref) => { const m = /#\s*(\d+)/.exec(String(ref || '')); return m ? `ord#${m[1]}` : null; };
   const approve = async () => {
     if (!signature) { triggerNotification('Signature required', 'Please sign to approve the purchase order.', 'warning'); return; }
     setBusy(true);
@@ -99,12 +102,14 @@ const PoApprovals = () => {
           setOrderStatusOverride(rawId, 'approved');
           setOrderStatusOverride(`b2b-${rawId}`, 'approved');
           if (signing.reference) setOrderStatusOverride(signing.reference, 'approved');
+          const sk = sharedKey(signing.reference); if (sk) setOrderStatusOverride(sk, 'approved');
         }
       } else {
         await updatePurchaseOrder(signing.id, { action: 'approve', approverName, signature }, scope);
         if (setOrderStatusOverride) {
           setOrderStatusOverride(signing.id, 'approved');
           if (signing.reference) setOrderStatusOverride(signing.reference, 'approved');
+          const sk = sharedKey(signing.reference); if (sk) setOrderStatusOverride(sk, 'approved');
         }
       }
       triggerNotification('PO approved', `${signing.supplier} approved & signed — ready for receipting.`, 'success');
@@ -123,12 +128,14 @@ const PoApprovals = () => {
           setOrderStatusOverride(rawId, 'rejected');
           setOrderStatusOverride(`b2b-${rawId}`, 'rejected');
           if (rejecting.reference) setOrderStatusOverride(rejecting.reference, 'rejected');
+          const sk = sharedKey(rejecting.reference); if (sk) setOrderStatusOverride(sk, 'rejected');
         }
       } else {
         await updatePurchaseOrder(rejecting.id, { action: 'reject', reason: reason.trim() || 'Rejected by mine manager' }, scope);
         if (setOrderStatusOverride) {
           setOrderStatusOverride(rejecting.id, 'rejected');
           if (rejecting.reference) setOrderStatusOverride(rejecting.reference, 'rejected');
+          const sk = sharedKey(rejecting.reference); if (sk) setOrderStatusOverride(sk, 'rejected');
         }
       }
       triggerNotification('PO rejected', `${rejecting.supplier} rejected.`, 'info');

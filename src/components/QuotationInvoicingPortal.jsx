@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { InvoiceModal } from './InvoiceModal';
 import { ProductThumb } from './ProductThumb';
-import { createOrder, fetchOrders, fetchParties, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { createOrder, fetchOrders, fetchParties, fetchPurchaseOrders, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { MOCK_PARTIES, MOCK_PLANTS } from '../data/mockData';
 import { Receipt, Plus, FileText, ArrowRight, Store, TrendingUp, Loader2, Factory } from 'lucide-react';
 
@@ -16,12 +16,22 @@ export const QuotationInvoicingPortal = () => {
   const [orders, setOrders] = useState([]);
   const [ordersError, setOrdersError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  // Linked mine-PO status per shared order key ("ord#NN") so a received PO shows
+  // as received here too, not stuck on "pending".
+  const [poStatusByKey, setPoStatusByKey] = useState({});
 
   const loadOrders = () => {
     if (!live) return;
     fetchOrders(scope)
       .then(res => { setOrders(res.orders ?? []); setOrdersError(null); })
       .catch(err => setOrdersError(err?.message ?? 'Orders could not be loaded.'));
+    fetchPurchaseOrders(scope)
+      .then(res => {
+        const map = {};
+        (res.orders ?? []).forEach(p => { const m = /#\s*(\d+)/.exec(String(p.reference || '')); if (m) map[`ord#${m[1]}`] = p.status; });
+        setPoStatusByKey(map);
+      })
+      .catch(() => {});
   };
   useEffect(() => { loadOrders(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [live, scope.accessToken, scope.tenantId, scope.siteId]);
 
@@ -263,7 +273,8 @@ export const QuotationInvoicingPortal = () => {
                 return a + up * q;
               }, 0);
               const oTotal = typeof o.total === 'number' && o.total > 0 ? o.total : (o.taxEnabled === false ? sub : sub * 1.15);
-              const finalStatus = (orderStatusOverrides && (orderStatusOverrides[o.id] || orderStatusOverrides[`b2b-${o.id}`])) || o.status || 'pending';
+              const sharedKey = o.displayId != null ? `ord#${o.displayId}` : null;
+              const finalStatus = (orderStatusOverrides && (orderStatusOverrides[o.id] || orderStatusOverrides[`b2b-${o.id}`] || (sharedKey && orderStatusOverrides[sharedKey]))) || (sharedKey && poStatusByKey[sharedKey]) || o.status || 'pending';
               return (
                 <div key={o.id} className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
                   <div className="card-bd" style={{ padding: 14 }}>
