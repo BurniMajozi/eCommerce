@@ -143,6 +143,11 @@ async function scopedJson(path, { accessToken, tenantId, siteId = null, signal, 
 export const fetchProfitability = (scope) => scopedJson('/app/catalogue/profit', scope);
 export const fetchReports = (scope) => scopedJson('/app/reports/summary', scope);
 export const fetchCommerceConfig = (scope) => scopedJson('/app/commerce/config', scope);
+
+// Platform Owner panel — service-role reads/writes (no browser RLS needed).
+export const fetchPlatformOverview = (scope) => scopedJson('/app/platform/overview', scope);
+export const provisionPlatformTenant = (body, scope) => scopedJson('/app/platform/tenants', { ...scope, method: 'POST', body });
+export const updatePlatformTenant = (id, patch, scope) => scopedJson(`/app/platform/tenants/${id}`, { ...scope, method: 'PATCH', body: patch });
 export const fetchParties = (scope) => scopedJson('/app/commerce/parties', scope);
 
 export const createParty = (party, scope) => scopedJson('/app/commerce/parties', {

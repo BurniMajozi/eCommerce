@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { MOCK_AUDIT_LOG, ROLE_HOME_CARDS } from '../data/mockData';
-import { fetchPlatformTenants, fetchAuditEvents, fetchTenantMembers, fetchRolesCapabilities, provisionTenantDb, upsertTenantBranding, uploadTenantLogo, inviteTenantMember, setMemberRole, recordAudit } from '../tenant/adminReads';
+import { fetchTenantMembers, uploadTenantLogo, inviteTenantMember, setMemberRole } from '../tenant/adminReads';
+import { fetchPlatformOverview, provisionPlatformTenant, updatePlatformTenant, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { Building2, Plus, Palette, Smartphone, Wallet, ScrollText, LayoutGrid, AlertTriangle, Users, ShieldCheck } from 'lucide-react';
 
 const ACCENT_SWATCHES = ['#EC3013', '#2563EB', '#0891B2', '#7C3AED', '#059669', '#D97706'];
@@ -33,46 +34,69 @@ const InviteMember = ({ roles, onInvite }) => {
   );
 };
 
+// Estimated MRR per tenant from the plan (matches the public pricing model):
+// Merchant R990, Plant R5,900 + R6/user over 200, Group R24,900, trial R0.
+const PLAN_PRICE = { trial: 0, merchant: 990, plant: 5900, group: 24900 };
+const estimateMrr = (t) => {
+  const base = PLAN_PRICE[(t.plan || 'trial').toLowerCase()] ?? 0;
+  const plan = (t.plan || '').toLowerCase();
+  const seats = plan === 'plant' ? Math.max(0, (t.users || 0) - 200) * 6 : 0;
+  return base + seats;
+};
+
 export const PlatformOwnerPortal = () => {
-  const { tenants, selectedTenantId, setSelectedTenantId, modules, toggleTenantModule, updateTenantBranding, provisionTenant, integrationMode } = useApp();
+  const { tenants, selectedTenantId, setSelectedTenantId, modules, toggleTenantModule, integrationMode, auth, tenantAccess, triggerNotification } = useApp();
+  const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
+  const backend = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
   const [newTenantName, setNewTenantName] = useState('');
-  const [liveTenants, setLiveTenants] = useState(null);
-  const [liveAudit, setLiveAudit] = useState(null);
-  const [liveRbac, setLiveRbac] = useState(null);
-  const tenant = tenants.find(t => t.id === selectedTenantId) || tenants[0];
-
-  // Read-only live wiring. In demo mode the effect no-ops and the mock data
-  // below is used unchanged; writes (provision, branding, flags) stay local
-  // until their Medusa/Supabase workflows exist.
-  useEffect(() => {
-    if (integrationMode !== 'supabase') { setLiveTenants(null); setLiveAudit(null); setLiveMembers(null); setLiveRbac(null); return; }
-    let active = true;
-    fetchPlatformTenants().then(rows => { if (active) setLiveTenants(rows ?? []); }).catch(() => { if (active) setLiveTenants([]); });
-    fetchAuditEvents(null, 20).then(rows => { if (active) setLiveAudit(rows ?? []); }).catch(() => { if (active) setLiveAudit([]); });
-    fetchRolesCapabilities().then(rows => { if (active) setLiveRbac(rows ?? null); }).catch(() => { if (active) setLiveRbac(null); });
-    return () => { active = false; };
-  }, [integrationMode]);
-
-  // Members of the currently-selected tenant (real, RLS-scoped).
+  const [overview, setOverview] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [liveMembers, setLiveMembers] = useState(null);
+
+  // Everything the panel reads comes from one service-role call (no browser RLS).
+  useEffect(() => {
+    if (!backend) { setOverview(null); return; }
+    let active = true;
+    fetchPlatformOverview(scope).then(r => { if (active) setOverview(r); }).catch(() => { if (active) setOverview(null); });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backend, scope.accessToken, scope.tenantId, reloadKey]);
+  const reloadOverview = () => setReloadKey(k => k + 1);
+
+  const liveTenants = overview?.tenants ?? null;
+  const tenantRows = liveTenants ?? tenants;
+  const tenantsLive = liveTenants !== null;
+  const liveRbac = overview?.roles ?? null;
+  const rbacLive = liveRbac !== null;
+  const auditRows = overview?.audit ?? MOCK_AUDIT_LOG;
+  const auditLive = !!overview?.audit;
+
+  // Selected tenant — live-aware and normalised so branding/modules always exist.
+  const rawSel = tenantRows.find(t => t.id === selectedTenantId) || tenantRows[0] || {};
+  const tenant = {
+    ...rawSel,
+    id: rawSel.id,
+    name: rawSel.name || 'Tenant',
+    branding: {
+      accent: rawSel.branding?.accent || '#F5721A',
+      logo: rawSel.branding?.logo || (rawSel.name ? rawSel.name.charAt(0).toUpperCase() : '?'),
+      logoPath: rawSel.branding?.logoPath || null,
+    },
+    modules: rawSel.modules || [],
+  };
+
+  // Members of the selected tenant (still Supabase RLS-scoped in this pass).
   useEffect(() => {
     if (integrationMode !== 'supabase' || !tenant?.id) { setLiveMembers(null); return; }
     let active = true;
     fetchTenantMembers(tenant.id).then(rows => { if (active) setLiveMembers(rows ?? []); }).catch(() => { if (active) setLiveMembers([]); });
     return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [integrationMode, tenant?.id]);
 
-  const tenantRows = liveTenants ?? tenants;
-  const auditRows = liveAudit ?? MOCK_AUDIT_LOG;
-  const tenantsLive = liveTenants !== null;
-  const auditLive = liveAudit !== null;
-
   const totalUsers = tenantRows.reduce((a, t) => a + (t.users || 0), 0);
-  const liveCount = tenantRows.filter(t => t.state === 'live' || t.state === 'active').length;
-  const trialCount = tenantRows.filter(t => t.trial || t.plan === 'trial' || t.state === 'setup').length;
-  // Honest platform billing: per-tenant plan + member counts are real; there is
-  // no charging engine yet, so MRR is intentionally NOT summed/invented.
-  const rbacLive = liveRbac !== null;
+  const liveCount = tenantRows.filter(t => t.state === 'live' || t.state === 'active' || t.status === 'active' || t.status === 'live').length;
+  const trialCount = tenantRows.filter(t => t.trial || t.plan === 'trial' || t.state === 'setup' || t.status === 'setup').length;
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 22, paddingBottom: 24 }}>
@@ -106,13 +130,11 @@ export const PlatformOwnerPortal = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Building2 size={17} style={{ color: 'var(--primary)' }} /><h3>Tenants</h3><SourceBadge live={tenantsLive} /></div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input className="input" value={newTenantName} onChange={e => setNewTenantName(e.target.value)} placeholder="New tenant name" style={{ width: 180 }} />
-            <button className="btn btn-primary" disabled={!newTenantName.trim()} onClick={async () => {
+            <button className="btn btn-primary" disabled={!newTenantName.trim() || !backend} onClick={async () => {
               try {
-                const t = await provisionTenantDb(newTenantName.trim());
-                await recordAudit(t.id, 'tenant.provision', 'tenant', 'platform_owner');
+                const t = await provisionPlatformTenant({ name: newTenantName.trim() }, scope);
                 setNewTenantName('');
-                // reload live tenant list
-                fetchPlatformTenants().then(rows => setLiveTenants(rows ?? [])).catch(() => {});
+                reloadOverview();
                 triggerNotification('Tenant provisioned', `“${t.name}” created (setup · trial).`, 'success');
               } catch (err) {
                 triggerNotification('Provision failed', err.message || 'Could not create tenant.', 'danger');
@@ -132,7 +154,8 @@ export const PlatformOwnerPortal = () => {
                 const sel = t.id === selectedTenantId;
                 const accent = t.branding?.accent || 'var(--primary)';
                 const logo = t.branding?.logo || (t.name ? t.name.charAt(0).toUpperCase() : '?');
-                const liveState = t.state === 'live' || t.state === 'active';
+                const st = t.state || t.status || 'setup';
+                const liveState = st === 'live' || st === 'active';
                 return (
                   <tr key={t.id} onClick={() => setSelectedTenantId(t.id)} style={{ cursor: 'pointer' }} className={sel ? 'row-flag' : ''}>
                     <td>
@@ -144,8 +167,8 @@ export const PlatformOwnerPortal = () => {
                     <td className="muted">{t.domain}</td>
                     <td className="num">{t.users}</td>
                     <td className="center"><span className="badge badge-neutral">{t.plan}</span></td>
-                    <td className="num">{t.mrr ? `R ${t.mrr.toLocaleString('en-ZA')}` : '—'}</td>
-                    <td className="center"><span className={`badge ${liveState ? 'badge-success' : 'badge-warning'}`}>{t.state}</span></td>
+                    <td className="num">{estimateMrr(t) ? `R ${estimateMrr(t).toLocaleString('en-ZA')}` : '—'}</td>
+                    <td className="center"><span className={`badge ${liveState ? 'badge-success' : 'badge-warning'}`}>{st}</span></td>
                   </tr>
                 );
               })}
@@ -170,8 +193,8 @@ export const PlatformOwnerPortal = () => {
                       if (!file) return;
                       try {
                         const path = await uploadTenantLogo(tenant.id, file);
-                        await upsertTenantBranding(tenant.id, { logo_path: path });
-                        await recordAudit(tenant.id, 'tenant.branding.logo', 'tenant', 'platform_owner');
+                        await updatePlatformTenant(tenant.id, { logoPath: path }, scope);
+                        reloadOverview();
                         triggerNotification('Logo uploaded', `Stored for ${tenant.name}.`, 'success');
                       } catch (err) {
                         triggerNotification('Upload failed', err.message || 'Could not store logo.', 'danger');
@@ -188,8 +211,9 @@ export const PlatformOwnerPortal = () => {
                   return (
                     <button key={c} onClick={async () => {
                       try {
-                        await upsertTenantBranding(tenant.id, { accent_color: c });
-                        await recordAudit(tenant.id, 'tenant.branding.accent', 'tenant', 'platform_owner', { accent: c });
+                        await updatePlatformTenant(tenant.id, { accent: c }, scope);
+                        reloadOverview();
+                        triggerNotification('Accent updated', `${tenant.name} brand colour saved.`, 'success');
                       } catch (err) {
                         triggerNotification('Branding failed', err.message || 'Could not save accent.', 'danger');
                       }
@@ -338,26 +362,26 @@ export const PlatformOwnerPortal = () => {
       {/* Billing — honest: real plan + member counts, no invented MRR */}
       <div className="cols cols-2">
         <div className="card">
-          <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Wallet size={17} style={{ color: 'var(--primary)' }} /><h3>Plans &amp; billing</h3></div></div>
+          <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Wallet size={17} style={{ color: 'var(--primary)' }} /><h3>Plans &amp; billing</h3><SourceBadge live={tenantsLive} /></div></div>
           <div className="card-bd">
             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 14 }}>
               <div>
-                <div className="kpi-value" style={{ color: 'var(--primary)' }}>{tenantRows.length}</div>
-                <div className="kpi-label">Tenants · {liveCount} live · {trialCount} trial</div>
+                <div className="kpi-value" style={{ color: 'var(--primary)' }}>R {tenantRows.reduce((a, t) => a + estimateMrr(t), 0).toLocaleString('en-ZA')}</div>
+                <div className="kpi-label">Estimated MRR · {liveCount} live · {trialCount} trial</div>
               </div>
-              <div className="muted" style={{ fontSize: 13 }}>{totalUsers} users across tenants</div>
+              <div className="muted" style={{ fontSize: 13 }}>{totalUsers} users across {tenantRows.length} tenants</div>
             </div>
             <div className="table-wrap">
               <table className="table">
-                <thead><tr><th>Tenant</th><th className="center">Plan</th><th className="num">Members</th></tr></thead>
+                <thead><tr><th>Tenant</th><th className="center">Plan</th><th className="num">Members</th><th className="num">MRR</th></tr></thead>
                 <tbody>
                   {tenantRows.map(t => (
-                    <tr key={t.id}><td style={{ fontWeight: 500 }}>{t.name}</td><td className="center"><span className="badge badge-neutral">{t.plan}</span></td><td className="num">{t.users}</td></tr>
+                    <tr key={t.id}><td style={{ fontWeight: 500 }}>{t.name}</td><td className="center"><span className="badge badge-neutral" style={{ textTransform: 'capitalize' }}>{t.plan}</span></td><td className="num">{t.users}</td><td className="num tabular">{estimateMrr(t) ? `R ${estimateMrr(t).toLocaleString('en-ZA')}` : '—'}</td></tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <p className="muted" style={{ fontSize: 12, marginBottom: 0, marginTop: 12 }}>Per-tenant plan and member counts are live. There is no charging engine yet — pricing tiers and invoicing are not configured, so no MRR is shown.</p>
+            <p className="muted" style={{ fontSize: 12, marginBottom: 0, marginTop: 12 }}>Plan &amp; member counts are live. MRR is estimated from the published pricing (Merchant R990 · Plant R5,900 +R6/user over 200 · Group R24,900); a metered charging engine isn’t wired yet.</p>
           </div>
         </div>
 
