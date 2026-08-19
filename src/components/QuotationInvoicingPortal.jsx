@@ -149,7 +149,7 @@ export const QuotationInvoicingPortal = () => {
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 22, paddingBottom: 24 }}>
       <div className="page-head">
         <div>
-          <h2>B2B sales &amp; invoicing</h2>
+          <h2>Invoice</h2>
           <p>Customer storefront on contract pricing → quote → VAT tax invoice. Multi-currency ready for cross-border customers.</p>
         </div>
         <span className="badge badge-primary"><Receipt size={13} /> External sale</span>
