@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { getVariantOptions } from '../data/mockData';
+import { resolveEmployeeEntitlement } from '../entitlement/entitlement';
 import { ProductThumb } from './ProductThumb';
 import {
   Search, ShieldCheck, PackageCheck, Clock, QrCode, X, Camera, AlertTriangle,
-  CheckCircle2, ChevronRight, Boxes
+  CheckCircle2, ChevronRight, Boxes, Lock
 } from 'lucide-react';
 
 const CATEGORIES = ['ALL', 'Arc Flash Protection', 'Footwear', 'Workwear', 'Hand Protection', 'Respiratory Protection', 'Eye Protection'];
@@ -19,7 +20,10 @@ const statusBadge = (s) => {
 };
 
 export const EmployeePortal = () => {
-  const { products, activeEmployee, requests, createRequest } = useApp();
+  const { products, activeEmployee, requests, createRequest, entitlementRules, triggerNotification } = useApp();
+  // What this worker's department/role/individual entitlement allows.
+  const entitlement = resolveEmployeeEntitlement(activeEmployee, entitlementRules);
+  const allowedCat = (p) => entitlement.categories.has(p.category);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('ALL');
   const [modalProduct, setModalProduct] = useState(null);
@@ -41,6 +45,10 @@ export const EmployeePortal = () => {
   const reasons = isManager ? [...REASONS, ...MANAGER_REASONS] : REASONS;
 
   const openReq = (p) => {
+    if (!allowedCat(p)) {
+      triggerNotification?.('Not in your entitlement', `${p.category || 'This item'} is not allocated to ${activeEmployee.department}. Ask your supervisor to adjust the entitlement.`, 'warning');
+      return;
+    }
     const opt = getVariantOptions(p);
     setModalProduct(p); setReason('Damaged on shift'); setIsEarly(false); setPhoto(false);
     setSize(opt.sizes[0]); setColor(opt.colors[0]);
@@ -164,7 +172,9 @@ export const EmployeePortal = () => {
       {/* Catalogue */}
       <div className="card">
         <div className="card-hd">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Boxes size={17} style={{ color: 'var(--primary)' }} /><h3>Approved catalogue</h3></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Boxes size={17} style={{ color: 'var(--primary)' }} /><h3>Approved catalogue</h3>
+            <span className="badge badge-neutral" style={{ fontSize: 10.5 }} title={[...entitlement.categories].join(', ')}>{activeEmployee.department} · {entitlement.categories.size} categories allowed</span>
+          </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <Search size={15} style={{ position: 'absolute', left: 10, color: 'var(--text-subtle)' }} />
@@ -177,22 +187,27 @@ export const EmployeePortal = () => {
         </div>
         <div className="card-bd">
           <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))' }}>
-            {filtered.map(p => (
-              <div key={p.sku} className="card" style={{ boxShadow: 'none', display: 'flex', flexDirection: 'column' }}>
+            {filtered.map(p => {
+              const ok = allowedCat(p);
+              return (
+              <div key={p.sku} className="card" style={{ boxShadow: 'none', display: 'flex', flexDirection: 'column', opacity: ok ? 1 : 0.62 }}>
                 <div className="card-bd" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 9, flex: 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <span className="eyebrow">{p.sku}</span>
-                    <span className="badge badge-neutral" style={{ fontSize: 10 }}>Cat {p.abcClass}</span>
+                    {ok ? <span className="badge badge-neutral" style={{ fontSize: 10 }}>Cat {p.abcClass}</span>
+                        : <span className="badge badge-warning" style={{ fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Lock size={10} /> Restricted</span>}
                   </div>
                   <ProductThumb sku={p.sku} name={p.name} imageUrl={p.imageUrl} size={92} />
                   <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.25 }}>{p.name}</div>
-                  <div className="muted" style={{ fontSize: 12 }}>{p.stockOnHand > 0 ? 'In stock' : 'On order'} · {p.lifespanMonths}m life</div>
+                  <div className="muted" style={{ fontSize: 12 }}>{p.category}{ok ? ` · ${p.stockOnHand > 0 ? 'In stock' : 'On order'}` : ''}</div>
                   <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                    <button className="btn btn-secondary btn-sm btn-block" onClick={() => openReq(p)}>Request <ChevronRight size={14} /></button>
+                    {ok
+                      ? <button className="btn btn-secondary btn-sm btn-block" onClick={() => openReq(p)}>Request <ChevronRight size={14} /></button>
+                      : <button className="btn btn-sm btn-block" disabled title={`Not allocated to ${activeEmployee.department}`} style={{ background: 'var(--surface-2)', color: 'var(--text-subtle)', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><Lock size={13} /> Not in your entitlement</button>}
                   </div>
                 </div>
               </div>
-            ))}
+            );})}
           </div>
         </div>
       </div>

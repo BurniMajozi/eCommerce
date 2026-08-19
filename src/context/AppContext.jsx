@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { CAGELI_PRODUCTS, MOCK_EMPLOYEES, MOCK_REQUESTS, MOCK_QUOTATIONS, MOCK_PLANTS, MOCK_TENANTS, MOCK_MODULES, MOCK_EMPLOYEE_ALLOCATIONS } from '../data/mockData';
+import { buildDefaultRules, newRuleId } from '../entitlement/entitlement';
 import { useAuthSession } from '../auth/AuthSessionContext';
 import { useTenantAccess } from '../tenant/TenantAccessContext';
 import { fetchCatalogue, fetchProfitability, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
@@ -35,6 +36,11 @@ export const AppProvider = ({ children }) => {
   const [tenants, setTenants] = useState(MOCK_TENANTS);
   const [selectedTenantId, setSelectedTenantId] = useState(MOCK_TENANTS[0].id);
   const [activeEmployee, setActiveEmployee] = useState(MOCK_EMPLOYEES[0]);
+  // Department/role/individual entitlement rules — shared so the admin builder
+  // and the worker request flow enforce the same policy.
+  const [entitlementRules, setEntitlementRules] = useState(() => buildDefaultRules());
+  const addEntitlementRule = (rule) => setEntitlementRules((prev) => [{ ...rule, id: rule.id || newRuleId() }, ...prev]);
+  const removeEntitlementRule = (id) => setEntitlementRules((prev) => prev.filter((r) => r.id !== id));
   const [requests, setRequests] = useState(MOCK_REQUESTS);
   const [quotations, setQuotations] = useState(MOCK_QUOTATIONS);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
@@ -462,6 +468,9 @@ export const AppProvider = ({ children }) => {
       pushNotification,
       triggerNotification,
       createRequest,
+      entitlementRules,
+      addEntitlementRule,
+      removeEntitlementRule,
       approveRequest,
       rejectRequest,
       issueStockAndDeduct,

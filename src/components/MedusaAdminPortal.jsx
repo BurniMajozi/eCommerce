@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, updateOrder, fetchCommerceConfig, fetchEngine, runEngineWorkflow, fetchParties, createParty, updateParty, deleteParty, fetchPurchaseOrders, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchPromotions, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
+import { InlineError, InlineLoading } from './InlineState';
 import { ProductThumb } from './ProductThumb';
 import { ProductFormModal } from './ProductFormModal';
 import { PromotionFormModal } from './PromotionFormModal';
@@ -360,8 +361,8 @@ export const MedusaAdminPortal = ({ view }) => {
     }
     let cancelled = false;
     fetchOrders(commerceScope)
-      .then((r) => { if (!cancelled) setLiveOrders(r.orders ?? []); })
-      .catch(() => { if (!cancelled) setLiveOrders(null); });
+      .then((r) => { if (!cancelled) { setLiveOrders(r.orders ?? []); setErr?.('orders', null); } })
+      .catch((e) => { if (!cancelled) { setLiveOrders(null); setErr?.('orders', e); } });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, ordersReloadKey]);
@@ -375,7 +376,7 @@ export const MedusaAdminPortal = ({ view }) => {
     let cancelled = false;
     fetchPromotions(commerceScope)
       .then((r) => { if (!cancelled) setPromotions(r.promotions ?? []); })
-      .catch(() => { if (!cancelled) setPromotions(null); });
+      .catch((e) => { if (!cancelled) { setPromotions(null); setErr('promos', e); } });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, promoReloadKey]);
@@ -425,12 +426,15 @@ export const MedusaAdminPortal = ({ view }) => {
   const [partiesReloadKey, setPartiesReloadKey] = useState(0);
   const [partyModal, setPartyModal] = useState(null); // { type, party? }
   const [partyDelete, setPartyDelete] = useState(null);
+  // Load errors surfaced visually (in-panel), not just as toasts.
+  const [dataErr, setDataErr] = useState({});
+  const setErr = (k, e) => setDataErr((p) => ({ ...p, [k]: e ? (e.message || String(e)) : null }));
   useEffect(() => {
     if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setParties(null); return undefined; }
     let cancelled = false;
     fetchParties(commerceScope)
-      .then((r) => { if (!cancelled) setParties(r); })
-      .catch(() => { if (!cancelled) setParties(null); });
+      .then((r) => { if (!cancelled) { setParties(r); setErr('parties', null); } })
+      .catch((e) => { if (!cancelled) { setParties(null); setErr('parties', e); } });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, partiesReloadKey]);
@@ -455,8 +459,8 @@ export const MedusaAdminPortal = ({ view }) => {
     if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setPurchaseOrders(null); return undefined; }
     let cancelled = false;
     fetchPurchaseOrders(commerceScope)
-      .then((r) => { if (!cancelled) setPurchaseOrders(r.orders ?? []); })
-      .catch(() => { if (!cancelled) setPurchaseOrders(null); });
+      .then((r) => { if (!cancelled) { setPurchaseOrders(r.orders ?? []); setErr('po', null); } })
+      .catch((e) => { if (!cancelled) { setPurchaseOrders(null); setErr('po', e); } });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, poReloadKey]);
@@ -854,6 +858,12 @@ export const MedusaAdminPortal = ({ view }) => {
   if (view === 'orders') {
     const statusBadge = { captured: 'badge-success', authorized: 'badge-info', requires_action: 'badge-warning', draft: 'badge-warning', pending: 'badge-info' };
     const live = liveOrders !== null;
+    // Show a loading state instead of flashing mock data while the live orders
+    // are still loading in a connected tenant.
+    const expectingLive = isMedusaCatalogueEnabled && !!commerceScope.accessToken && !!commerceScope.tenantId;
+    if (expectingLive && liveOrders === null && !dataErr.orders) {
+      return (<Wrap><Head icon={ShoppingCart} title="Orders" sub="Live B2B orders (outbound) and purchase orders (inbound)." /><InlineLoading label="Loading orders…" /></Wrap>);
+    }
     // Normalise live B2B orders and mock orders to one row shape. Purchase orders
     // are a separate inbound (procurement) flow but the user expects them visible
     // here too, so we merge them as PO rows marked with direction: 'in'.
@@ -909,11 +919,13 @@ export const MedusaAdminPortal = ({ view }) => {
     const rows = [...orderRows, ...poRows];
     return (
       <Wrap>
-        <Head icon={ShoppingCart} title="Orders" sub={live ? 'Live B2B orders (outbound) and purchase orders (inbound), newest first.' : 'B2B orders across regions and currencies.'} />
+        <Head icon={ShoppingCart} title="Orders" sub={live ? 'Live B2B orders (outbound) and purchase orders (inbound), newest first.' : 'B2B orders across regions and currencies.'}
+          action={live && <button className="btn btn-secondary btn-sm" onClick={() => { reloadOrders(); reloadPo(); }} title="Refresh orders"><RotateCw size={14} /> Refresh</button>} />
+        <InlineError error={dataErr.orders} onRetry={reloadOrders} title="Orders didn’t load" />
         <div className="card">
           <div className="card-hd">
             <h3>All orders</h3>
-            <span className={`badge ${live ? 'badge-primary' : 'badge-neutral'}`}>{rows.length} {live ? 'live' : ''} {orderRows.length} out · {poRows.length} PO</span>
+            <span className={`badge ${live ? 'badge-primary' : 'badge-neutral'}`}>{live ? `${rows.length} live · ${orderRows.length} sales · ${poRows.length} PO` : `${rows.length} orders`}</span>
           </div>
           <div className="table-wrap">
             <table className="table">
@@ -949,6 +961,7 @@ export const MedusaAdminPortal = ({ view }) => {
       <Wrap>
         <Head icon={BadgePercent} title="Promotions" sub="Mark a product down by a percentage — the cost basis drops so the margin narrows. Created promos go live at once and are sent to managers for visibility."
           action={<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span><button className="btn btn-primary" onClick={() => setShowPromoModal(true)} disabled={!live}><Plus size={16} /> New promotion</button></div>} />
+        <InlineError error={dataErr.promos} onRetry={reloadPromo} title="Promotions didn’t load" />
         <div className="card">
           <div className="table-wrap">
             <table className="table">
@@ -1179,6 +1192,7 @@ export const MedusaAdminPortal = ({ view }) => {
       <Wrap>
         <Head icon={Wallet} title="Customers & Spending Limits" sub="Internal B2B buyers you sell PPE to. Set a monthly spend limit per company; spend is tracked live from their orders."
           action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span>{live && <button className="btn btn-primary" onClick={() => setPartyModal({ type: 'customer' })}><Plus size={16} /> Add customer</button>}</div>} />
+        <InlineError error={dataErr.parties} onRetry={reloadParties} title="Customers didn’t load" />
         {rows.length === 0 && (
           <div className="card"><div className="card-bd muted" style={{ textAlign: 'center', padding: 22 }}>No customer accounts yet.{live && ' Add your first buyer above.'}</div></div>
         )}
@@ -1236,6 +1250,7 @@ export const MedusaAdminPortal = ({ view }) => {
       <Wrap>
         <Head icon={Factory} title="Suppliers" sub="External vendors the merchant sources stock from. Add suppliers to the tenant and set a monthly purchase limit for each."
           action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span>{live && <button className="btn btn-primary" onClick={() => setPartyModal({ type: 'supplier' })}><Plus size={16} /> Add supplier</button>}</div>} />
+        <InlineError error={dataErr.parties} onRetry={reloadParties} title="Suppliers didn’t load" />
         {!live && <div className="card"><div className="card-bd muted" style={{ textAlign: 'center', padding: 22 }}>Connect the live backend to manage suppliers.</div></div>}
         {live && (
           <div className="card">
@@ -1362,6 +1377,7 @@ export const MedusaAdminPortal = ({ view }) => {
       <Wrap>
         <Head icon={ClipboardList} title="Purchase Orders" sub="Inbound POs from mine plants (internal approval) & external vendors (receipt trigger). Receiving adds the stock to inventory."
           action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span><button className="btn btn-primary" onClick={() => setShowPoModal(true)} disabled={!canCreate}><Plus size={16} /> New PO</button></div>} />
+        <InlineError error={dataErr.po} onRetry={reloadPo} title="Purchase orders didn’t load" />
         {live && !canCreate && <div className="card"><div className="card-bd muted" style={{ padding: 18 }}>Add at least one supplier and one product before raising a purchase order.</div></div>}
         <div className="card">
           <div className="table-wrap">

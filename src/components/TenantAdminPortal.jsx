@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-  PERMISSION_MATRIX, MOCK_TENANT_USERS, MOCK_ENTITLEMENT_RULES
+  PERMISSION_MATRIX, MOCK_TENANT_USERS
 } from '../data/mockData';
 import { fetchTenantMembers } from '../tenant/adminReads';
 import { fetchMembers, inviteMember, updateMemberRole, removeMember, fetchReports, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { ConfirmDialog } from './ConfirmDialog';
 import { EmployeeAllocationReport } from './EmployeeAllocationReport';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
+import { DEPARTMENTS, PPE_CATEGORIES } from '../entitlement/entitlement';
 import { FileBarChart, Plus, Play, Save, ArrowRight, Users, ListChecks, ShieldCheck, Trash2, PackageCheck, ClipboardList, GitBranch, ShieldQuestion, UserPlus, Mail, KeyRound, Copy, Loader2, RefreshCw, Download, Printer } from 'lucide-react';
 
 const rand = (n) => `R ${Number(n || 0).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
@@ -385,9 +386,15 @@ const MembersManager = ({ scope, triggerNotification, fallbackRows }) => {
   );
 };
 
-const ROLE_OPTS = ['Underground Driller', 'Electrical Tech', 'Storeman', 'Supervisor', 'Visitor', 'All roles'];
-const ITEM_OPTS = ['Safety boots', 'Gloves (nitrile)', 'Arc flash kit', 'Dust mask FFP2', 'Hi-vis workwear', 'Ear protection'];
-const CYCLE_OPTS = ['monthly', '3 months', '6 months', '12 months', 'unlimited'];
+const ROLE_OPTS = ['Underground Driller', 'Electrical Maintenance Tech', 'Storeman', 'Supervisor', 'Visitor'];
+const CYCLE_OPTS = ['monthly', '3 months', '6 months', '12 months', '24 months', 'unlimited'];
+const SCOPE_OPTS = [
+  { v: 'department', label: 'Department' },
+  { v: 'role', label: 'Role' },
+  { v: 'individual', label: 'Individual' },
+  { v: 'all', label: 'Everyone' },
+];
+const scopeLabel = { department: 'Dept', role: 'Role', individual: 'Person', all: 'All' };
 
 const permCell = (v, hot) => {
   if (v === 'yes') return <span className="dot" style={{ background: hot ? 'var(--primary)' : 'var(--success)', width: 9, height: 9 }} />;
@@ -396,14 +403,18 @@ const permCell = (v, hot) => {
 };
 
 export const TenantAdminPortal = () => {
-  const { activePlant, triggerNotification, integrationMode, tenantAccess, auth } = useApp();
+  const { activePlant, triggerNotification, integrationMode, tenantAccess, auth, entitlementRules, addEntitlementRule, removeEntitlementRule, employees } = useApp();
   const commerceScope = {
     accessToken: auth?.session?.access_token,
     tenantId: tenantAccess?.activeTenantId,
     siteId: tenantAccess?.activeSiteId,
   };
-  const [rules, setRules] = useState(MOCK_ENTITLEMENT_RULES);
-  const [nr, setNr] = useState({ role: 'Underground Driller', itemClass: 'Safety boots', qty: 1, cycle: '6 months' });
+  const [nr, setNr] = useState({ scope: 'department', target: DEPARTMENTS[0], category: PPE_CATEGORIES[0], qty: 1, cycle: '6 months' });
+  // Targets depend on scope: department list / role list / employee list.
+  const targetOptions = nr.scope === 'department' ? DEPARTMENTS
+    : nr.scope === 'role' ? ROLE_OPTS
+    : nr.scope === 'individual' ? (employees || []).map((e) => ({ v: e.id, label: `${e.name} (${e.id})` }))
+    : [];
   const [liveMembers, setLiveMembers] = useState(null);
 
   // Read-only live wiring for Users & roles. Demo mode keeps the mock roster.
@@ -417,11 +428,17 @@ export const TenantAdminPortal = () => {
 
   const memberRows = liveMembers ?? MOCK_TENANT_USERS;
 
-  const addRule = () => {
-    setRules(prev => [...prev, { ...nr, threshold: 'auto' }]);
-    triggerNotification('Entitlement rule added', `${nr.role} → ${nr.itemClass}: ${nr.qty || '∞'} per ${nr.cycle}. Feeds the approval engine.`, 'success');
+  const targetName = (r) => {
+    if (r.scope === 'all') return 'Everyone';
+    if (r.scope === 'individual') { const e = (employees || []).find((x) => x.id === r.target); return e ? e.name : r.target; }
+    return r.target;
   };
-  const removeRule = (idx) => setRules(prev => prev.filter((_, i) => i !== idx));
+  const addRule = () => {
+    const target = nr.scope === 'all' ? '*' : (nr.scope === 'individual' ? (nr.target || (employees || [])[0]?.id) : nr.target);
+    addEntitlementRule({ scope: nr.scope, target, category: nr.category, qty: nr.qty, cycle: nr.cycle, threshold: nr.category === 'Arc Flash Protection' ? 'always 2nd approval' : 'auto-approve' });
+    triggerNotification('Entitlement rule added', `${scopeLabel[nr.scope]} ${nr.scope === 'all' ? '' : targetName({ scope: nr.scope, target })} → ${nr.category}: ${nr.qty || '∞'} per ${nr.cycle}.`, 'success');
+  };
+  const removeRule = (id) => removeEntitlementRule(id);
 
   const JOURNEY = [
     { icon: ListChecks, t: 'Entitlement rule', d: 'role gets X per cycle' },
@@ -477,15 +494,25 @@ export const TenantAdminPortal = () => {
           </div>
         </div>
 
-        {/* Builder */}
+        {/* Builder — allocate a category to a department, role, individual or everyone */}
         <div className="card-bd" style={{ borderBottom: '1px solid var(--border)', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div className="field" style={{ flex: '1 1 160px' }}><label className="field-label">Role</label>
-            <select className="select" value={nr.role} onChange={e => setNr({ ...nr, role: e.target.value })}>{ROLE_OPTS.map(o => <option key={o}>{o}</option>)}</select></div>
-          <div className="field" style={{ flex: '1 1 160px' }}><label className="field-label">Item class</label>
-            <select className="select" value={nr.itemClass} onChange={e => setNr({ ...nr, itemClass: e.target.value })}>{ITEM_OPTS.map(o => <option key={o}>{o}</option>)}</select></div>
-          <div className="field" style={{ width: 90 }}><label className="field-label">Qty</label>
+          <div className="field" style={{ flex: '1 1 130px' }}><label className="field-label">Allocate to</label>
+            <select className="select" value={nr.scope} onChange={e => {
+              const scope = e.target.value;
+              const target = scope === 'department' ? DEPARTMENTS[0] : scope === 'role' ? ROLE_OPTS[0] : scope === 'individual' ? (employees || [])[0]?.id : '*';
+              setNr({ ...nr, scope, target });
+            }}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}</select></div>
+          {nr.scope !== 'all' && (
+            <div className="field" style={{ flex: '1 1 200px' }}><label className="field-label">{nr.scope === 'department' ? 'Department' : nr.scope === 'role' ? 'Role' : 'Employee'}</label>
+              <select className="select" value={nr.target} onChange={e => setNr({ ...nr, target: e.target.value })}>
+                {targetOptions.map(o => typeof o === 'string' ? <option key={o} value={o}>{o}</option> : <option key={o.v} value={o.v}>{o.label}</option>)}
+              </select></div>
+          )}
+          <div className="field" style={{ flex: '1 1 170px' }}><label className="field-label">PPE category</label>
+            <select className="select" value={nr.category} onChange={e => setNr({ ...nr, category: e.target.value })}>{PPE_CATEGORIES.map(o => <option key={o}>{o}</option>)}</select></div>
+          <div className="field" style={{ width: 84 }}><label className="field-label">Qty</label>
             <input type="number" min="0" className="input" value={nr.qty} onChange={e => setNr({ ...nr, qty: parseInt(e.target.value) || 0 })} /></div>
-          <div className="field" style={{ flex: '1 1 140px' }}><label className="field-label">Cycle</label>
+          <div className="field" style={{ flex: '1 1 130px' }}><label className="field-label">Cycle</label>
             <select className="select" value={nr.cycle} onChange={e => setNr({ ...nr, cycle: e.target.value })}>{CYCLE_OPTS.map(o => <option key={o}>{o}</option>)}</select></div>
           <button className="btn btn-primary" onClick={addRule}><Plus size={16} /> Add rule</button>
         </div>
@@ -493,23 +520,25 @@ export const TenantAdminPortal = () => {
         {/* Rules table */}
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>Role</th><th>Item class</th><th className="num">Qty</th><th>Cycle</th><th>Threshold</th><th className="center"></th></tr></thead>
+            <thead><tr><th>Scope</th><th>Target</th><th>PPE category</th><th className="num">Qty</th><th>Cycle</th><th>Approval</th><th className="center"></th></tr></thead>
             <tbody>
-              {rules.map((r, i) => (
-                <tr key={i}>
-                  <td style={{ fontWeight: 500 }}>{r.role}</td>
-                  <td>{r.itemClass}</td>
+              {(entitlementRules || []).length === 0 && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 20 }}>No entitlement rules yet.</td></tr>}
+              {(entitlementRules || []).map((r) => (
+                <tr key={r.id}>
+                  <td><span className="badge badge-neutral" style={{ fontSize: 10.5 }}>{scopeLabel[r.scope] || r.scope}</span></td>
+                  <td style={{ fontWeight: 500 }}>{targetName(r)}</td>
+                  <td>{r.category}</td>
                   <td className="num">{r.qty || '∞'}</td>
                   <td className="muted">{r.cycle}</td>
                   <td className="muted" style={{ fontSize: 12.5 }}>{r.threshold || 'auto-approve'}</td>
-                  <td className="center"><button className="icon-btn" style={{ width: 30, height: 30 }} onClick={() => removeRule(i)} aria-label="Remove rule"><Trash2 size={15} /></button></td>
+                  <td className="center"><button className="icon-btn" style={{ width: 30, height: 30 }} onClick={() => removeRule(r.id)} aria-label="Remove rule"><Trash2 size={15} /></button></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         <div className="card-bd" style={{ paddingTop: 12 }}>
-          <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Threshold rules feed the approval engine — e.g. boots over R750 force a Section-Manager co-sign, and a 2nd issue of the same item inside 30 days escalates automatically.</p>
+          <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Rules scope PPE to a <strong>department</strong>, <strong>role</strong> or <strong>individual</strong> — so an Underground Driller can’t draw Electrical (Arc Flash) PPE. Workers only see what they’re entitled to; over-quota or restricted items escalate for a co-sign.</p>
         </div>
       </div>
 
