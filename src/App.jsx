@@ -7,6 +7,7 @@ import { SkeletonPage } from './components/SkeletonLoader';
 import { Menu, ChevronDown, Sun, Moon, CheckCircle2, AlertTriangle, Info, XCircle, LogOut } from 'lucide-react';
 
 const EmployeePortal = lazy(() => import('./components/EmployeePortal').then(m => ({ default: m.EmployeePortal })));
+const ContractorStorePortal = lazy(() => import('./components/ContractorStorePortal').then(m => ({ default: m.ContractorStorePortal })));
 const ManagerApprovalPortal = lazy(() => import('./components/ManagerApprovalPortal').then(m => ({ default: m.ManagerApprovalPortal })));
 const StorekeeperPortal = lazy(() => import('./components/StorekeeperPortal').then(m => ({ default: m.StorekeeperPortal })));
 const QuotationInvoicingPortal = lazy(() => import('./components/QuotationInvoicingPortal').then(m => ({ default: m.QuotationInvoicingPortal })));
@@ -35,6 +36,7 @@ const AppContent = () => {
   const render = () => {
     if (MED_VIEW[activeRole]) return <MedusaAdminPortal view={MED_VIEW[activeRole]} />;
     switch (activeRole) {
+      case 'STORE': return <ContractorStorePortal />;
       case 'EMPLOYEE': return <EmployeePortal />;
       case 'MANAGER': return <ManagerApprovalPortal />;
       case 'STOREKEEPER': return <StorekeeperPortal />;

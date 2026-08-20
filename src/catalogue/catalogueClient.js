@@ -182,6 +182,12 @@ export const deletePurchaseOrder = (id, scope) => scopedJson(`/app/commerce/purc
 
 export const fetchEngine = (scope) => scopedJson('/app/engine', scope);
 
+// Contractor Store: retail PPE purchase → Paystack → pickup at the store.
+export const storeCheckout = (payload, scope) => scopedJson('/app/store/checkout', { ...scope, method: 'POST', body: payload });
+export const storeVerify = (reference, scope) => scopedJson(`/app/store/verify?reference=${encodeURIComponent(reference)}`, scope);
+export const fetchStoreOrders = (scope) => scopedJson('/app/store/orders', scope);
+export const collectStoreOrder = (id, pickupCode, scope) => scopedJson(`/app/store/orders/${id}`, { ...scope, method: 'PATCH', body: { pickupCode } });
+
 export const runEngineWorkflow = (body, scope) => scopedJson('/app/engine/run', {
   ...scope,
   method: 'POST',

@@ -4,7 +4,7 @@ import {
   HardHat, ClipboardCheck, PackageOpen, LineChart, Receipt,
   Building2, ShieldEllipsis, Tag, Boxes, ShoppingCart, BadgePercent,
   Percent, Truck, Upload, Wallet, Workflow, Radio, X, Factory, ClipboardList,
-  PanelLeftClose, PanelLeftOpen
+  PanelLeftClose, PanelLeftOpen, Store
 } from 'lucide-react';
 
 // Each item declares the capability required to see it. In demo mode and for
@@ -15,6 +15,7 @@ export const NAV_GROUPS = [
   {
     label: 'Operations',
     items: [
+      { id: 'STORE', label: 'Contractor Store', icon: Store, cap: 'ppe.request.create' },
       { id: 'EMPLOYEE', label: 'Request PPE', icon: HardHat, cap: 'ppe.request.create' },
       { id: 'MANAGER', label: 'Approvals', icon: ClipboardCheck, cap: 'ppe.approve.tier1' },
       { id: 'STOREKEEPER', label: 'Store Counter', icon: PackageOpen, cap: 'ppe.stock.issue' },
