@@ -526,7 +526,8 @@ export const StorekeeperPortal = () => {
               <button className="icon-btn" onClick={() => setWalkinModalProduct(null)}><X size={17} /></button>
             </div>
 
-            <form className="modal-bd" onSubmit={handleWalkinSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', padding: '14px 18px' }}>
+            <form onSubmit={handleWalkinSubmit} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+              <div className="modal-bd" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', flex: '1 1 auto', minHeight: 0, padding: '14px 18px' }}>
               {/* Product & Variant Pick */}
               <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)', padding: 12 }}>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -737,8 +738,9 @@ export const StorekeeperPortal = () => {
                 <SignaturePad onChange={setWorkerSignature} height={85} />
               </div>
 
-              {/* Modal Footer Buttons */}
-              <div className="modal-ft" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+              </div>{/* end scrollable body */}
+              {/* Modal Footer Buttons — pinned so Cancel/Submit are always visible */}
+              <div className="modal-ft" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setWalkinModalProduct(null)}>
                   Cancel
                 </button>
