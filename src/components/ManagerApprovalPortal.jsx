@@ -16,6 +16,7 @@ const PoApprovals = () => {
   const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
   const me = auth?.session?.user?.user_metadata?.display_name || auth?.session?.user?.email || 'Manager';
   const [orders, setOrders] = useState([]);
+  const [history, setHistory] = useState([]);
   const [reloadKey, setReloadKey] = useState(0);
   const [signing, setSigning] = useState(null); // PO being approved
   const [signature, setSignature] = useState('');
@@ -34,6 +35,7 @@ const PoApprovals = () => {
     const loadApprovals = async () => {
       let directPos = [];
       let mineOrders = [];
+      let decided = [];
 
       if (live) {
         try {
@@ -41,6 +43,17 @@ const PoApprovals = () => {
             fetchPurchaseOrders(scope).catch(() => ({ orders: [] })),
             fetchOrders(scope).catch(() => ({ orders: [] })),
           ]);
+          // Decided POs (what was approved/sent/received or rejected) → history.
+          decided = (poRes.orders ?? [])
+            .filter((p) => ['approved', 'sent', 'received', 'rejected'].includes(p.status))
+            .map((p) => ({
+              id: p.id, supplier: p.supplier, reference: p.reference || p.id?.slice(0, 8),
+              total: Number(p.total || 0), currency: (p.currency || 'ZAR').toUpperCase(),
+              status: p.status, approvedBy: p.approvedBy || null,
+              date: (p.approvedAt || p.receivedAt || p.sentAt || p.createdAt || '').slice(0, 10),
+              reason: p.rejectionReason || null,
+            }))
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
           directPos = (poRes.orders ?? []).filter((p) => {
             const isPending = p.status === 'pending_approval' || p.status === 'submit' || p.status === 'submitted' || p.status === 'draft';
             return isPending && p.status !== 'approved' && p.status !== 'sent' && p.status !== 'received' && p.status !== 'rejected' && !isDecided(p.id, p.reference);
@@ -81,6 +94,7 @@ const PoApprovals = () => {
           }
         }
         setOrders(combined);
+        setHistory(decided);
       }
     };
     loadApprovals();
@@ -175,6 +189,36 @@ const PoApprovals = () => {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Approval history — what was approved / rejected / received */}
+      {history.length > 0 && (
+        <>
+          <div className="card-hd" style={{ borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ClipboardList size={16} style={{ color: 'var(--text-subtle)' }} /><h3 style={{ fontSize: 15 }}>Approval history</h3></div>
+            <span className="badge badge-neutral">{history.length}</span>
+          </div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Reference</th><th>Supplier</th><th className="num">Total</th><th className="center">Outcome</th><th>Signed by</th><th>Date</th></tr></thead>
+              <tbody>
+                {history.map((h) => {
+                  const badge = h.status === 'rejected' ? 'badge-danger' : h.status === 'received' ? 'badge-success' : 'badge-info';
+                  return (
+                    <tr key={h.id}>
+                      <td style={{ fontWeight: 500 }}>{h.reference}</td>
+                      <td className="muted">{h.supplier}</td>
+                      <td className="num tabular">{rands(h.total, h.currency)}</td>
+                      <td className="center"><span className={`badge ${badge}`}>{h.status}</span>{h.status === 'rejected' && h.reason && <div className="eyebrow" style={{ color: 'var(--danger)', marginTop: 2 }}>{h.reason}</div>}</td>
+                      <td className="muted" style={{ fontSize: 12.5 }}>{h.approvedBy || '—'}</td>
+                      <td className="muted">{h.date || '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {/* Approve + signature modal */}
