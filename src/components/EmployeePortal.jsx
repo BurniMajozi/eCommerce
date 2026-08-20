@@ -186,7 +186,7 @@ export const EmployeePortal = () => {
           </div>
         </div>
         <div className="card-bd">
-          <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))' }}>
+          <div className="cards-cv" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))' }}>
             {filtered.map(p => {
               const ok = allowedCat(p);
               return (

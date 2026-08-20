@@ -471,7 +471,7 @@ export const StorekeeperPortal = () => {
           </div>
 
           {/* Product Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
+          <div className="cards-cv" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
             {filteredProducts.map((p) => {
               const opts = getVariantOptions(p);
               const allowed = catAllowed(p);

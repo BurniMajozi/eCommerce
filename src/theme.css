@@ -364,6 +364,11 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible { outline: 2px s
   .sidebar.collapsed .nav-item svg { width: 19px; height: 19px; }
 }
 
+/* Long catalogue/stock grids: let the browser skip rendering + layout for
+   off-screen cards. contain-intrinsic-size reserves space so the scrollbar and
+   scroll position stay stable. Cuts first-render and scroll cost on big lists. */
+.cards-cv > * { content-visibility: auto; contain-intrinsic-size: auto 320px; }
+
 .main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar { position: sticky; top: 0; z-index: 45; background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .hamburger { display: none; }
