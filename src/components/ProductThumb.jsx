@@ -5,7 +5,7 @@ import { catalogueImage } from '../data/catalogueImages';
 // Renders a product's real catalogue photo (extracted from the merchant's
 // picture sheet, keyed by SKU) with a graceful icon fallback when no image is
 // mapped or the file fails to load. `size` is the box height in px.
-export const ProductThumb = ({ sku, name, imageUrl, size = 66, className = '', style = {} }) => {
+const ProductThumbBase = ({ sku, name, imageUrl, size = 66, className = '', style = {} }) => {
   // Prefer the live image from Medusa (covers products added through the app),
   // then the bundled photo map (seeded catalogue), then the icon fallback.
   const src = (imageUrl && imageUrl.trim()) || catalogueImage(sku);
@@ -28,9 +28,14 @@ export const ProductThumb = ({ sku, name, imageUrl, size = 66, className = '', s
         src={src}
         alt={name || sku}
         loading="lazy"
+        decoding="async"
         onError={() => setFailed(true)}
         style={{ width: '100%', height: '100%', objectFit: 'contain' }}
       />
     </div>
   );
 };
+
+// Memoised: a grid of 30+ thumbnails shouldn't re-render when unrelated portal
+// state (a modal, a form field, a search box) changes.
+export const ProductThumb = React.memo(ProductThumbBase);

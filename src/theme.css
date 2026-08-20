@@ -203,9 +203,10 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -.01em; color: var
   bottom: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(10, 12, 16, 0.65);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  /* Solid scrim instead of a full-viewport backdrop-filter blur — blur over the
+     whole screen is very expensive to composite (it was freezing the tab on
+     modal open). A slightly more opaque scrim reads the same without the cost. */
+  background: rgba(10, 12, 16, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;
