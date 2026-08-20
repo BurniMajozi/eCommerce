@@ -40,6 +40,7 @@ export const AppProvider = ({ children }) => {
   // and the worker request flow enforce the same policy.
   const [entitlementRules, setEntitlementRules] = useState(() => buildDefaultRules());
   const addEntitlementRule = (rule) => setEntitlementRules((prev) => [{ ...rule, id: rule.id || newRuleId() }, ...prev]);
+  const updateEntitlementRule = (id, patch) => setEntitlementRules((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const removeEntitlementRule = (id) => setEntitlementRules((prev) => prev.filter((r) => r.id !== id));
   const [requests, setRequests] = useState(MOCK_REQUESTS);
   const [quotations, setQuotations] = useState(MOCK_QUOTATIONS);
@@ -470,6 +471,7 @@ export const AppProvider = ({ children }) => {
       createRequest,
       entitlementRules,
       addEntitlementRule,
+      updateEntitlementRule,
       removeEntitlementRule,
       approveRequest,
       rejectRequest,

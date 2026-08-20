@@ -9,7 +9,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { EmployeeAllocationReport } from './EmployeeAllocationReport';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { DEPARTMENTS, PPE_CATEGORIES } from '../entitlement/entitlement';
-import { FileBarChart, Plus, Play, Save, ArrowRight, Users, ListChecks, ShieldCheck, Trash2, PackageCheck, ClipboardList, GitBranch, ShieldQuestion, UserPlus, Mail, KeyRound, Copy, Loader2, RefreshCw, Download, Printer } from 'lucide-react';
+import { FileBarChart, Plus, Play, Save, ArrowRight, Users, ListChecks, ShieldCheck, Trash2, PackageCheck, ClipboardList, GitBranch, ShieldQuestion, UserPlus, Mail, KeyRound, Copy, Loader2, RefreshCw, Download, Printer, Pencil } from 'lucide-react';
 
 const rand = (n) => `R ${Number(n || 0).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
 
@@ -403,7 +403,8 @@ const permCell = (v, hot) => {
 };
 
 export const TenantAdminPortal = () => {
-  const { activePlant, triggerNotification, integrationMode, tenantAccess, auth, entitlementRules, addEntitlementRule, removeEntitlementRule, employees } = useApp();
+  const { activePlant, triggerNotification, integrationMode, tenantAccess, auth, entitlementRules, addEntitlementRule, updateEntitlementRule, removeEntitlementRule, employees } = useApp();
+  const [editingRuleId, setEditingRuleId] = useState(null);
   const commerceScope = {
     accessToken: auth?.session?.access_token,
     tenantId: tenantAccess?.activeTenantId,
@@ -433,12 +434,24 @@ export const TenantAdminPortal = () => {
     if (r.scope === 'individual') { const e = (employees || []).find((x) => x.id === r.target); return e ? e.name : r.target; }
     return r.target;
   };
-  const addRule = () => {
-    const target = nr.scope === 'all' ? '*' : (nr.scope === 'individual' ? (nr.target || (employees || [])[0]?.id) : nr.target);
-    addEntitlementRule({ scope: nr.scope, target, category: nr.category, qty: nr.qty, cycle: nr.cycle, threshold: nr.category === 'Arc Flash Protection' ? 'always 2nd approval' : 'auto-approve' });
-    triggerNotification('Entitlement rule added', `${scopeLabel[nr.scope]} ${nr.scope === 'all' ? '' : targetName({ scope: nr.scope, target })} → ${nr.category}: ${nr.qty || '∞'} per ${nr.cycle}.`, 'success');
+  const startEdit = (r) => {
+    setEditingRuleId(r.id);
+    setNr({ scope: r.scope, target: r.scope === 'all' ? '*' : r.target, category: r.category, qty: r.qty, cycle: r.cycle });
   };
-  const removeRule = (id) => removeEntitlementRule(id);
+  const cancelEdit = () => { setEditingRuleId(null); setNr({ scope: 'department', target: DEPARTMENTS[0], category: PPE_CATEGORIES[0], qty: 1, cycle: '6 months' }); };
+  const saveRule = () => {
+    const target = nr.scope === 'all' ? '*' : (nr.scope === 'individual' ? (nr.target || (employees || [])[0]?.id) : nr.target);
+    const threshold = nr.category === 'Arc Flash Protection' ? 'always 2nd approval' : 'auto-approve';
+    if (editingRuleId) {
+      updateEntitlementRule(editingRuleId, { scope: nr.scope, target, category: nr.category, qty: nr.qty, cycle: nr.cycle, threshold });
+      triggerNotification('Rule updated', `${scopeLabel[nr.scope]} ${nr.scope === 'all' ? '' : targetName({ scope: nr.scope, target })} → ${nr.category}: ${nr.qty || '∞'} per ${nr.cycle}.`, 'success');
+      cancelEdit();
+    } else {
+      addEntitlementRule({ scope: nr.scope, target, category: nr.category, qty: nr.qty, cycle: nr.cycle, threshold });
+      triggerNotification('Entitlement rule added', `${scopeLabel[nr.scope]} ${nr.scope === 'all' ? '' : targetName({ scope: nr.scope, target })} → ${nr.category}: ${nr.qty || '∞'} per ${nr.cycle}.`, 'success');
+    }
+  };
+  const removeRule = (id) => { if (editingRuleId === id) cancelEdit(); removeEntitlementRule(id); };
 
   const JOURNEY = [
     { icon: ListChecks, t: 'Entitlement rule', d: 'role gets X per cycle' },
@@ -514,7 +527,8 @@ export const TenantAdminPortal = () => {
             <input type="number" min="0" className="input" value={nr.qty} onChange={e => setNr({ ...nr, qty: parseInt(e.target.value) || 0 })} /></div>
           <div className="field" style={{ flex: '1 1 130px' }}><label className="field-label">Cycle</label>
             <select className="select" value={nr.cycle} onChange={e => setNr({ ...nr, cycle: e.target.value })}>{CYCLE_OPTS.map(o => <option key={o}>{o}</option>)}</select></div>
-          <button className="btn btn-primary" onClick={addRule}><Plus size={16} /> Add rule</button>
+          <button className="btn btn-primary" onClick={saveRule}>{editingRuleId ? <><Save size={16} /> Save changes</> : <><Plus size={16} /> Add rule</>}</button>
+          {editingRuleId && <button className="btn btn-secondary" onClick={cancelEdit}>Cancel</button>}
         </div>
 
         {/* Rules table */}
@@ -524,14 +538,17 @@ export const TenantAdminPortal = () => {
             <tbody>
               {(entitlementRules || []).length === 0 && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 20 }}>No entitlement rules yet.</td></tr>}
               {(entitlementRules || []).map((r) => (
-                <tr key={r.id}>
+                <tr key={r.id} className={editingRuleId === r.id ? 'row-flag' : ''}>
                   <td><span className="badge badge-neutral" style={{ fontSize: 10.5 }}>{scopeLabel[r.scope] || r.scope}</span></td>
                   <td style={{ fontWeight: 500 }}>{targetName(r)}</td>
                   <td>{r.category}</td>
                   <td className="num">{r.qty || '∞'}</td>
                   <td className="muted">{r.cycle}</td>
                   <td className="muted" style={{ fontSize: 12.5 }}>{r.threshold || 'auto-approve'}</td>
-                  <td className="center"><button className="icon-btn" style={{ width: 30, height: 30 }} onClick={() => removeRule(r.id)} aria-label="Remove rule"><Trash2 size={15} /></button></td>
+                  <td className="center" style={{ whiteSpace: 'nowrap' }}>
+                    <button className="icon-btn" style={{ width: 30, height: 30 }} onClick={() => startEdit(r)} aria-label="Edit rule" title="Edit"><Pencil size={14} /></button>
+                    <button className="icon-btn" style={{ width: 30, height: 30, marginLeft: 4 }} onClick={() => removeRule(r.id)} aria-label="Remove rule" title="Remove"><Trash2 size={15} /></button>
+                  </td>
                 </tr>
               ))}
             </tbody>
