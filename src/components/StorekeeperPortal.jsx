@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { getVariantOptions } from '../data/mockData';
+import { resolveEmployeeEntitlement } from '../entitlement/entitlement';
 import { ProductThumb } from './ProductThumb';
 import { SignaturePad } from './SignaturePad';
 import {
   QrCode, ScanLine, PackageOpen, ShieldCheck, CheckCircle2, Signature,
   ShoppingBag, Search, Plus, User, Camera, Image, AlertTriangle, Printer,
-  FileText, ArrowRight, X, Clock, Check, Building2, HardHat
+  FileText, ArrowRight, X, Clock, Check, Building2, HardHat, Lock
 } from 'lucide-react';
 
 const CATEGORIES = ['ALL', 'Footwear', 'Workwear', 'Hand Protection', 'Respiratory Protection', 'Eye Protection', 'Arc Flash Protection'];
@@ -18,7 +19,7 @@ const SAMPLE_HANDOVER_PHOTO = 'https://images.unsplash.com/photo-1542291026-7eec
 export const StorekeeperPortal = () => {
   const {
     products, requests, issueStockAndDeduct, employees, employeeAllocations,
-    createRequest, triggerNotification
+    createRequest, triggerNotification, entitlementRules
   } = useApp();
 
   const [portalTab, setPortalTab] = useState('walkin'); // 'walkin' default | 'queue'
@@ -122,11 +123,26 @@ export const StorekeeperPortal = () => {
     };
   }, [isCustomStaff, selectedEmpId, staffId, staffName, staffDept, staffRole, staffPlant, employees]);
 
+  // Entitlement scoped to the walk-in staff member being served — the same
+  // department/role/individual rules the worker's own request flow uses.
+  const staffEntitlement = useMemo(() => resolveEmployeeEntitlement(activeStaff, entitlementRules), [activeStaff, entitlementRules]);
+  const catAllowed = (p) => staffEntitlement.categories.has(p?.category);
+
   // Entitlement Rule Engine
   const entitlementCheck = useMemo(() => {
     if (!walkinModalProduct) return { isInfringement: false, reason: '', ruleLabel: 'Compliant' };
 
     const cat = walkinModalProduct.category || '';
+    // Department/role/individual entitlement: a category outside the selected
+    // employee's allocation must be co-signed by a manager.
+    if (!staffEntitlement.categories.has(cat)) {
+      return {
+        isInfringement: true,
+        tier: 2,
+        reason: `${cat || 'This item'} is not in ${activeStaff.department}'s entitlement — Section Manager co-sign required.`,
+        ruleLabel: 'Outside entitlement',
+      };
+    }
     const isCatA = cat === 'Footwear' || cat === 'Arc Flash Protection' || (walkinModalProduct.sellingPrice || 0) > 750;
     const isEarlyReason = issueReason === 'Damaged on shift' || issueReason === 'Lost / Emergency' || issueReason === 'Emergency replacement';
 
@@ -169,7 +185,7 @@ export const StorekeeperPortal = () => {
       ruleLabel: '100% Entitlement Compliant',
       tier: 0,
     };
-  }, [walkinModalProduct, issueReason, activeStaff, employeeAllocations]);
+  }, [walkinModalProduct, issueReason, activeStaff, employeeAllocations, staffEntitlement]);
 
   // Handle Walk-in Submission
   const handleWalkinSubmit = (e) => {
@@ -417,6 +433,15 @@ export const StorekeeperPortal = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Filter Bar */}
           <div className="card" style={{ padding: 12 }}>
+            {/* Serving — the walk-in employee whose entitlement scopes the catalogue */}
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', paddingBottom: 12, marginBottom: 12, borderBottom: '1px solid var(--border)' }}>
+              <span className="eyebrow" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><User size={13} /> Serving</span>
+              <select className="select" value={isCustomStaff ? '' : selectedEmpId} onChange={(e) => { setIsCustomStaff(false); setSelectedEmpId(e.target.value); }} style={{ width: 'auto', minWidth: 240, fontWeight: 600 }}>
+                {(employees || []).map((e) => <option key={e.id} value={e.id}>{e.name} · {e.role} · {e.department}</option>)}
+              </select>
+              <span className="badge badge-neutral" style={{ fontSize: 10.5 }} title={[...staffEntitlement.categories].join(', ')}>{activeStaff.department} · {staffEntitlement.categories.size} categories allowed</span>
+              <span className="muted" style={{ fontSize: 12 }}>Restricted items need a Section-Manager co-sign.</span>
+            </div>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', gap: 10, flex: '1 1 300px', alignItems: 'center' }}>
                 <div style={{ position: 'relative', width: '100%', maxWidth: 360 }}>
@@ -449,10 +474,12 @@ export const StorekeeperPortal = () => {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
             {filteredProducts.map((p) => {
               const opts = getVariantOptions(p);
+              const allowed = catAllowed(p);
               return (
-                <div key={p.sku} className="card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                  <div style={{ background: 'var(--surface-2)', padding: 16, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 140 }}>
+                <div key={p.sku} className="card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderColor: allowed ? 'var(--border)' : 'var(--warning)' }}>
+                  <div style={{ background: 'var(--surface-2)', padding: 16, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 140, position: 'relative' }}>
                     <ProductThumb sku={p.sku} name={p.name} imageUrl={p.imageUrl} size={110} />
+                    {!allowed && <span className="badge badge-warning" style={{ position: 'absolute', top: 8, left: 8, fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Lock size={10} /> Restricted</span>}
                   </div>
                   <div className="card-bd" style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 8, padding: 14 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -463,16 +490,18 @@ export const StorekeeperPortal = () => {
                     </div>
                     <div style={{ fontWeight: 600, fontSize: 14.5, minHeight: 40, lineHeight: 1.3 }}>{p.name}</div>
                     <div className="muted" style={{ fontSize: 12 }}>SKU: {p.sku} · {opts.sizes.length} sizes</div>
+                    {!allowed && <div style={{ fontSize: 11.5, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}><AlertTriangle size={12} /> Not in {activeStaff.department}'s entitlement</div>}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: 10 }}>
                       <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--primary)' }}>
                         R {Number(p.sellingPrice || 0).toFixed(2)}
                       </div>
                       <button
-                        className="btn btn-primary btn-sm"
+                        className={`btn btn-sm ${allowed ? 'btn-primary' : 'btn-secondary'}`}
                         disabled={p.stockOnHand <= 0}
+                        title={allowed ? 'Issue to staff' : `Outside ${activeStaff.department}'s entitlement — needs a manager co-sign`}
                         onClick={() => openWalkinModal(p)}
                       >
-                        <Plus size={14} /> Issue to staff
+                        {allowed ? <><Plus size={14} /> Issue to staff</> : <><Lock size={13} /> Issue (co-sign)</>}
                       </button>
                     </div>
                   </div>
