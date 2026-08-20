@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { fetchPurchaseOrders, updatePurchaseOrder, fetchOrders, updateOrder, fetchPromotions, updatePromotion, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { SignaturePad } from './SignaturePad';
+import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import {
-  Bell, ShieldCheck, AlertTriangle, Check, X, Eye, ArrowRight, ClipboardList, ClipboardCheck, PenLine, Loader2, Factory, BadgePercent
+  Bell, ShieldCheck, AlertTriangle, Check, X, Eye, ArrowRight, ClipboardList, ClipboardCheck, PenLine, Loader2, Factory, BadgePercent, Search, Download, HardHat
 } from 'lucide-react';
 
 const rands = (n, cur = 'ZAR') => `${cur === 'ZAR' ? 'R' : cur + ' '}${Number(n || 0).toLocaleString('en-ZA')}`;
@@ -16,7 +17,6 @@ const PoApprovals = () => {
   const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
   const me = auth?.session?.user?.user_metadata?.display_name || auth?.session?.user?.email || 'Manager';
   const [orders, setOrders] = useState([]);
-  const [history, setHistory] = useState([]);
   const [reloadKey, setReloadKey] = useState(0);
   const [signing, setSigning] = useState(null); // PO being approved
   const [signature, setSignature] = useState('');
@@ -35,7 +35,6 @@ const PoApprovals = () => {
     const loadApprovals = async () => {
       let directPos = [];
       let mineOrders = [];
-      let decided = [];
 
       if (live) {
         try {
@@ -43,17 +42,6 @@ const PoApprovals = () => {
             fetchPurchaseOrders(scope).catch(() => ({ orders: [] })),
             fetchOrders(scope).catch(() => ({ orders: [] })),
           ]);
-          // Decided POs (what was approved/sent/received or rejected) → history.
-          decided = (poRes.orders ?? [])
-            .filter((p) => ['approved', 'sent', 'received', 'rejected'].includes(p.status))
-            .map((p) => ({
-              id: p.id, supplier: p.supplier, reference: p.reference || p.id?.slice(0, 8),
-              total: Number(p.total || 0), currency: (p.currency || 'ZAR').toUpperCase(),
-              status: p.status, approvedBy: p.approvedBy || null,
-              date: (p.approvedAt || p.receivedAt || p.sentAt || p.createdAt || '').slice(0, 10),
-              reason: p.rejectionReason || null,
-            }))
-            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
           directPos = (poRes.orders ?? []).filter((p) => {
             const isPending = p.status === 'pending_approval' || p.status === 'submit' || p.status === 'submitted' || p.status === 'draft';
             return isPending && p.status !== 'approved' && p.status !== 'sent' && p.status !== 'received' && p.status !== 'rejected' && !isDecided(p.id, p.reference);
@@ -94,7 +82,6 @@ const PoApprovals = () => {
           }
         }
         setOrders(combined);
-        setHistory(decided);
       }
     };
     loadApprovals();
@@ -189,36 +176,6 @@ const PoApprovals = () => {
             </tbody>
           </table>
         </div>
-      )}
-
-      {/* Approval history — what was approved / rejected / received */}
-      {history.length > 0 && (
-        <>
-          <div className="card-hd" style={{ borderTop: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ClipboardList size={16} style={{ color: 'var(--text-subtle)' }} /><h3 style={{ fontSize: 15 }}>Approval history</h3></div>
-            <span className="badge badge-neutral">{history.length}</span>
-          </div>
-          <div className="table-wrap">
-            <table className="table">
-              <thead><tr><th>Reference</th><th>Supplier</th><th className="num">Total</th><th className="center">Outcome</th><th>Signed by</th><th>Date</th></tr></thead>
-              <tbody>
-                {history.map((h) => {
-                  const badge = h.status === 'rejected' ? 'badge-danger' : h.status === 'received' ? 'badge-success' : 'badge-info';
-                  return (
-                    <tr key={h.id}>
-                      <td style={{ fontWeight: 500 }}>{h.reference}</td>
-                      <td className="muted">{h.supplier}</td>
-                      <td className="num tabular">{rands(h.total, h.currency)}</td>
-                      <td className="center"><span className={`badge ${badge}`}>{h.status}</span>{h.status === 'rejected' && h.reason && <div className="eyebrow" style={{ color: 'var(--danger)', marginTop: 2 }}>{h.reason}</div>}</td>
-                      <td className="muted" style={{ fontSize: 12.5 }}>{h.approvedBy || '—'}</td>
-                      <td className="muted">{h.date || '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
       )}
 
       {/* Approve + signature modal */}
@@ -351,6 +308,7 @@ const PoApprovalHistory = () => {
   const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
   const [history, setHistory] = useState([]);
   const [reloadKey, setReloadKey] = useState(0);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!live) { setHistory([]); return; }
@@ -365,28 +323,105 @@ const PoApprovalHistory = () => {
 
   if (!live) return null;
   const sb = { approved: 'badge-success', rejected: 'badge-danger', sent: 'badge-info', received: 'badge-success' };
+  const q = search.trim().toLowerCase();
+  const decidedDate = (po) => (po.approvedAt || po.submittedAt || po.createdAt || '').slice(0, 10);
+  const rows = history.filter((po) => !q || [po.reference, po.supplier, po.approvedBy, po.status].some((v) => String(v || '').toLowerCase().includes(q)));
+  const exportCsv = () => downloadCsv(`po-approval-history-${dateStamp()}`, [
+    { key: 'reference', label: 'Reference', map: (p) => p.reference || p.id },
+    { key: 'supplier', label: 'Supplier' },
+    { key: 'total', label: 'Total', map: (p) => Number(p.total || 0).toFixed(2) },
+    { key: 'status', label: 'Decision' },
+    { key: 'approvedBy', label: 'Approved by', map: (p) => p.approvedBy || '' },
+    { key: 'date', label: 'Date', map: decidedDate },
+  ], rows);
 
   return (
     <div className="card">
-      <div className="card-hd">
+      <div className="card-hd" style={{ gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ClipboardCheck size={17} style={{ color: 'var(--primary)' }} /><h3>PO approval history</h3></div>
-        <span className={`badge ${history.length ? 'badge-neutral' : 'badge-neutral'}`}>{history.length} decided</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Search size={14} style={{ position: 'absolute', left: 9, color: 'var(--text-subtle)' }} />
+            <input className="input" placeholder="Search reference, supplier…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 30, width: 200, height: 34 }} />
+          </div>
+          <button className="btn btn-secondary btn-sm" onClick={exportCsv} disabled={!rows.length}><Download size={14} /> CSV</button>
+          <span className="badge badge-neutral">{rows.length} decided</span>
+        </div>
       </div>
-      {history.length === 0 ? (
-        <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>No purchase orders have been approved or rejected yet.</div>
+      {rows.length === 0 ? (
+        <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>{history.length ? 'No POs match your search.' : 'No purchase orders have been approved or rejected yet.'}</div>
       ) : (
         <div className="table-wrap">
           <table className="table">
             <thead><tr><th>Reference</th><th>Supplier</th><th className="num">Total</th><th className="center">Decision</th><th>Approved by</th><th>Date</th></tr></thead>
             <tbody>
-              {history.map((po) => (
+              {rows.map((po) => (
                 <tr key={po.id}>
                   <td style={{ fontWeight: 500 }}>{po.reference || po.id.slice(0, 8)}</td>
                   <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Factory size={13} style={{ color: 'var(--text-subtle)' }} />{po.supplier}</span></td>
                   <td className="num tabular">R {Number(po.total || 0).toLocaleString('en-ZA')}</td>
                   <td className="center"><span className={`badge ${sb[po.status] || 'badge-neutral'}`}>{String(po.status).replace(/_/g, ' ')}</span></td>
                   <td className="muted">{po.approvedBy || (po.status === 'rejected' ? 'rejected' : '—')}</td>
-                  <td className="muted">{(po.approvedAt || po.submittedAt || po.createdAt || '').slice(0, 10)}</td>
+                  <td className="muted">{decidedDate(po)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// PPE request approval history — internal issue requests the manager has
+// approved or rejected (from the app's request state), with search + CSV.
+const RequestApprovalHistory = () => {
+  const { requests } = useApp();
+  const [search, setSearch] = useState('');
+  const decided = (requests || [])
+    .filter((r) => ['APPROVED', 'REJECTED', 'FULFILLED_DISPATCHED', 'COLLECTED'].includes(r.status))
+    .sort((a, b) => String(b.requestDate || '').localeCompare(String(a.requestDate || '')));
+  const q = search.trim().toLowerCase();
+  const rows = decided.filter((r) => !q || [r.id, r.itemName, r.employeeName, r.department, r.status].some((v) => String(v || '').toLowerCase().includes(q)));
+  const badge = (s) => (s === 'REJECTED' ? 'badge-danger' : s === 'APPROVED' ? 'badge-success' : 'badge-info');
+  const exportCsv = () => downloadCsv(`ppe-request-history-${dateStamp()}`, [
+    { key: 'id', label: 'Request' },
+    { key: 'itemName', label: 'Item' },
+    { key: 'employeeName', label: 'Employee' },
+    { key: 'department', label: 'Department' },
+    { key: 'status', label: 'Decision' },
+    { key: 'approvedBy', label: 'Signed by', map: (r) => r.approvedBy || r.signedBy || '' },
+    { key: 'requestDate', label: 'Date', map: (r) => (r.requestDate || '').slice(0, 10) },
+  ], rows);
+
+  return (
+    <div className="card">
+      <div className="card-hd" style={{ gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><HardHat size={17} style={{ color: 'var(--primary)' }} /><h3>PPE request approval history</h3></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Search size={14} style={{ position: 'absolute', left: 9, color: 'var(--text-subtle)' }} />
+            <input className="input" placeholder="Search item, employee…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 30, width: 200, height: 34 }} />
+          </div>
+          <button className="btn btn-secondary btn-sm" onClick={exportCsv} disabled={!rows.length}><Download size={14} /> CSV</button>
+          <span className="badge badge-neutral">{rows.length} decided</span>
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>{decided.length ? 'No requests match your search.' : 'No PPE requests have been decided yet.'}</div>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Request</th><th>Item</th><th>Employee</th><th>Department</th><th className="center">Decision</th><th>Date</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td className="muted">{r.id}</td>
+                  <td style={{ fontWeight: 500 }}>{r.itemName}</td>
+                  <td>{r.employeeName}</td>
+                  <td className="muted">{r.department}</td>
+                  <td className="center"><span className={`badge ${badge(r.status)}`}>{String(r.status).replace(/_/g, ' ').toLowerCase()}</span></td>
+                  <td className="muted">{(r.requestDate || '').slice(0, 10)}</td>
                 </tr>
               ))}
             </tbody>
@@ -430,15 +465,12 @@ export const ManagerApprovalPortal = () => {
         </div>
       </div>
 
-      <PoApprovals />
-      <PromoSubmissions />
-      <PoApprovalHistory />
-
+      {/* ── Approvals (top): pending PPE requests, PO approvals, promo sign-off ── */}
       {pending.length === 0 ? (
         <div className="card">
           <div className="card-bd" style={{ textAlign: 'center', padding: '48px 20px' }}>
             <ShieldCheck size={40} style={{ color: 'var(--success)' }} />
-            <h3 style={{ marginTop: 12 }}>All approval queues clear</h3>
+            <h3 style={{ marginTop: 12 }}>All PPE request queues clear</h3>
             <p className="muted" style={{ marginTop: 6, fontSize: 13.5 }}>No PPE requests are waiting on a signature.</p>
           </div>
         </div>
@@ -509,6 +541,16 @@ export const ManagerApprovalPortal = () => {
           ))}
         </div>
       )}
+
+      <PoApprovals />
+      <PromoSubmissions />
+
+      {/* ── History (below): what has already been decided ── */}
+      <div className="page-head" style={{ marginBottom: 0, marginTop: 6 }}>
+        <div><h2 style={{ fontSize: 18 }}>Approval history</h2><p style={{ fontSize: 13 }}>Search or export what was approved, rejected or received.</p></div>
+      </div>
+      <PoApprovalHistory />
+      <RequestApprovalHistory />
 
       {declining && (
         <div className="overlay" onClick={() => setDeclining(null)}>
