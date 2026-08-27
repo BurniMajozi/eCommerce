@@ -42,12 +42,14 @@ const InviteMember = ({ roles, onInvite }) => {
 };
 
 // Estimated MRR per tenant from the plan (matches the public pricing model):
-// Merchant R990, Plant R5,900 + R6/user over 200, Group R24,900, trial R0.
+// Merchant R990, Plant R5,900 + R250/user over 200,
+// Group R24,900 + R150/user over 200, trial R0.
 const PLAN_PRICE = { trial: 0, merchant: 990, plant: 5900, group: 24900 };
 const estimateMrr = (t) => {
   const base = PLAN_PRICE[(t.plan || 'trial').toLowerCase()] ?? 0;
   const plan = (t.plan || '').toLowerCase();
-  const seats = plan === 'plant' ? Math.max(0, (t.users || 0) - 200) * 6 : 0;
+  const perSeat = plan === 'plant' ? 250 : plan === 'group' ? 150 : 0;
+  const seats = Math.max(0, (t.users || 0) - 200) * perSeat;
   return base + seats;
 };
 
@@ -430,7 +432,7 @@ export const PlatformOwnerPortal = () => {
                 </tbody>
               </table>
             </div>
-            <p className="muted" style={{ fontSize: 12, marginBottom: 0, marginTop: 12 }}>Plan &amp; member counts are live. MRR is estimated from the published pricing (Merchant R990 · Plant R5,900 +R6/user over 200 · Group R24,900); a metered charging engine isn’t wired yet.</p>
+            <p className="muted" style={{ fontSize: 12, marginBottom: 0, marginTop: 12 }}>Plan &amp; member counts are live. MRR is estimated from the published pricing (Merchant R990 · Plant R5,900 + R250/user over 200 · Group R24,900 + R150/user over 200); a metered charging engine isn’t wired yet.</p>
           </div>
         </div>
 

@@ -144,8 +144,9 @@ const LENSES = [
 ];
 
 const FAQ = [
-  ['Why is Plant priced per user?', 'The platform bills on usage, so a plant with thousands of workers drives more compute, storage and traffic than a small one. The base covers up to 200 users; beyond that a small per-active-user fee keeps your plan fair and predictable as you scale.'],
+  ['Why is Plant priced per user?', 'The platform bills on usage, so a plant with thousands of workers drives more compute, storage and traffic than a small one. The base covers up to 200 users; beyond that, tiered active-seat pricing keeps your plan predictable as you scale.'],
   ['Can one company run several plants?', "That's the Group tier. Each plant is an isolated site with its own stock, users and approvals, rolled up into consolidated valuation and spend for the group."],
+  ['Can SightLive run in our own environment?', 'Yes. SightLive can be deployed in the cloud or in your local environment, subject to an infrastructure and security assessment.'],
   ['Do workers need logins?', 'Workers are provisioned in-app by a tenant admin and only see the Request & custody views. Privileged roles use step-up MFA.'],
   ['Is our data isolated?', 'Every tenant is scoped at the database with row-level security, and every screen and write is capability-gated. Group audit exports are available on Enterprise.'],
   ['Can we import our catalogue?', 'Yes — CSV import with a downloadable template and a dry-run validation, plus per-product photo upload for the storefront and issue records.'],
@@ -321,7 +322,7 @@ export const LandingPage = ({ onSignIn }) => {
               <h3>Plant</h3>
               <p className="desc">For a single mine plant or site running the full PPE control loop.</p>
               <div className="price"><span className="amt mono">{plant}</span><span className="per">/ month</span>{annual && <span className="strike mono">R6,900</span>}</div>
-              <div className="seatline">Includes <b>200 users</b>, then <b>from R6</b> / active user / mo</div>
+              <div className="seatline">Includes <b>200 users</b>, then <b>R250</b> / active seat / month</div>
               <ul>
                 <li><span className="chk">✓</span> <b>Everything in Merchant</b>, plus:</li>
                 <li><span className="chk">✓</span> Unlimited worker PPE requests</li>
@@ -339,7 +340,7 @@ export const LandingPage = ({ onSignIn }) => {
               <h3>Group</h3>
               <p className="desc">For a mining group running many plants under one roof.</p>
               <div className="price"><span className="amt mono">From R24,900</span><span className="per">/ month</span></div>
-              <div className="seatline">Multi-site · <b>volume</b> per-seat pricing · custom</div>
+              <div className="seatline">Multi-site · from <b>R150</b> / active seat / month</div>
               <ul>
                 <li><span className="chk">✓</span> <b>Everything in Plant</b>, across every site</li>
                 <li><span className="chk">✓</span> Consolidated valuation &amp; spend roll-up</li>
@@ -353,10 +354,11 @@ export const LandingPage = ({ onSignIn }) => {
 
           <div className="addons">
             <div className="addon"><div className="t">Extra site</div><div className="p mono">+R4,900 / mo</div><div className="d">Add a plant or store to a Plant/Group plan.</div></div>
-            <div className="addon"><div className="t">Active users</div><div className="p mono">from R6 / user</div><div className="d">Beyond the 200 included — volume-banded down at scale.</div></div>
+            <div className="addon"><div className="t">Active seats</div><div className="p mono">R250 → R150 / seat</div><div className="d">R250 per active seat beyond the 200 included, reducing to R150 at Enterprise volume.</div></div>
             <div className="addon"><div className="t">White-label</div><div className="p mono">+R2,500 / mo</div><div className="d">Your brand, logo and domain on the portal.</div></div>
-            <div className="addon"><div className="t">Dedicated env</div><div className="p mono">From R9,900 / mo</div><div className="d">Isolated deployment for compliance needs.</div></div>
+            <div className="addon"><div className="t">Deployment</div><div className="p mono">Cloud or local</div><div className="d">Managed cloud or deployment in your local environment, scoped to your requirements.</div></div>
           </div>
+          <p className="disc">Prices exclude VAT, setup, change request, and maintenance fees. SightLive can be deployed in the cloud or in your local environment; deployment requirements are scoped separately.</p>
         </div>
       </section>
 
@@ -382,7 +384,7 @@ export const LandingPage = ({ onSignIn }) => {
               <a className="btn btn-ghost" href="#pricing">Choose a plan</a>
             </div>
           </div>
-          <p className="disc">SightLive is a multi-tenant PPE stock-management platform. Pricing shown is in South African Rand, excludes VAT, and is indicative for launch. Company sectors are shown to describe fit, not to imply endorsement.</p>
+          <p className="disc">SightLive is a multi-tenant PPE stock-management platform. Pricing shown is in South African Rand and is indicative for launch. Company sectors are shown to describe fit, not to imply endorsement.</p>
         </div>
       </section>
 
