@@ -188,6 +188,18 @@ export const storeVerify = (reference, scope) => scopedJson(`/app/store/verify?r
 export const fetchStoreOrders = (scope) => scopedJson('/app/store/orders', scope);
 export const collectStoreOrder = (id, pickupCode, scope) => scopedJson(`/app/store/orders/${id}`, { ...scope, method: 'PATCH', body: { pickupCode } });
 
+// AgentMail transactional email. `template` is one of the server-side templates
+// (po_decision, request_decision, sale_confirmation, promo, purchase_order,
+// invoice); the server builds the HTML and sends. No-ops server-side until the
+// AgentMail env is configured. Never throws — email must not break the action.
+export async function sendNotificationEmail(template, to, data, scope, cc) {
+  try {
+    return await scopedJson('/app/notifications/email', { ...scope, method: 'POST', body: { template, to, cc, data } });
+  } catch (e) {
+    return { sent: false, error: e?.message || 'email failed' };
+  }
+}
+
 export const runEngineWorkflow = (body, scope) => scopedJson('/app/engine/run', {
   ...scope,
   method: 'POST',

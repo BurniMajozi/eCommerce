@@ -4,6 +4,9 @@ import { updateInventoryLevelsWorkflow } from '@medusajs/medusa/core-flows';
 import { readCatalogueData } from '../../../../../catalogue/read';
 import { assertCapability, assertAnyCapability, ScopeError } from '../../../../../security/tenant-scope';
 import type { TenantScopedRequest } from '../../../../middlewares/tenant-scope';
+import { getServiceClient } from '../../../../../security/supabase-scope-resolver';
+import { sendEmailAsync } from '../../../../../lib/agentmail';
+import { poDecisionEmail } from '../../../../../lib/email-templates';
 
 const finite = (v: any): number => (typeof v === 'number' && Number.isFinite(v) ? v : (v == null || isNaN(Number(v)) ? 0 : Number(v)));
 // Separation of duties: the buyer (commerce.manage) submits; a manager
@@ -141,6 +144,24 @@ export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Prom
     }
 
     await db('purchase_orders').where({ id: req.params.id, tenant_id: scope.tenantId }).update(patch);
+
+    // Approvals email: notify the buyer who raised the PO of the decision.
+    // Recipient is resolved server-side from created_by; best-effort, never blocks.
+    if ((action === 'approve' || action === 'reject') && po.created_by) {
+      try {
+        const { data } = await getServiceClient().auth.admin.getUserById(String(po.created_by));
+        const email = data?.user?.email;
+        if (email) {
+          const { subject, html, text } = poDecisionEmail({
+            reference: po.reference, decision: action === 'approve' ? 'approved' : 'rejected',
+            supplier: po.supplier_name, approver: patch.approved_by, reason: patch.rejection_reason,
+            total: Number(po.total), currency: po.currency,
+          });
+          sendEmailAsync({ to: email, subject, html, text, labels: ['po_decision'] }, `po ${action}`);
+        }
+      } catch { /* email is best-effort */ }
+    }
+
     res.json({ id: req.params.id, status: patch.status ?? po.status, stock: stockResult });
   } catch (error) {
     if (error instanceof ScopeError) { res.status(error.status).json({ code: error.code, message: error.message }); return; }

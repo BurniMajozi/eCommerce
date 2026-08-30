@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { InvoiceModal } from './InvoiceModal';
 import { ProductThumb } from './ProductThumb';
-import { createOrder, fetchOrders, fetchParties, fetchPurchaseOrders, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { createOrder, fetchOrders, fetchParties, fetchPurchaseOrders, sendNotificationEmail, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { MOCK_PARTIES, MOCK_PLANTS } from '../data/mockData';
 import { Receipt, Plus, FileText, ArrowRight, Store, TrendingUp, Loader2, Factory } from 'lucide-react';
 
@@ -110,6 +110,14 @@ export const QuotationInvoicingPortal = () => {
           items: items.map(i => ({ sku: i.sku, qty: i.qty, unitPrice: i.unitPrice, name: i.name }))
         }, scope);
         triggerNotification('Order placed', `Draft order created for ${clientName}.`, 'success');
+        // Sales confirmation email to the customer (AgentMail; no-ops until configured).
+        if (cust?.email) {
+          sendNotificationEmail('sale_confirmation', cust.email, {
+            reference: poNumber || clientName, buyerName: clientName, kind: 'b2b',
+            lines: items.map(i => ({ name: i.name, sku: i.sku, qty: i.qty, unitPrice: i.unitPrice })),
+            subtotal, total: subtotal + vat, currency: 'ZAR',
+          }, scope);
+        }
         setItems([]);
         loadOrders();
       } catch (err) {
@@ -334,7 +342,15 @@ export const QuotationInvoicingPortal = () => {
         </div>
       </div>
 
-      {selectedInvoice && <InvoiceModal invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />}
+      {selectedInvoice && (
+        <InvoiceModal
+          invoice={selectedInvoice}
+          onClose={() => setSelectedInvoice(null)}
+          scope={scope}
+          triggerNotification={triggerNotification}
+          recipientEmail={selectedInvoice.email || customers.find(c => c.company === selectedInvoice.clientName || c.email === selectedInvoice.email)?.email || null}
+        />
+      )}
     </div>
   );
 };

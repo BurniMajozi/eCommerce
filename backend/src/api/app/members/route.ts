@@ -3,6 +3,8 @@ import { randomBytes } from 'crypto';
 import { assertCapability, ScopeError } from '../../../security/tenant-scope';
 import type { TenantScopedRequest } from '../../middlewares/tenant-scope';
 import { getServiceClient } from '../../../security/supabase-scope-resolver';
+import { sendEmailAsync } from '../../../lib/agentmail';
+import { inviteEmail } from '../../../lib/email-templates';
 
 // Roles a tenant admin may assign in-app (platform_owner is intentionally excluded).
 const ASSIGNABLE_ROLES = ['worker', 'storekeeper', 'supervisor', 'manager', 'executive', 'merchant', 'tenant_admin'];
@@ -119,6 +121,14 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
     await db.from('membership_roles').delete().eq('membership_id', membershipId);
     await db.from('membership_roles').insert({ membership_id: membershipId, role_id: roleRow.id });
     if (siteId) await db.from('membership_sites').upsert({ membership_id: membershipId, site_id: siteId, tenant_id: scope.tenantId }, { onConflict: 'membership_id,site_id' });
+
+    // Welcome / invite email (AgentMail) — only for a freshly-created user, so
+    // an existing member isn't emailed a password they don't have. No-ops if
+    // email isn't configured; never blocks the invite.
+    if (tempPasswordOut) {
+      const { subject, html, text } = inviteEmail({ name, email, role, tempPassword: tempPasswordOut, loginUrl: (process.env.APP_PUBLIC_URL ?? '').trim() || undefined });
+      sendEmailAsync({ to: email, subject, html, text, labels: ['invite'] }, `invite ${email}`);
+    }
 
     res.status(201).json({ userId, email, role, name, tempPassword: tempPasswordOut });
   } catch (error) {

@@ -2,6 +2,8 @@ import type { MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { assertAnyCapability, ScopeError } from '../../../../security/tenant-scope';
 import type { TenantScopedRequest } from '../../../middlewares/tenant-scope';
+import { sendEmailAsync } from '../../../../lib/agentmail';
+import { saleConfirmationEmail } from '../../../../lib/email-templates';
 
 const BUY_CAPS = ['ppe.request.create', 'commerce.read', 'commerce.manage', 'platform.manage'];
 const pg = (req: TenantScopedRequest) => req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as any;
@@ -43,6 +45,17 @@ export async function GET(req: TenantScopedRequest, res: MedusaResponse): Promis
       if (Number(data.amount) < expected) throw new ScopeError(400, 'amount_mismatch', 'Paid amount does not match the order.');
       await db('store_orders').where({ id: order.id }).update({ status: 'paid', paid_at: new Date().toISOString(), updated_at: new Date().toISOString() });
       const fresh = await db('store_orders').where({ id: order.id }).first();
+      // Sale confirmation + pickup code to the contractor (only on the paid
+      // transition, so it isn't re-sent on idempotent re-checks). No-ops if
+      // email isn't configured; never blocks the response.
+      if (fresh.buyer_email) {
+        const { subject, html, text } = saleConfirmationEmail({
+          reference: fresh.reference, buyerName: fresh.buyer_name, kind: 'store', lines: fresh.lines ?? [],
+          subtotal: Number(fresh.subtotal), discount: Number(fresh.discount), total: Number(fresh.total),
+          currency: fresh.currency, pickupCode: fresh.pickup_code,
+        });
+        sendEmailAsync({ to: fresh.buyer_email, subject, html, text, labels: ['sale_confirmation'] }, `store sale ${fresh.reference}`);
+      }
       res.json({ paid: true, order: toApi(fresh) });
       return;
     }

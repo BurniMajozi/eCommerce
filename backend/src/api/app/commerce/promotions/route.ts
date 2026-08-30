@@ -4,6 +4,9 @@ import { randomUUID } from 'crypto';
 import { assertCapability, assertAnyCapability, ScopeError } from '../../../../security/tenant-scope';
 import type { TenantScopedRequest } from '../../../middlewares/tenant-scope';
 import { readCatalogueData } from '../../../../catalogue/read';
+import { getServiceClient } from '../../../../security/supabase-scope-resolver';
+import { sendEmailAsync, isEmailEnabled } from '../../../../lib/agentmail';
+import { promoEmail } from '../../../../lib/email-templates';
 
 // Product promotions: a merchant marks a catalogue product down by a percentage
 // (type markdown | new | upgrade | focus). There is NO approval gate — creating a
@@ -112,6 +115,39 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
       updated_at: now(),
     });
     const [row] = await pg(req)('product_promotions').where({ id, tenant_id: scope.tenantId });
+
+    // Notify managers of the new promo (visibility). Recipients are resolved
+    // server-side from the tenant's manager/supervisor memberships. Best-effort:
+    // never blocks the create, no-ops if email isn't configured.
+    if (isEmailEnabled()) {
+      try {
+        const admin = getServiceClient();
+        const { data: roleRows } = await admin.from('roles').select('id').in('key', ['manager', 'supervisor']);
+        const roleIds = (roleRows ?? []).map((r: any) => r.id);
+        if (roleIds.length) {
+          const { data: mr } = await admin.from('membership_roles').select('membership_id').in('role_id', roleIds);
+          const mids = [...new Set((mr ?? []).map((x: any) => x.membership_id))];
+          if (mids.length) {
+            const { data: mems } = await admin.from('memberships').select('user_id').eq('tenant_id', scope.tenantId).eq('status', 'active').in('id', mids as any[]);
+            const userIds = [...new Set((mems ?? []).map((x: any) => x.user_id))].slice(0, 25);
+            const emails: string[] = [];
+            for (const uid of userIds) {
+              const { data } = await admin.auth.admin.getUserById(uid as string);
+              if (data?.user?.email) emails.push(data.user.email);
+            }
+            if (emails.length) {
+              const { subject, html, text } = promoEmail({
+                sku: snap.sku, name: snap.sku, promoType, discountPct,
+                costWas: snap.cost || undefined, costNow: snap.cost ? snap.cost * (1 - discountPct / 100) : undefined,
+                currency: (process.env.CURRENCY ?? 'zar').toUpperCase(), createdBy: scope.userId ?? undefined,
+              });
+              sendEmailAsync({ to: emails, subject, html, text, labels: ['promo'] }, 'promo managers');
+            }
+          }
+        }
+      } catch { /* email is best-effort */ }
+    }
+
     res.status(201).json({ promotion: toApi(row) });
   } catch (error) {
     if (error instanceof ScopeError) { res.status(error.status).json({ code: error.code, message: error.message }); return; }

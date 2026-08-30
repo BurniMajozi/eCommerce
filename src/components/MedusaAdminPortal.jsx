@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, updateOrder, fetchCommerceConfig, fetchEngine, runEngineWorkflow, fetchParties, createParty, updateParty, deleteParty, fetchPurchaseOrders, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchPromotions, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, updateOrder, fetchCommerceConfig, fetchEngine, runEngineWorkflow, fetchParties, createParty, updateParty, deleteParty, fetchPurchaseOrders, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchPromotions, sendNotificationEmail, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { InlineError, InlineLoading } from './InlineState';
 import { ProductThumb } from './ProductThumb';
@@ -591,14 +591,26 @@ export const MedusaAdminPortal = ({ view }) => {
     </body></html>`);
     w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
   };
-  // Share via the merchant's email client (mailto), then mark the PO sent.
-  const emailPo = (po) => {
+  // Email the PO to the supplier via AgentMail (server-built template), then
+  // mark it sent. If the supplier has no email on file, fall back to the
+  // merchant's own mail client (mailto) so the send can still be done manually.
+  const emailPo = async (po) => {
     const supplier = (parties?.suppliers ?? []).find((s) => s.id === po.supplierId);
     const to = supplier?.email && !String(supplier.email).endsWith('parties.sightlive.local') ? supplier.email : '';
-    const lines = (po.lines ?? []).map((l) => `- ${l.name} (${l.sku}) x${l.qty} @ R${Number(l.unit_cost || 0).toFixed(2)}`).join('%0D%0A');
-    const subject = encodeURIComponent(`Purchase Order ${po.reference || po.id.slice(0, 8)} — SightLive`);
-    const body = `Dear ${po.supplier},%0D%0A%0D%0APlease find our purchase order below.%0D%0A%0D%0A${lines}%0D%0A%0D%0ATotal: ${po.currency} ${Number(po.total || 0).toLocaleString('en-ZA')}%0D%0A${po.expectedDate ? 'Expected delivery: ' + po.expectedDate + '%0D%0A' : ''}%0D%0AApproved by ${po.approvedBy || 'management'}.%0D%0A%0D%0ARegards,%0D%0ASightLive Procurement`;
-    window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank');
+    if (to) {
+      const r = await sendNotificationEmail('purchase_order', to, {
+        reference: po.reference || po.id.slice(0, 8), supplier: po.supplier, lines: po.lines ?? [],
+        total: po.total, currency: po.currency, expectedDate: po.expectedDate, approvedBy: po.approvedBy, createdAt: po.createdAt,
+      }, commerceScope);
+      if (r?.sent) triggerNotification('PO emailed', `Sent to ${to}.`, 'success');
+      else if (r?.skipped) triggerNotification('PO marked sent', 'Email isn’t configured yet — set AGENTMAIL keys to email suppliers automatically.', 'info');
+      else triggerNotification('Email not sent', r?.error || 'Could not email the supplier; marking as sent.', 'warning');
+    } else {
+      const lines = (po.lines ?? []).map((l) => `- ${l.name} (${l.sku}) x${l.qty} @ R${Number(l.unit_cost || 0).toFixed(2)}`).join('%0D%0A');
+      const subject = encodeURIComponent(`Purchase Order ${po.reference || po.id.slice(0, 8)} — SightLive`);
+      const body = `Dear ${po.supplier},%0D%0A%0D%0APlease find our purchase order below.%0D%0A%0D%0A${lines}%0D%0A%0D%0ATotal: ${po.currency} ${Number(po.total || 0).toLocaleString('en-ZA')}%0D%0A${po.expectedDate ? 'Expected delivery: ' + po.expectedDate + '%0D%0A' : ''}%0D%0AApproved by ${po.approvedBy || 'management'}.%0D%0A%0D%0ARegards,%0D%0ASightLive Procurement`;
+      window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
+    }
     poAction(po, 'send', to ? { email: to } : {});
   };
 
