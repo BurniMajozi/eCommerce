@@ -3,7 +3,7 @@ import { randomBytes } from 'crypto';
 import { assertCapability, ScopeError } from '../../../security/tenant-scope';
 import type { TenantScopedRequest } from '../../middlewares/tenant-scope';
 import { getServiceClient } from '../../../security/supabase-scope-resolver';
-import { sendEmailAsync } from '../../../lib/agentmail';
+import { sendEmail } from '../../../lib/agentmail';
 import { inviteEmail } from '../../../lib/email-templates';
 
 // Roles a tenant admin may assign in-app (platform_owner is intentionally excluded).
@@ -122,12 +122,17 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
     await db.from('membership_roles').insert({ membership_id: membershipId, role_id: roleRow.id });
     if (siteId) await db.from('membership_sites').upsert({ membership_id: membershipId, site_id: siteId, tenant_id: scope.tenantId }, { onConflict: 'membership_id,site_id' });
 
-    // Welcome / invite email (AgentMail) — only for a freshly-created user, so
-    // an existing member isn't emailed a password they don't have. No-ops if
-    // email isn't configured; never blocks the invite.
-    if (tempPasswordOut) {
-      const { subject, html, text } = inviteEmail({ name, email, role, tempPassword: tempPasswordOut, loginUrl: (process.env.APP_PUBLIC_URL ?? '').trim() || undefined });
-      sendEmailAsync({ to: email, subject, html, text, labels: ['invite'] }, `invite ${email}`);
+    // Welcome / invite email (AgentMail). Sent on every invite — a brand-new
+    // user gets their temp password; an existing user (e.g. re-invited after a
+    // membership delete) gets a no-password "you've been granted access" version
+    // so they're always notified. Awaited + logged so the outcome is visible;
+    // never blocks the invite response (errors are swallowed).
+    try {
+      const { subject, html, text } = inviteEmail({ name, email, role, tempPassword: tempPasswordOut ?? undefined, loginUrl: (process.env.APP_PUBLIC_URL ?? '').trim() || undefined });
+      const r = await sendEmail({ to: email, subject, html, text, labels: ['invite'] });
+      console.log(`[agentmail] invite ${email}: ${r.sent ? 'sent ' + (r.id ?? '') : r.skipped ? 'skipped (email not configured)' : 'FAILED ' + r.error}`);
+    } catch (e) {
+      console.warn(`[agentmail] invite ${email} threw: ${(e as Error).message}`);
     }
 
     res.status(201).json({ userId, email, role, name, tempPassword: tempPasswordOut });
