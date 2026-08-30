@@ -6,6 +6,7 @@ import { fetchPlatformOverview, provisionPlatformTenant, updatePlatformTenant, f
 import { Building2, Plus, Palette, Smartphone, Wallet, ScrollText, LayoutGrid, AlertTriangle, Users, ShieldCheck, HardHat } from 'lucide-react';
 import { BugTriageCard } from './BugTriageCard';
 import { BillingCard } from './BillingCard';
+import { SitesCard } from './SitesCard';
 
 const ACCENT_SWATCHES = ['#EC3013', '#2563EB', '#0891B2', '#7C3AED', '#059669', '#D97706'];
 const ROLE_LABELS = { worker: 'Worker', storekeeper: 'Storekeeper', supervisor: 'Supervisor', manager: 'Manager', executive: 'Executive', merchant: 'Merchant', tenant_admin: 'Tenant Admin' };
@@ -341,6 +342,9 @@ export const PlatformOwnerPortal = () => {
           </div>
         </div>
       </div>
+
+      {/* Sites / locations for the selected tenant */}
+      <SitesCard tenantId={tenant.id} tenantName={tenant.name} />
 
       {/* Users & roles (real, RLS-scoped) */}
       <div className="card">

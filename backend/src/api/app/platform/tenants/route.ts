@@ -21,9 +21,19 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
     if (error || !tenant) throw new Error(error?.message || 'Could not create tenant.');
 
     await db.from('tenant_branding').upsert({ tenant_id: tenant.id, accent_color: '#F5721A' }, { onConflict: 'tenant_id' });
+
+    // Seed a default site so the tenant is immediately usable — members need a
+    // site in scope for site-scoped data (stock, stores). More can be added in
+    // the Sites manager.
+    let defaultSite: any = null;
+    const { data: site } = await db.from('sites')
+      .insert({ tenant_id: tenant.id, name: 'Main site', code: 'MAIN', status: 'active' })
+      .select('id, name, code, status').single();
+    defaultSite = site ?? null;
+
     await db.from('audit_events').insert({ tenant_id: tenant.id, actor_user_id: scope.userId, action: 'tenant.provisioned', target_type: 'tenant', source: 'platform_owner', metadata: { name, slug } }).then(() => {}, () => {});
 
-    res.status(201).json({ id: tenant.id, name: tenant.name, slug: tenant.slug, status: tenant.status, plan: tenant.plan_key });
+    res.status(201).json({ id: tenant.id, name: tenant.name, slug: tenant.slug, status: tenant.status, plan: tenant.plan_key, defaultSite });
   } catch (error) {
     if (error instanceof ScopeError) { res.status(error.status).json({ code: error.code, message: error.message }); return; }
     res.status(500).json({ code: 'tenant_provision_failed', message: (error as Error).message });

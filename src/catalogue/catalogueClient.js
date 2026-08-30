@@ -196,6 +196,11 @@ export const reportBug = (payload, scope) => scopedJson('/app/bugs', { ...scope,
 export const fetchBugs = (scope, status) => scopedJson(`/app/bugs${status ? `?status=${encodeURIComponent(status)}` : ''}`, scope);
 export const updateBug = (id, patch, scope) => scopedJson(`/app/bugs/${id}`, { ...scope, method: 'PATCH', body: patch });
 
+// Sites / locations under a tenant (owner-managed).
+export const fetchTenantSites = (tenantId, scope) => scopedJson(`/app/platform/tenants/${tenantId}/sites`, scope);
+export const createTenantSite = (tenantId, body, scope) => scopedJson(`/app/platform/tenants/${tenantId}/sites`, { ...scope, method: 'POST', body });
+export const updateTenantSite = (tenantId, siteId, patch, scope) => scopedJson(`/app/platform/tenants/${tenantId}/sites/${siteId}`, { ...scope, method: 'PATCH', body: patch });
+
 // Platform subscription billing (owner): metered charges → invoice → Paystack.
 export const fetchBilling = (scope) => scopedJson('/app/platform/billing', scope);
 export const issueInvoice = (tenantId, period, scope) => scopedJson('/app/platform/billing/invoices', { ...scope, method: 'POST', body: { tenantId, period } });
