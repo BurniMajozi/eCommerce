@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAuthSession } from './AuthSessionContext';
 import { LandingPage } from '../components/LandingPage';
+import { readBrandCache } from '../theme/applyBrand';
 
 // Gates the app behind Supabase auth ONLY when Supabase is configured. In demo
 // mode it renders children immediately. Commerce management (cost/profit +
@@ -94,11 +95,17 @@ export const LoginGate = ({ children }) => {
     } catch (e2) { setErr(e2?.message || 'Verification failed.'); } finally { setSubmitting(false); }
   };
 
+  // Brand the login screen from the tenant remembered on this device (the accent
+  // is already applied to the CSS vars at boot; here we swap the logo + name).
+  const brand = readBrandCache();
   const shell = (title, sub, body) => (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'var(--bg)' }}>
       <div className="card" style={{ width: '100%', maxWidth: 400, boxShadow: 'var(--shadow-lg)' }}>
         <div className="card-bd" style={{ padding: 28 }}>
-          <img src="/sightlive-logo.svg" alt="SightLive" style={{ height: 30 }} />
+          {brand?.logoUrl
+            ? <img src={brand.logoUrl} alt={brand.tenantName || 'Tenant'} onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/sightlive-logo.svg'; }} style={{ height: 34, maxWidth: 200, objectFit: 'contain' }} />
+            : <img src="/sightlive-logo.svg" alt="SightLive" style={{ height: 30 }} />}
+          {brand?.tenantName && <div className="eyebrow" style={{ marginTop: 8, color: 'var(--primary)' }}>{brand.tenantName}</div>}
           <h2 style={{ fontSize: 19, marginTop: 18 }}>{title}</h2>
           <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>{sub}</p>
           {body}

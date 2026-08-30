@@ -4,7 +4,7 @@ import { buildDefaultRules, newRuleId } from '../entitlement/entitlement';
 import { useAuthSession } from '../auth/AuthSessionContext';
 import { useTenantAccess } from '../tenant/TenantAccessContext';
 import { fetchCatalogue, fetchProfitability, fetchBranding, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
-import { applyBrand } from '../theme/applyBrand';
+import { applyBrand, applyBrandChrome, writeBrandCache, readBrandCache } from '../theme/applyBrand';
 
 const AppContext = createContext();
 
@@ -144,15 +144,30 @@ export const AppProvider = ({ children }) => {
   }, [auth.session?.access_token, tenantAccess.activeTenantId, tenantAccess.activeSiteId, catalogueReloadKey]);
 
   // ── White-label: skin the app in the active tenant's (merchant/plant) brand ──
-  const [brand, setBrand] = useState({ accent: null, logoUrl: null, tenantName: null });
+  // Seed from the device cache so the accent applied at boot survives (no flash
+  // back to default before the live fetch resolves), and so the login screen +
+  // PWA stay branded while signed out.
+  const [brand, setBrand] = useState(() => {
+    const c = readBrandCache();
+    return { accent: c?.accent ?? null, logoUrl: c?.logoUrl ?? null, tenantName: c?.tenantName ?? null };
+  });
   useEffect(() => {
     const accessToken = auth.session?.access_token;
     const tenantId = tenantAccess.activeTenantId;
-    if (!isMedusaCatalogueEnabled || !accessToken || !tenantId) { setBrand({ accent: null, logoUrl: null, tenantName: null }); return undefined; }
+    // Not live (demo / signed out): keep whatever the cache seeded — don't reset.
+    if (!isMedusaCatalogueEnabled || !accessToken || !tenantId) return undefined;
     let active = true;
     fetchBranding({ accessToken, tenantId, siteId: tenantAccess.activeSiteId })
-      .then((r) => { if (active) setBrand({ accent: r?.accent ?? null, logoUrl: r?.logoUrl ?? null, tenantName: r?.tenantName ?? null }); })
-      .catch(() => { if (active) setBrand({ accent: null, logoUrl: null, tenantName: null }); });
+      .then((r) => {
+        if (!active) return;
+        const b = { accent: r?.accent ?? null, logoUrl: r?.logoUrl ?? null, tenantName: r?.tenantName ?? null };
+        setBrand(b);
+        // Persist for the pre-auth login screen + PWA on this device, and update
+        // the install name/icon/theme-color live (reset to default if unbranded).
+        writeBrandCache(b);
+        applyBrandChrome(b);
+      })
+      .catch(() => { /* keep the cached brand on a transient failure */ });
     return () => { active = false; };
   }, [auth.session?.access_token, tenantAccess.activeTenantId, tenantAccess.activeSiteId]);
 

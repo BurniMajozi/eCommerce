@@ -38,3 +38,72 @@ export function applyBrand(accent, theme = 'light') {
   root.style.setProperty('--ring', `rgba(${c.r}, ${c.g}, ${c.b}, 0.32)`);
   root.style.setProperty('--on-primary', luminance(c) > 0.62 ? '#1a1a1a' : '#ffffff');
 }
+
+// ── Device brand cache ──────────────────────────────────────────────────────
+// The login screen and PWA manifest render before authentication, so they can't
+// call the authed /app/branding endpoint. We remember the last signed-in
+// tenant's brand on the device and apply it pre-auth (returning users see their
+// merchant/plant brand on the login screen and install prompt).
+const CACHE_KEY = 'sl_brand';
+
+export function readBrandCache() {
+  try { const raw = localStorage.getItem(CACHE_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+
+export function writeBrandCache(brand) {
+  try {
+    if (brand && isHex(brand.accent)) {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ accent: brand.accent, logoUrl: brand.logoUrl || null, tenantName: brand.tenantName || null }));
+    } else {
+      localStorage.removeItem(CACHE_KEY);
+    }
+  } catch { /* private mode / disabled storage — non-fatal */ }
+}
+
+// A stable monogram data-URI icon (tenant initial on the accent) — used for the
+// PWA install icon and apple-touch-icon. Stable because the real logo lives in a
+// private bucket whose signed URL expires; a data-URI never breaks post-install.
+function monogramIcon(name, accent) {
+  const letter = String(name || 'S').trim().charAt(0).toUpperCase() || 'S';
+  const fg = luminance(hexToRgb(accent)) > 0.62 ? '#1a1a1a' : '#ffffff';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="${accent}"/><text x="50%" y="53%" dominant-baseline="central" text-anchor="middle" font-family="Inter,Segoe UI,Arial,sans-serif" font-weight="700" font-size="300" fill="${fg}">${letter}</text></svg>`;
+  return 'data:image/svg+xml,' + encodeURIComponent(svg);
+}
+
+const setMeta = (name, content) => {
+  let m = document.querySelector(`meta[name="${name}"]`);
+  if (!m) { m = document.createElement('meta'); m.setAttribute('name', name); document.head.appendChild(m); }
+  m.setAttribute('content', content);
+};
+const setLink = (rel, href) => {
+  let l = document.querySelector(`link[rel="${rel}"]`);
+  if (!l) { l = document.createElement('link'); l.setAttribute('rel', rel); document.head.appendChild(l); }
+  l.setAttribute('href', href);
+};
+
+// Apply brand to the browser chrome + PWA: theme-color, install name/icon
+// (dynamic manifest), and apple-touch-icon. Pass a falsy accent to reset to the
+// platform default (keeps the static /manifest.webmanifest + SightLive marks).
+export function applyBrandChrome(brand) {
+  if (typeof document === 'undefined') return;
+  const accent = brand && isHex(brand.accent) ? brand.accent : null;
+  if (!accent) {
+    setMeta('theme-color', '#ef5b0a');
+    setLink('manifest', '/manifest.webmanifest');
+    setLink('apple-touch-icon', '/sightlive-mark.svg');
+    return;
+  }
+  const name = brand.tenantName || null;
+  const icon = monogramIcon(name, accent);
+  setMeta('theme-color', accent);
+  setLink('apple-touch-icon', icon);
+  const manifest = {
+    name: name ? `${name} — PPE` : 'SightLive PPE Stock Platform',
+    short_name: name ? name.slice(0, 24) : 'SightLive',
+    description: 'PPE stock, requests, approvals and B2B sales.',
+    start_url: '/', scope: '/', display: 'standalone', orientation: 'portrait-primary',
+    background_color: '#f4f5f7', theme_color: accent,
+    icons: [{ src: icon, sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
+  };
+  setLink('manifest', 'data:application/manifest+json,' + encodeURIComponent(JSON.stringify(manifest)));
+}
