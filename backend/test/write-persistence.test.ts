@@ -6,6 +6,7 @@ import { buildTenantScope } from '../src/security/tenant-scope';
 import { POST as PO_POST, GET as PO_GET } from '../src/api/app/commerce/purchase-orders/route';
 import { PATCH as PO_PATCH } from '../src/api/app/commerce/purchase-orders/[id]/route';
 import { GET as PROMO_GET } from '../src/api/app/commerce/promotions/route';
+import { PATCH as STORE_COLLECT } from '../src/api/app/store/orders/[id]/route';
 
 /*
  * END-TO-END WRITE PERSISTENCE against a real in-memory Postgres (pg-mem) — no
@@ -48,6 +49,12 @@ async function freshDb() {
     id text primary key, tenant_id text not null, product_id text, sku text, promo_type text,
     discount_pct numeric, cost_at_create numeric, price_at_create numeric, status text, end_date text,
     created_by text, acknowledged_by text, acknowledged_at timestamptz,
+    created_at timestamptz default now(), updated_at timestamptz
+  )`);
+  await knex.raw(`create table store_orders (
+    id text primary key, tenant_id text not null, reference text, buyer_name text, buyer_email text,
+    company text, lines jsonb, currency text, subtotal numeric, discount numeric, total numeric,
+    status text, pickup_code text, paystack_ref text, paid_at timestamptz, collected_at timestamptz,
     created_at timestamptz default now(), updated_at timestamptz
   )`);
   return knex;
@@ -175,5 +182,49 @@ test('GET /promotions reads persisted promos and flags expiry for the stock colu
   const glove = promos.find((p: any) => p.sku === 'GLOVE-1');
   assert.equal(glove.expired, true);       // past end_date → surfaces as expired
   assert.equal(glove.status, 'expired');
+  await knex.destroy();
+});
+
+// ── Store pickup is code-gated: no release without the contractor's code ─────
+async function seedPaidStoreOrder(knex: any) {
+  await knex('store_orders').insert({
+    id: 'so_1', tenant_id: TENANT, reference: 'STORE-1001', buyer_name: 'ACME Contractors',
+    total: 430, currency: 'ZAR', status: 'paid', pickup_code: 'PU-ABC123', paid_at: new Date(), created_at: new Date(), updated_at: new Date(),
+  });
+}
+
+test('store collect is REFUSED when no pickup code is entered', async () => {
+  const knex = await freshDb();
+  await seedPaidStoreOrder(knex);
+  const res = makeRes();
+  await STORE_COLLECT(makeReq(knex, { scope: buyerScope, params: { id: 'so_1' }, body: {} }), res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.code, 'pickup_code_required');
+  // Still paid — nothing released.
+  assert.equal((await knex('store_orders').where({ id: 'so_1' }).first()).status, 'paid');
+  await knex.destroy();
+});
+
+test('store collect is REFUSED when the pickup code does not match', async () => {
+  const knex = await freshDb();
+  await seedPaidStoreOrder(knex);
+  const res = makeRes();
+  await STORE_COLLECT(makeReq(knex, { scope: buyerScope, params: { id: 'so_1' }, body: { pickupCode: 'PU-WRONG9' } }), res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.code, 'bad_pickup_code');
+  assert.equal((await knex('store_orders').where({ id: 'so_1' }).first()).status, 'paid');
+  await knex.destroy();
+});
+
+test('store collect SUCCEEDS only with the exact released code (case-insensitive)', async () => {
+  const knex = await freshDb();
+  await seedPaidStoreOrder(knex);
+  const res = makeRes();
+  await STORE_COLLECT(makeReq(knex, { scope: buyerScope, params: { id: 'so_1' }, body: { pickupCode: ' pu-abc123 ' } }), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.status, 'collected');
+  const row = await knex('store_orders').where({ id: 'so_1' }).first();
+  assert.equal(row.status, 'collected');
+  assert.ok(row.collected_at);
   await knex.destroy();
 });

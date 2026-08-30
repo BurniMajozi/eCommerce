@@ -39,18 +39,27 @@ const StorePickups = () => {
   }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]);
 
   const collect = async (o) => {
+    // Release ONLY against the code the contractor presents — never without it.
+    const code = (codeInput[o.id] || '').trim();
+    if (!code) {
+      triggerNotification('Pickup code required', 'Enter the code the contractor was given at checkout — a pickup cannot be released without it.', 'warning');
+      return;
+    }
     setBusyId(o.id);
     try {
-      await collectStoreOrder(o.id, (codeInput[o.id] || '').trim(), scope);
+      await collectStoreOrder(o.id, code, scope);
       triggerNotification('Collected', `${o.reference} handed over to ${o.buyerName || 'buyer'}.`, 'success');
+      setCodeInput((c) => ({ ...c, [o.id]: '' }));
       setReloadKey((k) => k + 1);
     } catch (e) {
       triggerNotification('Cannot collect', e.message || 'Pickup code did not match.', 'danger');
     } finally { setBusyId(null); }
   };
 
+  // The storekeeper must not see the code (it's what proves the buyer's identity),
+  // so it is never searchable or shown here — the contractor presents it.
   const q = search.trim().toLowerCase();
-  const rows = orders.filter((o) => !q || [o.reference, o.buyerName, o.buyerEmail, o.company, o.pickupCode].some((v) => String(v || '').toLowerCase().includes(q)));
+  const rows = orders.filter((o) => !q || [o.reference, o.buyerName, o.buyerEmail, o.company].some((v) => String(v || '').toLowerCase().includes(q)));
   const waiting = rows.filter((o) => o.status === 'paid');
 
   return (
@@ -80,15 +89,15 @@ const StorePickups = () => {
                   <td>{o.buyerName || o.buyerEmail || 'Buyer'}<div className="eyebrow">{o.company || o.buyerEmail}</div></td>
                   <td className="num">{o.lineCount}</td>
                   <td className="num tabular">{randZar(o.total)}</td>
-                  <td className="center"><span className="mono" style={{ fontWeight: 700, letterSpacing: '.04em' }}>{o.pickupCode}</span></td>
+                  <td className="center"><span className="badge badge-neutral" title="The contractor presents this code at the counter — it is not shown here" style={{ letterSpacing: '.2em', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Lock size={11} /> ••••••</span></td>
                   <td className="center"><span className={`badge ${o.status === 'collected' ? 'badge-neutral' : 'badge-success'}`}>{o.status}</span></td>
                   <td className="center" style={{ whiteSpace: 'nowrap' }}>
                     {o.status === 'collected' ? (
                       <span className="muted" style={{ fontSize: 12 }}>{(o.collectedAt || '').slice(0, 10) || 'done'}</span>
                     ) : (
                       <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                        <input className="input" placeholder="Code" value={codeInput[o.id] || ''} onChange={(e) => setCodeInput((c) => ({ ...c, [o.id]: e.target.value }))} style={{ width: 90, height: 32, textTransform: 'uppercase' }} />
-                        <button className="btn btn-primary btn-sm" disabled={busyId === o.id} onClick={() => collect(o)}>{busyId === o.id ? <Loader2 size={13} className="spin" /> : <PackageOpen size={13} />} Hand over</button>
+                        <input className="input" placeholder="Enter code" value={codeInput[o.id] || ''} onChange={(e) => setCodeInput((c) => ({ ...c, [o.id]: e.target.value }))} style={{ width: 100, height: 32, textTransform: 'uppercase' }} />
+                        <button className="btn btn-primary btn-sm" disabled={busyId === o.id || !(codeInput[o.id] || '').trim()} onClick={() => collect(o)}>{busyId === o.id ? <Loader2 size={13} className="spin" /> : <PackageOpen size={13} />} Hand over</button>
                       </div>
                     )}
                   </td>
@@ -146,20 +155,31 @@ export const StorekeeperPortal = () => {
 
   const approved = requests.filter(r => r.status === 'APPROVED');
 
-  // Verify Queue Item
+  // A ticket is only releasable when the storekeeper has keyed in the exact
+  // pickup code (OTP) the worker was given at approval — the code that syncs
+  // with the pass shown in the worker's app.
+  const codeMatches = !!(scanned && otp.trim() && String(scanned.otp).toLowerCase() === otp.trim().toLowerCase());
+
+  // Verify Queue Item — match strictly on the released pickup code (not the
+  // request id, which is visible and would bypass the code).
   const verify = (e) => {
     e.preventDefault();
-    const found = approved.find(r => r.otp === otp.trim() || r.id.toLowerCase() === otp.trim().toLowerCase());
+    const entered = otp.trim();
+    const found = approved.find(r => String(r.otp).toLowerCase() === entered.toLowerCase());
     if (found) {
       setScanned(found);
       setOldReturned(!found.isEarlyReplacement);
     } else {
-      triggerNotification('Invalid Ticket', 'No approved pickup ticket found for this OTP.', 'warning');
+      triggerNotification('Invalid code', 'No approved pickup ticket matches that code.', 'warning');
     }
   };
 
   const dispenseQueue = () => {
     if (!scanned) return;
+    if (!codeMatches) {
+      triggerNotification('Pickup code required', 'Enter the pickup code the worker was given — it must match the ticket before stock can be released.', 'warning');
+      return;
+    }
     if (scanned.isEarlyReplacement && !oldReturned) {
       triggerNotification('Return Required', 'Anti-theft protocol: old damaged item must be returned before issuing.', 'warning');
       return;
@@ -431,7 +451,7 @@ export const StorekeeperPortal = () => {
                   <input
                     className="input"
                     style={{ letterSpacing: '.12em' }}
-                    placeholder="8492 or REQ-9014"
+                    placeholder="Enter pickup code"
                     value={otp}
                     onChange={(e) => setOtp(e.target.value)}
                     required
@@ -449,7 +469,9 @@ export const StorekeeperPortal = () => {
                     <button
                       key={req.id}
                       onClick={() => {
-                        setOtp(req.otp);
+                        // Load the ticket for review, but clear any code — the
+                        // worker must present it; it is never auto-filled.
+                        setOtp('');
                         setScanned(req);
                         setOldReturned(!req.isEarlyReplacement);
                       }}
@@ -457,7 +479,7 @@ export const StorekeeperPortal = () => {
                       style={{ justifyContent: 'space-between' }}
                     >
                       <span>{req.employeeName.split(' ').slice(-1)[0]} · {req.itemName.split(' ').slice(0, 2).join(' ')}</span>
-                      <span style={{ fontSize: 11, opacity: 0.8 }}>{req.otp}</span>
+                      <span style={{ fontSize: 11, opacity: 0.6, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Lock size={10} /> code</span>
                     </button>
                   );
                 })}
@@ -474,7 +496,7 @@ export const StorekeeperPortal = () => {
                     <div style={{ fontWeight: 600, fontSize: 16 }}>{scanned.employeeName}</div>
                     <div className="muted" style={{ fontSize: 12.5 }}>{scanned.employeeId} · {scanned.department} · {scanned.plant}</div>
                   </div>
-                  <span className="badge badge-success"><CheckCircle2 size={13} /> Verified · OTP {scanned.otp}</span>
+                  <span className={`badge ${codeMatches ? 'badge-success' : 'badge-warning'}`}>{codeMatches ? <><CheckCircle2 size={13} /> Pickup code verified</> : <><Lock size={13} /> Awaiting pickup code</>}</span>
                 </div>
                 <div className="card-bd">
                   <div className="table-wrap card" style={{ boxShadow: 'none' }}>
@@ -508,8 +530,18 @@ export const StorekeeperPortal = () => {
                     )}
                   </div>
 
-                  <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', marginTop: 18, justifyContent: 'flex-end' }}>
-                    <button className="btn btn-primary btn-lg" onClick={dispenseQueue}>
+                  <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', marginTop: 18, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                    <div className="field" style={{ margin: 0, minWidth: 200 }}>
+                      <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Lock size={12} /> Pickup code from worker</label>
+                      <input
+                        className="input"
+                        style={{ letterSpacing: '.18em', textTransform: 'uppercase' }}
+                        placeholder="Enter code the worker presents"
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value)}
+                      />
+                    </div>
+                    <button className="btn btn-primary btn-lg" onClick={dispenseQueue} disabled={!codeMatches} title={codeMatches ? 'Release stock' : 'Enter the matching pickup code to release'}>
                       <PackageOpen size={17} /> Dispense &amp; update allocation
                     </button>
                   </div>
