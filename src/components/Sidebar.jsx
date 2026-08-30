@@ -63,7 +63,7 @@ export function visibleNavGroups(tenantAccess) {
 }
 
 export const Sidebar = ({ open, onClose }) => {
-  const { activeRole, setActiveRole, tenantAccess } = useApp();
+  const { activeRole, setActiveRole, tenantAccess, brand } = useApp();
   const [collapsed, setCollapsed] = React.useState(() => {
     try { return localStorage.getItem('sl_sidebar_collapsed') === '1'; } catch { return false; }
   });
@@ -90,13 +90,15 @@ export const Sidebar = ({ open, onClose }) => {
       <aside className={`sidebar ${open ? 'open' : ''} ${collapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-brand" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
           <div className="brand-row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <img src="/sightlive-logo.svg" alt="SightLive" style={{ height: 26, flex: 'none' }} />
+            {brand?.logoUrl
+              ? <img src={brand.logoUrl} alt={brand.tenantName || 'Tenant'} style={{ height: 28, maxWidth: 150, objectFit: 'contain', flex: 'none' }} />
+              : <img src="/sightlive-logo.svg" alt="SightLive" style={{ height: 26, flex: 'none' }} />}
             <button className="collapse-btn" onClick={toggleCollapsed} title={collapsed ? 'Expand menu' : 'Collapse menu'} aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} style={{ marginLeft: 'auto' }}>
               {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
             </button>
             <button className="icon-btn sidebar-close" onClick={onClose} aria-label="Close menu" style={{ marginLeft: 'auto' }}><X size={18} /></button>
           </div>
-          <div className="eyebrow sidebar-sub" style={{ fontSize: 9.5 }}>PPE Stock Platform</div>
+          <div className="eyebrow sidebar-sub" style={{ fontSize: 9.5 }}>{brand?.tenantName || 'PPE Stock Platform'}</div>
         </div>
 
         <nav className="sidebar-nav">

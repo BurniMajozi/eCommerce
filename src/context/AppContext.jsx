@@ -3,7 +3,8 @@ import { CAGELI_PRODUCTS, MOCK_EMPLOYEES, MOCK_REQUESTS, MOCK_QUOTATIONS, MOCK_P
 import { buildDefaultRules, newRuleId } from '../entitlement/entitlement';
 import { useAuthSession } from '../auth/AuthSessionContext';
 import { useTenantAccess } from '../tenant/TenantAccessContext';
-import { fetchCatalogue, fetchProfitability, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { fetchCatalogue, fetchProfitability, fetchBranding, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { applyBrand } from '../theme/applyBrand';
 
 const AppContext = createContext();
 
@@ -141,6 +142,23 @@ export const AppProvider = ({ children }) => {
 
     return () => controller.abort();
   }, [auth.session?.access_token, tenantAccess.activeTenantId, tenantAccess.activeSiteId, catalogueReloadKey]);
+
+  // ── White-label: skin the app in the active tenant's (merchant/plant) brand ──
+  const [brand, setBrand] = useState({ accent: null, logoUrl: null, tenantName: null });
+  useEffect(() => {
+    const accessToken = auth.session?.access_token;
+    const tenantId = tenantAccess.activeTenantId;
+    if (!isMedusaCatalogueEnabled || !accessToken || !tenantId) { setBrand({ accent: null, logoUrl: null, tenantName: null }); return undefined; }
+    let active = true;
+    fetchBranding({ accessToken, tenantId, siteId: tenantAccess.activeSiteId })
+      .then((r) => { if (active) setBrand({ accent: r?.accent ?? null, logoUrl: r?.logoUrl ?? null, tenantName: r?.tenantName ?? null }); })
+      .catch(() => { if (active) setBrand({ accent: null, logoUrl: null, tenantName: null }); });
+    return () => { active = false; };
+  }, [auth.session?.access_token, tenantAccess.activeTenantId, tenantAccess.activeSiteId]);
+
+  // Re-apply the accent whenever the brand or the light/dark theme changes so the
+  // derived shades stay correct across a theme toggle.
+  useEffect(() => { applyBrand(brand.accent, theme); }, [brand.accent, theme]);
 
   useEffect(() => {
     const accessToken = auth.session?.access_token;
@@ -449,6 +467,7 @@ export const AppProvider = ({ children }) => {
     <AppContext.Provider value={{
       theme,
       toggleTheme,
+      brand,
       products,
       setProducts,
       receiveStockDirectly,
