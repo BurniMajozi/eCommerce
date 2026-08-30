@@ -28,7 +28,9 @@ export const PromotionFormModal = ({ products, onClose, onCreated, scope }) => {
     return list.filter((p) => `${p.sku} ${p.name}`.toLowerCase().includes(q)).slice(0, 40);
   }, [products, search]);
 
-  const selected = products.find((p) => p.id === productId) || null;
+  // Match on the same key used for the <option> value (id, falling back to sku),
+  // so selection works even for catalogue rows that don't carry a Medusa id.
+  const selected = products.find((p) => (p.id || p.sku) === productId) || null;
   const cost = Number(selected?.costPrice ?? 0);
   const price = Number(selected?.sellingPrice ?? 0);
   const pct = Math.min(100, Math.max(0, Number(discountPct) || 0));
@@ -42,7 +44,7 @@ export const PromotionFormModal = ({ products, onClose, onCreated, scope }) => {
     setBusy(true); setError(null);
     try {
       await createPromotion({
-        productId: selected.id,
+        productId: selected.id || null,
         sku: selected.sku,
         promoType,
         discountPct: pct,
