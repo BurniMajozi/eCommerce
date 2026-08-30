@@ -2,13 +2,105 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { getVariantOptions } from '../data/mockData';
 import { resolveEmployeeEntitlement } from '../entitlement/entitlement';
+import { fetchStoreOrders, collectStoreOrder, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { ProductThumb } from './ProductThumb';
 import { SignaturePad } from './SignaturePad';
 import {
   QrCode, ScanLine, PackageOpen, ShieldCheck, CheckCircle2, Signature,
   ShoppingBag, Search, Plus, User, Camera, Image, AlertTriangle, Printer,
-  FileText, ArrowRight, X, Clock, Check, Building2, HardHat, Lock
+  FileText, ArrowRight, X, Clock, Check, Building2, HardHat, Lock, Store, Loader2, RefreshCw
 } from 'lucide-react';
+
+const randZar = (n) => `R ${Number(n || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// Contractor-store pickup queue: paid store sales appear here so the storekeeper
+// can verify the buyer's pickup code and hand over the goods (mark collected).
+const StorePickups = () => {
+  const { auth, tenantAccess, triggerNotification } = useApp();
+  const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
+  const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [codeInput, setCodeInput] = useState({}); // id -> typed code
+  const [busyId, setBusyId] = useState(null);
+  const [search, setSearch] = useState('');
+
+  React.useEffect(() => {
+    if (!live) { setOrders([]); return; }
+    let active = true;
+    setLoading(true);
+    fetchStoreOrders(scope)
+      .then((r) => { if (active) setOrders(r.orders ?? []); })
+      .catch(() => { if (active) setOrders([]); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]);
+
+  const collect = async (o) => {
+    setBusyId(o.id);
+    try {
+      await collectStoreOrder(o.id, (codeInput[o.id] || '').trim(), scope);
+      triggerNotification('Collected', `${o.reference} handed over to ${o.buyerName || 'buyer'}.`, 'success');
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      triggerNotification('Cannot collect', e.message || 'Pickup code did not match.', 'danger');
+    } finally { setBusyId(null); }
+  };
+
+  const q = search.trim().toLowerCase();
+  const rows = orders.filter((o) => !q || [o.reference, o.buyerName, o.buyerEmail, o.company, o.pickupCode].some((v) => String(v || '').toLowerCase().includes(q)));
+  const waiting = rows.filter((o) => o.status === 'paid');
+
+  return (
+    <div className="card">
+      <div className="card-hd" style={{ gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Store size={17} style={{ color: 'var(--primary)' }} /><h3>Contractor store pickups</h3><span className={`badge ${waiting.length ? 'badge-warning' : 'badge-neutral'}`}>{waiting.length} awaiting collection</span></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Search size={14} style={{ position: 'absolute', left: 9, color: 'var(--text-subtle)' }} />
+            <input className="input" placeholder="Search code, buyer, ref…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 30, width: 210, height: 34 }} />
+          </div>
+          {live && <button className="btn btn-ghost btn-sm" onClick={() => setReloadKey((k) => k + 1)} disabled={loading} aria-label="Refresh">{loading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}</button>}
+        </div>
+      </div>
+      {!live ? (
+        <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>Connect the live backend to see contractor-store pickups.</div>
+      ) : rows.length === 0 ? (
+        <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>{loading ? 'Loading…' : 'No paid store orders waiting for collection.'}</div>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Reference</th><th>Buyer</th><th className="num">Items</th><th className="num">Total</th><th className="center">Pickup code</th><th className="center">Status</th><th className="center">Collect</th></tr></thead>
+            <tbody>
+              {rows.map((o) => (
+                <tr key={o.id} style={{ opacity: o.status === 'collected' ? 0.6 : 1 }}>
+                  <td><div style={{ fontWeight: 500 }}>{o.reference}</div><div className="eyebrow">{(o.paidAt || o.createdAt || '').slice(0, 10)}</div></td>
+                  <td>{o.buyerName || o.buyerEmail || 'Buyer'}<div className="eyebrow">{o.company || o.buyerEmail}</div></td>
+                  <td className="num">{o.lineCount}</td>
+                  <td className="num tabular">{randZar(o.total)}</td>
+                  <td className="center"><span className="mono" style={{ fontWeight: 700, letterSpacing: '.04em' }}>{o.pickupCode}</span></td>
+                  <td className="center"><span className={`badge ${o.status === 'collected' ? 'badge-neutral' : 'badge-success'}`}>{o.status}</span></td>
+                  <td className="center" style={{ whiteSpace: 'nowrap' }}>
+                    {o.status === 'collected' ? (
+                      <span className="muted" style={{ fontSize: 12 }}>{(o.collectedAt || '').slice(0, 10) || 'done'}</span>
+                    ) : (
+                      <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                        <input className="input" placeholder="Code" value={codeInput[o.id] || ''} onChange={(e) => setCodeInput((c) => ({ ...c, [o.id]: e.target.value }))} style={{ width: 90, height: 32, textTransform: 'uppercase' }} />
+                        <button className="btn btn-primary btn-sm" disabled={busyId === o.id} onClick={() => collect(o)}>{busyId === o.id ? <Loader2 size={13} className="spin" /> : <PackageOpen size={13} />} Hand over</button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const CATEGORIES = ['ALL', 'Footwear', 'Workwear', 'Hand Protection', 'Respiratory Protection', 'Eye Protection', 'Arc Flash Protection'];
 
@@ -310,9 +402,17 @@ export const StorekeeperPortal = () => {
             <button className={portalTab === 'walkin' ? 'on accent' : ''} onClick={() => setPortalTab('walkin')}>
               <ShoppingBag size={14} /> Walk-in Approved Catalogue
             </button>
+            <button className={portalTab === 'store' ? 'on' : ''} onClick={() => setPortalTab('store')}>
+              <Store size={14} /> Store Pickups
+            </button>
           </div>
         </div>
       </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 3: CONTRACTOR STORE PICKUPS (paid store sales → collect by code)
+      ───────────────────────────────────────────────────────────── */}
+      {portalTab === 'store' && <StorePickups />}
 
       {/* ─────────────────────────────────────────────────────────────
           TAB 1: QUEUE PICKUP (Existing Verification)
