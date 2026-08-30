@@ -18,6 +18,8 @@
     "bootstrap:po": "medusa exec ./src/scripts/bootstrap-po.ts",
     "verify:flows": "medusa exec ./src/scripts/verify-flows.ts",
     "bootstrap:store": "medusa exec ./src/scripts/bootstrap-store.ts",
+    "bootstrap:bugs": "medusa exec ./src/scripts/bootstrap-bugs.ts",
+    "bootstrap:billing": "medusa exec ./src/scripts/bootstrap-billing.ts",
     "bootstrap:promo": "medusa exec ./src/scripts/bootstrap-promo.ts",
     "bootstrap:link-tables": "medusa exec ./src/scripts/bootstrap-links-tables.ts",
     "inspect:state": "medusa exec ./src/scripts/inspect-state.ts",

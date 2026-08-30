@@ -29,10 +29,16 @@ export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Prom
     if (b.plan !== undefined || b.status !== undefined) {
       const patch: Record<string, any> = {};
       if (b.plan !== undefined) patch.plan_key = b.plan;
-      if (b.status !== undefined) patch.status = b.status;
+      if (b.status !== undefined) {
+        const allowed = ['setup', 'active', 'suspended', 'closed'];
+        if (!allowed.includes(b.status)) throw new ScopeError(400, 'invalid_status', `Status must be one of: ${allowed.join(', ')}.`);
+        patch.status = b.status;
+      }
       const { error } = await db.from('tenants').update(patch).eq('id', id);
       if (error) throw new Error(error.message);
-      await db.from('audit_events').insert({ tenant_id: id, actor_user_id: scope.userId, action: 'tenant.plan.updated', target_type: 'tenant', source: 'platform_owner', metadata: patch }).then(() => {}, () => {});
+      // Suspension/reactivation is a distinct, security-relevant audit action.
+      const action = b.status !== undefined ? 'tenant.status.updated' : 'tenant.plan.updated';
+      await db.from('audit_events').insert({ tenant_id: id, actor_user_id: scope.userId, action, target_type: 'tenant', source: 'platform_owner', metadata: patch }).then(() => {}, () => {});
     }
 
     res.json({ id, ok: true });

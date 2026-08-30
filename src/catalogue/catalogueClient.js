@@ -191,6 +191,17 @@ export const collectStoreOrder = (id, pickupCode, scope) => scopedJson(`/app/sto
 // White-label: the caller's own active-tenant branding (accent + signed logo URL).
 export const fetchBranding = (scope) => scopedJson('/app/branding', scope);
 
+// In-app bug reporting. Any member can report; platform owners list + triage.
+export const reportBug = (payload, scope) => scopedJson('/app/bugs', { ...scope, method: 'POST', body: payload });
+export const fetchBugs = (scope, status) => scopedJson(`/app/bugs${status ? `?status=${encodeURIComponent(status)}` : ''}`, scope);
+export const updateBug = (id, patch, scope) => scopedJson(`/app/bugs/${id}`, { ...scope, method: 'PATCH', body: patch });
+
+// Platform subscription billing (owner): metered charges → invoice → Paystack.
+export const fetchBilling = (scope) => scopedJson('/app/platform/billing', scope);
+export const issueInvoice = (tenantId, period, scope) => scopedJson('/app/platform/billing/invoices', { ...scope, method: 'POST', body: { tenantId, period } });
+export const chargeInvoice = (id, payerEmail, scope) => scopedJson(`/app/platform/billing/invoices/${id}`, { ...scope, method: 'POST', body: { action: 'charge', payerEmail } });
+export const verifyInvoice = (id, reference, scope) => scopedJson(`/app/platform/billing/invoices/${id}`, { ...scope, method: 'POST', body: { action: 'verify', reference } });
+
 // AgentMail transactional email. `template` is one of the server-side templates
 // (po_decision, request_decision, sale_confirmation, promo, purchase_order,
 // invoice); the server builds the HTML and sends. No-ops server-side until the

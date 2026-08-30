@@ -4,6 +4,7 @@ import { MOCK_AUDIT_LOG, ROLE_HOME_CARDS } from '../data/mockData';
 import { uploadTenantLogo, recordAudit } from '../tenant/adminReads';
 import { fetchPlatformOverview, provisionPlatformTenant, updatePlatformTenant, fetchMembers, inviteMember, updateMemberRole, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { Building2, Plus, Palette, Smartphone, Wallet, ScrollText, LayoutGrid, AlertTriangle, Users, ShieldCheck, HardHat } from 'lucide-react';
+import { BugTriageCard } from './BugTriageCard';
 
 const ACCENT_SWATCHES = ['#EC3013', '#2563EB', '#0891B2', '#7C3AED', '#059669', '#D97706'];
 const ROLE_LABELS = { worker: 'Worker', storekeeper: 'Storekeeper', supervisor: 'Supervisor', manager: 'Manager', executive: 'Executive', merchant: 'Merchant', tenant_admin: 'Tenant Admin' };
@@ -65,6 +66,25 @@ export const PlatformOwnerPortal = () => {
   // (works regardless of the private-bucket signed-URL round-trip).
   const [moduleOverrides, setModuleOverrides] = useState({});
   const [logoPreview, setLogoPreview] = useState({});
+  const [statusBusyId, setStatusBusyId] = useState(null);
+
+  // Suspend / reactivate a tenant. Suspension is enforced server-side by
+  // resolve_access_scope (202608300001 migration): a non-active tenant grants
+  // its members no scope, so they can't sign in until reactivated.
+  const changeTenantStatus = async (t, status) => {
+    setStatusBusyId(t.id);
+    try {
+      await updatePlatformTenant(t.id, { status }, scope);
+      triggerNotification(
+        status === 'suspended' ? 'Tenant suspended' : 'Tenant reactivated',
+        status === 'suspended' ? `${t.name}'s users can no longer sign in.` : `${t.name} is active again.`,
+        status === 'suspended' ? 'warning' : 'success',
+      );
+      reloadOverview();
+    } catch (e) {
+      triggerNotification('Update failed', e?.message || 'Could not change tenant status.', 'danger');
+    } finally { setStatusBusyId(null); }
+  };
   const [assignableRoles, setAssignableRoles] = useState([]);
   const [tempPw, setTempPw] = useState(null);
 
@@ -178,10 +198,10 @@ export const PlatformOwnerPortal = () => {
 
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>Tenant</th><th>Domain</th><th className="num">Users</th><th className="center">Plan</th><th className="num">MRR</th><th className="center">State</th></tr></thead>
+            <thead><tr><th>Tenant</th><th>Domain</th><th className="num">Users</th><th className="center">Plan</th><th className="num">MRR</th><th className="center">State</th><th className="center">Access</th></tr></thead>
             <tbody>
               {tenantRows.length === 0 && (
-                <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 24 }}>No tenants visible for your access.</td></tr>
+                <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 24 }}>No tenants visible for your access.</td></tr>
               )}
               {tenantRows.map(t => {
                 const sel = t.id === selectedTenantId;
@@ -201,7 +221,12 @@ export const PlatformOwnerPortal = () => {
                     <td className="num">{t.users}</td>
                     <td className="center"><span className="badge badge-neutral">{t.plan}</span></td>
                     <td className="num">{estimateMrr(t) ? `R ${estimateMrr(t).toLocaleString('en-ZA')}` : '—'}</td>
-                    <td className="center"><span className={`badge ${liveState ? 'badge-success' : 'badge-warning'}`}>{st}</span></td>
+                    <td className="center"><span className={`badge ${st === 'suspended' || st === 'closed' ? 'badge-danger' : liveState ? 'badge-success' : 'badge-warning'}`}>{st}</span></td>
+                    <td className="center" onClick={(e) => e.stopPropagation()}>
+                      {st === 'suspended' || st === 'closed'
+                        ? <button className="btn btn-primary btn-sm" disabled={statusBusyId === t.id} onClick={() => changeTenantStatus(t, 'active')}>{statusBusyId === t.id ? '…' : 'Reactivate'}</button>
+                        : <button className="btn btn-secondary btn-sm" disabled={statusBusyId === t.id} onClick={() => changeTenantStatus(t, 'suspended')}>{statusBusyId === t.id ? '…' : 'Suspend'}</button>}
+                    </td>
                   </tr>
                 );
               })}
@@ -410,31 +435,11 @@ export const PlatformOwnerPortal = () => {
         </div>
       </div>
 
-      {/* Billing — honest: real plan + member counts, no invented MRR */}
-      <div className="cols cols-2">
-        <div className="card">
-          <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Wallet size={17} style={{ color: 'var(--primary)' }} /><h3>Plans &amp; billing</h3><SourceBadge live={tenantsLive} /></div></div>
-          <div className="card-bd">
-            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 14 }}>
-              <div>
-                <div className="kpi-value" style={{ color: 'var(--primary)' }}>R {tenantRows.reduce((a, t) => a + estimateMrr(t), 0).toLocaleString('en-ZA')}</div>
-                <div className="kpi-label">Estimated MRR · {liveCount} live · {trialCount} trial</div>
-              </div>
-              <div className="muted" style={{ fontSize: 13 }}>{totalUsers} users across {tenantRows.length} tenants</div>
-            </div>
-            <div className="table-wrap">
-              <table className="table">
-                <thead><tr><th>Tenant</th><th className="center">Plan</th><th className="num">Members</th><th className="num">MRR</th></tr></thead>
-                <tbody>
-                  {tenantRows.map(t => (
-                    <tr key={t.id}><td style={{ fontWeight: 500 }}>{t.name}</td><td className="center"><span className="badge badge-neutral" style={{ textTransform: 'capitalize' }}>{t.plan}</span></td><td className="num">{t.users}</td><td className="num tabular">{estimateMrr(t) ? `R ${estimateMrr(t).toLocaleString('en-ZA')}` : '—'}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="muted" style={{ fontSize: 12, marginBottom: 0, marginTop: 12 }}>Plan &amp; member counts are live. MRR is estimated from the published pricing (Merchant R990 · Plant R5,900 + R250/user over 200 · Group R24,900 + R150/user over 200); a metered charging engine isn’t wired yet.</p>
-          </div>
-        </div>
+      {/* Billing, bug triage and audit — full width */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <BillingCard />
+
+        <BugTriageCard />
 
         <div className="card">
           <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ScrollText size={17} style={{ color: 'var(--primary)' }} /><h3>Platform audit log</h3><SourceBadge live={auditLive} /></div></div>

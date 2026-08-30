@@ -4,8 +4,9 @@ import {
   HardHat, ClipboardCheck, PackageOpen, LineChart, Receipt,
   Building2, ShieldEllipsis, Tag, Boxes, ShoppingCart, BadgePercent,
   Percent, Truck, Upload, Wallet, Workflow, Radio, X, Factory, ClipboardList,
-  PanelLeftClose, PanelLeftOpen, Store
+  PanelLeftClose, PanelLeftOpen, Store, Bug
 } from 'lucide-react';
+import { BugReportModal } from './BugReportModal';
 
 // Each item declares the capability required to see it. In demo mode and for
 // platform owners (platform.manage), everything is shown; otherwise the nav is
@@ -64,6 +65,7 @@ export function visibleNavGroups(tenantAccess) {
 
 export const Sidebar = ({ open, onClose }) => {
   const { activeRole, setActiveRole, tenantAccess, brand } = useApp();
+  const [bugOpen, setBugOpen] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(() => {
     try { return localStorage.getItem('sl_sidebar_collapsed') === '1'; } catch { return false; }
   });
@@ -118,8 +120,13 @@ export const Sidebar = ({ open, onClose }) => {
           ))}
         </nav>
 
+        <button className="nav-item" onClick={() => setBugOpen(true)} title={collapsed ? 'Report a bug' : undefined} style={{ marginTop: 4 }}>
+          <Bug size={17} />
+          <span>Report a bug</span>
+        </button>
         <div className="sidebar-foot eyebrow">Multi-currency · cross-border ready</div>
       </aside>
+      {bugOpen && <BugReportModal onClose={() => setBugOpen(false)} />}
     </>
   );
 };
