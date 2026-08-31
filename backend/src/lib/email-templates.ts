@@ -78,6 +78,39 @@ const codeBox = (code: string, label = 'Pickup code'): string =>
     <div style="font-size:11.5px;color:${MUTED};margin-top:4px">Present this code at the store counter to collect.</div>
   </div>`;
 
+/* ─────────────── 0. AUTH — Supabase send-email hook (OTP / links) ────────── */
+// Renders the email for any Supabase auth action. For OTP sign-in the 6-digit
+// `token` is shown prominently; link-based actions (signup/recovery/etc.) also
+// carry a confirmation button.
+export function authEmail(o: { actionType?: string; token?: string; confirmationUrl?: string | null }): EmailContent {
+  const type = (o.actionType || 'magiclink').toLowerCase();
+  const TITLES: Record<string, { subject: string; title: string; lead: string }> = {
+    magiclink: { subject: 'Your SightLive sign-in code', title: 'Sign in to SightLive', lead: 'Use this code to finish signing in. It expires shortly and is for you only — no one from SightLive will ever ask for it.' },
+    login: { subject: 'Your SightLive sign-in code', title: 'Sign in to SightLive', lead: 'Use this code to finish signing in. It expires shortly and is for you only.' },
+    email: { subject: 'Your SightLive sign-in code', title: 'Sign in to SightLive', lead: 'Use this code to finish signing in. It expires shortly and is for you only.' },
+    otp: { subject: 'Your SightLive verification code', title: 'Verify it’s you', lead: 'Enter this code to continue.' },
+    signup: { subject: 'Confirm your SightLive email', title: 'Confirm your email', lead: 'Enter this code (or use the button) to confirm your email and activate your account.' },
+    recovery: { subject: 'Reset your SightLive password', title: 'Reset your password', lead: 'Use this code (or the button) to reset your password. If you didn’t request this, ignore this email.' },
+    email_change: { subject: 'Confirm your new email', title: 'Confirm your new email', lead: 'Enter this code (or use the button) to confirm your new email address.' },
+    invite: { subject: 'You’ve been invited to SightLive', title: 'You’ve been invited', lead: 'Use the button below to accept your invitation and set up your account.' },
+    reauthentication: { subject: 'Confirm it’s you — SightLive', title: 'Confirm it’s you', lead: 'Enter this code to confirm this sensitive action.' },
+  };
+  const t = TITLES[type] || TITLES.magiclink;
+  const showCode = !!o.token && type !== 'invite';
+  const showButton = !!o.confirmationUrl && ['signup', 'recovery', 'email_change', 'invite', 'magiclink'].includes(type);
+  return {
+    subject: t.subject,
+    html: layout({
+      title: t.title,
+      preheader: showCode ? `Your code: ${o.token}` : t.subject,
+      bodyHtml: `${p(esc(t.lead))}
+        ${showCode ? codeBox(o.token!, 'Your code') : ''}
+        ${showButton ? p(btn(type === 'recovery' ? 'Reset password' : type === 'invite' ? 'Accept invitation' : 'Confirm', o.confirmationUrl!)) : ''}
+        ${p('<span style="color:#6b7280;font-size:12.5px">If you didn’t request this, you can safely ignore this email.</span>')}`,
+    }),
+  };
+}
+
 /* ───────────────────────── 1. AUTH — invite / welcome ───────────────────── */
 export function inviteEmail(o: { name?: string; email: string; role?: string; tempPassword?: string; loginUrl?: string }): EmailContent {
   const login = o.loginUrl || (process.env.APP_PUBLIC_URL ?? '').trim() || 'the SightLive app';

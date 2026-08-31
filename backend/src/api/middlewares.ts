@@ -36,6 +36,13 @@ function appCors(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFuncti
 export default defineMiddlewares({
   routes: [
     {
+      // Supabase Send-Email hook: keep the raw body so the Standard-Webhooks
+      // HMAC signature can be verified. Not tenant-scoped (Supabase → us).
+      matcher: '/hooks/send-email',
+      methods: ['POST'],
+      bodyParser: { preserveRawBody: true },
+    },
+    {
       matcher: '/app/catalogue/import/validate',
       methods: ['POST'],
       bodyParser: { sizeLimit: '8mb' },

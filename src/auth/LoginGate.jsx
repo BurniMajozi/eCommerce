@@ -21,6 +21,8 @@ export const LoginGate = ({ children }) => {
   const [checked, setChecked] = useState(false);
   const [skipped, setSkipped] = useState(false);
   const [showLogin, setShowLogin] = useState(false); // false = show marketing landing first
+  const [otpMode, setOtpMode] = useState(false);      // false = password, true = email code
+  const [otpSent, setOtpSent] = useState(false);      // email-code: false = enter email, true = enter code
   const [factorId, setFactorId] = useState(null);
   const [qr, setQr] = useState(null);
   const [secret, setSecret] = useState(null);
@@ -72,6 +74,25 @@ export const LoginGate = ({ children }) => {
       if (error) setErr(error.message || 'Sign-in failed.');
     } catch (e2) { setErr(e2?.message || 'Sign-in failed.'); } finally { setSubmitting(false); }
   };
+
+  // Passwordless email-code sign-in.
+  const sendEmailCode = async (e) => {
+    e.preventDefault(); setErr(null); setSubmitting(true);
+    try {
+      const { error } = await auth.signInWithEmailOtp(email.trim());
+      if (error) setErr(error.message || 'Could not send the code.');
+      else { setOtpSent(true); setCode(''); }
+    } catch (e2) { setErr(e2?.message || 'Could not send the code.'); } finally { setSubmitting(false); }
+  };
+  const submitEmailCode = async (e) => {
+    e.preventDefault(); setErr(null); setSubmitting(true);
+    try {
+      const { error } = await auth.verifyEmailOtp({ email: email.trim(), token: code.trim() });
+      if (error) setErr(error.message || 'Invalid or expired code — try again.');
+      // success → onAuthStateChange sets the session and the gate proceeds
+    } catch (e2) { setErr(e2?.message || 'Verification failed.'); } finally { setSubmitting(false); }
+  };
+  const backToPassword = () => { setOtpMode(false); setOtpSent(false); setCode(''); setErr(null); };
 
   const startEnroll = async () => {
     setErr(null); setSubmitting(true);
@@ -162,16 +183,45 @@ export const LoginGate = ({ children }) => {
   // Marketing front page first; the Sign in / Get started buttons reveal the form.
   if (!showLogin) return <LandingPage onSignIn={() => setShowLogin(true)} />;
 
+  if (auth.loading) return shell('Sign in', 'Use your SightLive account.', <div className="muted" style={{ marginTop: 22, fontSize: 13 }}>Connecting…</div>);
+
+  // Email-code sign-in: step 2 — enter the emailed code.
+  if (otpMode && otpSent) {
+    return shell('Enter your email code', <>We emailed a 6-digit code to <strong>{email}</strong>. It expires shortly.</>,
+      <form onSubmit={submitEmailCode} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="field">
+          <label className="field-label">Email code</label>
+          <input className="input" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={6}
+            value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} placeholder="123456" autoFocus required
+            style={{ letterSpacing: '0.3em', fontSize: 18, textAlign: 'center' }} />
+        </div>
+        {errBox}
+        <button className="btn btn-primary btn-block" type="submit" disabled={submitting || code.length < 6}>{submitting ? 'Verifying…' : 'Verify & continue'}</button>
+        <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={sendEmailCode} disabled={submitting}>Resend code</button>
+        <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={backToPassword}>← Use password instead</button>
+      </form>);
+  }
+
+  // Email-code sign-in: step 1 — enter email.
+  if (otpMode) {
+    return shell('Sign in with an email code', 'We’ll email you a 6-digit code — no password needed.',
+      <form onSubmit={sendEmailCode} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="field"><label className="field-label">Email</label><input className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.co.za" autoFocus required /></div>
+        {errBox}
+        <button className="btn btn-primary btn-block" type="submit" disabled={submitting || !email.trim()}>{submitting ? 'Sending…' : 'Email me a code'}</button>
+        <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={backToPassword}>← Use password instead</button>
+      </form>);
+  }
+
+  // Default: password sign-in, with the email-code option below.
   return shell('Sign in', 'Use your SightLive account. Access is scoped to your tenant by row-level security.',
-    auth.loading
-      ? <div className="muted" style={{ marginTop: 22, fontSize: 13 }}>Connecting…</div>
-      : (
-        <form onSubmit={submitPassword} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div className="field"><label className="field-label">Email</label><input className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
-          <div className="field"><label className="field-label">Password</label><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
-          {errBox}
-          <button className="btn btn-primary btn-block" type="submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</button>
-          <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={() => setShowLogin(false)}>← Back to home</button>
-        </form>
-      ));
+    <form onSubmit={submitPassword} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="field"><label className="field-label">Email</label><input className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
+      <div className="field"><label className="field-label">Password</label><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
+      {errBox}
+      <button className="btn btn-primary btn-block" type="submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '2px 0' }}><div style={{ flex: 1, height: 1, background: 'var(--border)' }} /><span className="muted" style={{ fontSize: 11 }}>or</span><div style={{ flex: 1, height: 1, background: 'var(--border)' }} /></div>
+      <button type="button" className="btn btn-secondary btn-block" onClick={() => { setOtpMode(true); setErr(null); }}>Email me a sign-in code</button>
+      <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={() => setShowLogin(false)}>← Back to home</button>
+    </form>);
 };

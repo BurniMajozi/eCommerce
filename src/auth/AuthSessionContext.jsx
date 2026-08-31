@@ -47,6 +47,17 @@ export const AuthSessionProvider = ({ children }) => {
       if (!supabase) throw new Error('Supabase is not configured; the app is running in demo mode.');
       return supabase.auth.signInWithPassword(credentials);
     },
+    // Passwordless email-code sign-in. signInWithEmailOtp emails a 6-digit code
+    // (only to existing users — shouldCreateUser:false); verifyEmailOtp exchanges
+    // the code for a session. The AAL/MFA gate still applies afterwards.
+    signInWithEmailOtp: (email) => {
+      if (!supabase) throw new Error('Supabase is not configured; the app is running in demo mode.');
+      return supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+    },
+    verifyEmailOtp: ({ email, token }) => {
+      if (!supabase) throw new Error('Supabase is not configured.');
+      return supabase.auth.verifyOtp({ email, token, type: 'email' });
+    },
     // MFA step-up: after password sign-in, if the account has an enrolled TOTP
     // factor the session is aal1 until the code is verified (→ aal2). aal2 is
     // required for commerce.manage (cost/profit + product/order writes).
