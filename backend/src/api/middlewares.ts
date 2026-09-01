@@ -60,6 +60,12 @@ export default defineMiddlewares({
       bodyParser: { sizeLimit: '2mb' },
     },
     {
+      // Public pre-auth login helpers (email-first journey). Browser-called, so
+      // they need CORS, but NOT the tenant-scope auth middleware.
+      matcher: '/session/*',
+      middlewares: [appCors],
+    },
+    {
       matcher: '/app/*',
       // appCors must run before the auth middleware so preflight OPTIONS
       // (no bearer token) gets a 204 with CORS headers instead of a 401.

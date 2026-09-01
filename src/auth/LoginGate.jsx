@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useAuthSession } from './AuthSessionContext';
 import { LandingPage } from '../components/LandingPage';
 import { readBrandCache } from '../theme/applyBrand';
+import { loginEmailStatus, markLoginBootstrapped } from '../catalogue/catalogueClient';
 
 // Gates the app behind Supabase auth ONLY when Supabase is configured. In demo
 // mode it renders children immediately. Commerce management (cost/profit +
@@ -21,8 +22,8 @@ export const LoginGate = ({ children }) => {
   const [checked, setChecked] = useState(false);
   const [skipped, setSkipped] = useState(false);
   const [showLogin, setShowLogin] = useState(false); // false = show marketing landing first
-  const [otpMode, setOtpMode] = useState(false);      // false = password, true = email code
-  const [otpSent, setOtpSent] = useState(false);      // email-code: false = enter email, true = enter code
+  const [loginStep, setLoginStep] = useState('email'); // 'email' | 'password' | 'code' | 'pwFallback'
+  const [firstLogin, setFirstLogin] = useState(false);
   const [factorId, setFactorId] = useState(null);
   const [qr, setQr] = useState(null);
   const [secret, setSecret] = useState(null);
@@ -75,24 +76,39 @@ export const LoginGate = ({ children }) => {
     } catch (e2) { setErr(e2?.message || 'Sign-in failed.'); } finally { setSubmitting(false); }
   };
 
-  // Passwordless email-code sign-in.
-  const sendEmailCode = async (e) => {
+  // Email-first journey. Step 1: email → decide password (first login) vs code.
+  const continueEmail = async (e) => {
     e.preventDefault(); setErr(null); setSubmitting(true);
     try {
-      const { error } = await auth.signInWithEmailOtp(email.trim());
-      if (error) setErr(error.message || 'Could not send the code.');
-      else { setOtpSent(true); setCode(''); }
-    } catch (e2) { setErr(e2?.message || 'Could not send the code.'); } finally { setSubmitting(false); }
+      const { needsPassword } = await loginEmailStatus(email.trim().toLowerCase());
+      if (needsPassword) { setFirstLogin(true); setLoginStep('password'); }
+      else if (await sendCode()) setLoginStep('code');
+    } catch (e2) { setErr(e2?.message || 'Could not continue.'); } finally { setSubmitting(false); }
   };
-  const submitEmailCode = async (e) => {
+  const sendCode = async () => {
+    const { error } = await auth.signInWithEmailOtp(email.trim());
+    if (error) { setErr(error.message || 'Could not send the code.'); return false; }
+    setCode(''); return true;
+  };
+  // First sign-in: verify the one-time password, then email the code.
+  const submitFirstPassword = async (e) => {
     e.preventDefault(); setErr(null); setSubmitting(true);
     try {
-      const { error } = await auth.verifyEmailOtp({ email: email.trim(), token: code.trim() });
-      if (error) setErr(error.message || 'Invalid or expired code — try again.');
+      const { error } = await auth.signInWithPassword({ email: email.trim(), password });
+      if (error) { setErr(error.message || 'Sign-in failed.'); return; }
+      setLoginStep((await sendCode()) ? 'code' : 'password');
+    } catch (e2) { setErr(e2?.message || 'Sign-in failed.'); } finally { setSubmitting(false); }
+  };
+  const submitCode = async (e) => {
+    e.preventDefault(); setErr(null); setSubmitting(true);
+    try {
+      const { data, error } = await auth.verifyEmailOtp({ email: email.trim(), token: code.trim() });
+      if (error) { setErr(error.message || 'Invalid or expired code — try again.'); return; }
+      if (firstLogin) await markLoginBootstrapped(data?.session?.access_token); // remember: code-only next time
       // success → onAuthStateChange sets the session and the gate proceeds
     } catch (e2) { setErr(e2?.message || 'Verification failed.'); } finally { setSubmitting(false); }
   };
-  const backToPassword = () => { setOtpMode(false); setOtpSent(false); setCode(''); setErr(null); };
+  const resetLogin = () => { setLoginStep('email'); setFirstLogin(false); setCode(''); setPassword(''); setErr(null); };
 
   const startEnroll = async () => {
     setErr(null); setSubmitting(true);
@@ -185,10 +201,34 @@ export const LoginGate = ({ children }) => {
 
   if (auth.loading) return shell('Sign in', 'Use your SightLive account.', <div className="muted" style={{ marginTop: 22, fontSize: 13 }}>Connecting…</div>);
 
-  // Email-code sign-in: step 2 — enter the emailed code.
-  if (otpMode && otpSent) {
+  // Password fallback — always reachable so a missing email code never locks
+  // anyone out. Signs straight in with email + password (TOTP step-up still applies).
+  if (loginStep === 'pwFallback') {
+    return shell('Sign in with password', 'Use your email and password — a fallback if an email code doesn’t arrive.',
+      <form onSubmit={submitPassword} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="field"><label className="field-label">Email</label><input className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
+        <div className="field"><label className="field-label">Password</label><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
+        {errBox}
+        <button className="btn btn-primary btn-block" type="submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</button>
+        <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={resetLogin}>← Back</button>
+      </form>);
+  }
+
+  // First sign-in: one-time password, then we email a code.
+  if (loginStep === 'password') {
+    return shell('First sign-in', <>Enter the password for <strong>{email}</strong> to set up your account. After this, you’ll sign in with just an email code.</>,
+      <form onSubmit={submitFirstPassword} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="field"><label className="field-label">Password</label><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus required /></div>
+        {errBox}
+        <button className="btn btn-primary btn-block" type="submit" disabled={submitting || !password}>{submitting ? 'Checking…' : 'Continue'}</button>
+        <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={resetLogin}>← Use a different email</button>
+      </form>);
+  }
+
+  // Emailed code step (both first sign-in and returning users).
+  if (loginStep === 'code') {
     return shell('Enter your email code', <>We emailed a 6-digit code to <strong>{email}</strong>. It expires shortly.</>,
-      <form onSubmit={submitEmailCode} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <form onSubmit={submitCode} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div className="field">
           <label className="field-label">Email code</label>
           <input className="input" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={6}
@@ -196,32 +236,21 @@ export const LoginGate = ({ children }) => {
             style={{ letterSpacing: '0.3em', fontSize: 18, textAlign: 'center' }} />
         </div>
         {errBox}
-        <button className="btn btn-primary btn-block" type="submit" disabled={submitting || code.length < 6}>{submitting ? 'Verifying…' : 'Verify & continue'}</button>
-        <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={sendEmailCode} disabled={submitting}>Resend code</button>
-        <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={backToPassword}>← Use password instead</button>
+        <button className="btn btn-primary btn-block" type="submit" disabled={submitting || code.length < 6}>{submitting ? 'Verifying…' : 'Verify & sign in'}</button>
+        <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={sendCode} disabled={submitting}>Resend code</button>
+        <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={() => { setLoginStep('pwFallback'); setErr(null); }}>Didn’t get a code? Sign in with password</button>
+        <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={resetLogin}>← Start over</button>
       </form>);
   }
 
-  // Email-code sign-in: step 1 — enter email.
-  if (otpMode) {
-    return shell('Sign in with an email code', 'We’ll email you a 6-digit code — no password needed.',
-      <form onSubmit={sendEmailCode} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div className="field"><label className="field-label">Email</label><input className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.co.za" autoFocus required /></div>
-        {errBox}
-        <button className="btn btn-primary btn-block" type="submit" disabled={submitting || !email.trim()}>{submitting ? 'Sending…' : 'Email me a code'}</button>
-        <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={backToPassword}>← Use password instead</button>
-      </form>);
-  }
-
-  // Default: password sign-in, with the email-code option below.
-  return shell('Sign in', 'Use your SightLive account. Access is scoped to your tenant by row-level security.',
-    <form onSubmit={submitPassword} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div className="field"><label className="field-label">Email</label><input className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
-      <div className="field"><label className="field-label">Password</label><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
+  // Default: email-first. New users get a one-time password step; returning users
+  // go straight to an emailed code.
+  return shell('Sign in', 'Enter your email to continue. New users sign in with a password once — after that it’s just an emailed code.',
+    <form onSubmit={continueEmail} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="field"><label className="field-label">Email</label><input className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.co.za" autoFocus required /></div>
       {errBox}
-      <button className="btn btn-primary btn-block" type="submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</button>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '2px 0' }}><div style={{ flex: 1, height: 1, background: 'var(--border)' }} /><span className="muted" style={{ fontSize: 11 }}>or</span><div style={{ flex: 1, height: 1, background: 'var(--border)' }} /></div>
-      <button type="button" className="btn btn-secondary btn-block" onClick={() => { setOtpMode(true); setErr(null); }}>Email me a sign-in code</button>
+      <button className="btn btn-primary btn-block" type="submit" disabled={submitting || !email.trim()}>{submitting ? 'Checking…' : 'Continue'}</button>
+      <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={() => { setLoginStep('pwFallback'); setErr(null); }}>Sign in with password instead</button>
       <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={() => setShowLogin(false)}>← Back to home</button>
     </form>);
 };

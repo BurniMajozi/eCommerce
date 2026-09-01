@@ -36,6 +36,19 @@ export const AuthSessionProvider = ({ children }) => {
     };
   }, []);
 
+  // Auto sign-out after 30 minutes of inactivity (mouse/keyboard/tab activity
+  // resets the timer). On logout the session clears and the login screen returns.
+  useEffect(() => {
+    if (!supabase || !session) return undefined;
+    const IDLE_MS = 30 * 60 * 1000;
+    let timer;
+    const reset = () => { clearTimeout(timer); timer = setTimeout(() => { supabase.auth.signOut(); }, IDLE_MS); };
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'visibilitychange'];
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+    return () => { clearTimeout(timer); events.forEach((e) => window.removeEventListener(e, reset)); };
+  }, [session?.user?.id]);
+
   const value = useMemo(() => ({
     configured: isSupabaseConfigured,
     mode: isSupabaseConfigured ? 'supabase' : 'demo',

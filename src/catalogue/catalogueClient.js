@@ -191,6 +191,27 @@ export const collectStoreOrder = (id, pickupCode, scope) => scopedJson(`/app/sto
 // White-label: the caller's own active-tenant branding (accent + signed logo URL).
 export const fetchBranding = (scope) => scopedJson('/app/branding', scope);
 
+// Email-first login helpers (public, pre-auth). Fail-safe to needsPassword:true
+// so a lookup problem never locks anyone out of the password path.
+export async function loginEmailStatus(email) {
+  if (!isMedusaCatalogueEnabled || !rawBaseUrl) return { needsPassword: true };
+  try {
+    const r = await fetch(new URL('/session/email-status', rawBaseUrl), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
+    });
+    if (!r.ok) return { needsPassword: true };
+    return await r.json();
+  } catch { return { needsPassword: true }; }
+}
+export async function markLoginBootstrapped(accessToken) {
+  if (!isMedusaCatalogueEnabled || !rawBaseUrl || !accessToken) return;
+  try {
+    await fetch(new URL('/session/bootstrapped', rawBaseUrl), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    });
+  } catch { /* best-effort — worst case they get the password prompt once more */ }
+}
+
 // In-app bug reporting. Any member can report; platform owners list + triage.
 export const reportBug = (payload, scope) => scopedJson('/app/bugs', { ...scope, method: 'POST', body: payload });
 export const fetchBugs = (scope, status) => scopedJson(`/app/bugs${status ? `?status=${encodeURIComponent(status)}` : ''}`, scope);
