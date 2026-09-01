@@ -73,7 +73,9 @@ export const LoginGate = ({ children }) => {
     try {
       const { needsPassword } = await loginEmailStatus(email.trim().toLowerCase());
       if (needsPassword) { setFirstLogin(true); setLoginStep('password'); }
-      else if (await sendCode()) setLoginStep('code');
+      // Returning user: email a code. If it can't send (outage/rate-limit), fall
+      // through to password so a mail problem can't lock anyone out.
+      else setLoginStep((await sendCode()) ? 'code' : 'pwFallback');
     } catch (e2) { setErr(e2?.message || 'Could not continue.'); } finally { setSubmitting(false); }
   };
   const sendCode = async () => {
@@ -240,7 +242,6 @@ export const LoginGate = ({ children }) => {
         {errBox}
         <button className="btn btn-primary btn-block" type="submit" disabled={submitting || code.length < 6}>{submitting ? 'Verifying…' : 'Verify & sign in'}</button>
         <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={sendCode} disabled={submitting}>Resend code</button>
-        <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={() => { setLoginStep('pwFallback'); setErr(null); }}>Didn’t get a code? Sign in with password</button>
         <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={resetLogin}>← Start over</button>
       </form>);
   }
@@ -252,7 +253,6 @@ export const LoginGate = ({ children }) => {
       <div className="field"><label className="field-label">Email</label><input className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.co.za" autoFocus required /></div>
       {errBox}
       <button className="btn btn-primary btn-block" type="submit" disabled={submitting || !email.trim()}>{submitting ? 'Checking…' : 'Continue'}</button>
-      <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={() => { setLoginStep('pwFallback'); setErr(null); }}>Sign in with password instead</button>
       <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={() => setShowLogin(false)}>← Back to home</button>
     </form>);
 };
