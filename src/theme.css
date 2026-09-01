@@ -396,3 +396,17 @@ html, body { max-width: 100%; overflow-x: hidden; }
   .card-bd { padding: 15px; }
   .page-head h2 { font-size: 19px; }
 }
+
+/* ── Print: isolate the tax invoice so a "Print / Save PDF" produces only the
+   invoice document, not the surrounding app (sidebar, topbar, other panels). ── */
+@media print {
+  body * { visibility: hidden !important; }
+  .invoice-print, .invoice-print * { visibility: visible !important; }
+  .invoice-print {
+    position: absolute !important; inset: 0 !important; margin: 0 !important;
+    max-width: 100% !important; width: 100% !important; max-height: none !important;
+    box-shadow: none !important; border: none !important; border-radius: 0 !important;
+  }
+  .invoice-print .no-print { display: none !important; }
+  .overlay { position: static !important; background: none !important; padding: 0 !important; display: block !important; }
+}

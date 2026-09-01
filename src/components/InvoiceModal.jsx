@@ -24,7 +24,7 @@ export const InvoiceModal = ({ invoice, onClose, scope, recipientEmail, triggerN
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+      <div className="modal modal-lg invoice-print" onClick={e => e.stopPropagation()}>
         <div className="modal-hd no-print">
           <span className="badge badge-success">Official B2B tax invoice</span>
           <div style={{ display: 'flex', gap: 8 }}>

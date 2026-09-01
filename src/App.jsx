@@ -62,12 +62,16 @@ const AppContent = () => {
             <span style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{navTitle(activeRole)}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <select className="select" value={activePlant.id} onChange={(e) => setActivePlant(plants.find(p => p.id === e.target.value))} style={{ paddingRight: 32, fontWeight: 500, fontSize: 13, maxWidth: 220 }} aria-label="Active site">
-                {plants.map(p => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
-              </select>
-              <ChevronDown size={16} style={{ position: 'absolute', right: 9, pointerEvents: 'none', color: 'var(--text-muted)' }} />
-            </div>
+            {/* The site picker only makes sense for site-scoped operations. On
+                commerce / platform (global) views it's confusing, so hide it. */}
+            {['EMPLOYEE', 'STOREKEEPER', 'MANAGER', 'EXECUTIVE', 'STORE'].includes(activeRole) && (
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <select className="select" value={activePlant.id} onChange={(e) => setActivePlant(plants.find(p => p.id === e.target.value))} style={{ paddingRight: 32, fontWeight: 500, fontSize: 13, maxWidth: 220 }} aria-label="Active site">
+                  {plants.map(p => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
+                </select>
+                <ChevronDown size={16} style={{ position: 'absolute', right: 9, pointerEvents: 'none', color: 'var(--text-muted)' }} />
+              </div>
+            )}
             <button className="icon-btn" onClick={toggleTheme} aria-label="Toggle theme" title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>

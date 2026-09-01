@@ -948,7 +948,9 @@ export const MedusaAdminPortal = ({ view }) => {
         date: (p.createdAt || p.submittedAt || '').substring(0, 10),
       };
     });
-    const rows = [...orderRows, ...poRows];
+    // Interleave sales + POs by date so the newest activity (incl. a just-created
+    // PO) is actually at the top — the list claims "newest first".
+    const rows = [...orderRows, ...poRows].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     return (
       <Wrap>
         <Head icon={ShoppingCart} title="Orders" sub={live ? 'Live B2B orders (outbound) and purchase orders (inbound), newest first.' : 'B2B orders across regions and currencies.'}
