@@ -229,13 +229,13 @@ export const LoginGate = ({ children }) => {
 
   // Emailed code step (both first sign-in and returning users).
   if (loginStep === 'code') {
-    return shell('Enter your email code', <>We emailed a 6-digit code to <strong>{email}</strong>. It expires shortly.</>,
+    return shell('Enter your email code', <>We emailed a code to <strong>{email}</strong>. Enter it below.</>,
       <form onSubmit={submitCode} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div className="field">
           <label className="field-label">Email code</label>
-          <input className="input" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={6}
-            value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} placeholder="123456" autoFocus required
-            style={{ letterSpacing: '0.3em', fontSize: 18, textAlign: 'center' }} />
+          <input className="input" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={10}
+            value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} placeholder="Enter the code" autoFocus required
+            style={{ letterSpacing: '0.25em', fontSize: 18, textAlign: 'center' }} />
         </div>
         {errBox}
         <button className="btn btn-primary btn-block" type="submit" disabled={submitting || code.length < 6}>{submitting ? 'Verifying…' : 'Verify & sign in'}</button>
