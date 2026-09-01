@@ -81,13 +81,17 @@ export const LoginGate = ({ children }) => {
     if (error) { setErr(error.message || 'Could not send the code.'); return false; }
     setCode(''); return true;
   };
-  // First sign-in: verify the one-time password, then email the code.
+  // First sign-in: verify the one-time password, then email the code. We discard
+  // the password session immediately so the emailed code is the actual sign-in —
+  // otherwise the password alone would log the user in and skip the code.
   const submitFirstPassword = async (e) => {
     e.preventDefault(); setErr(null); setSubmitting(true);
     try {
       const { error } = await auth.signInWithPassword({ email: email.trim(), password });
       if (error) { setErr(error.message || 'Sign-in failed.'); return; }
-      setLoginStep((await sendCode()) ? 'code' : 'password');
+      await auth.signOut();
+      if (await sendCode()) setLoginStep('code');
+      else { setErr('We could not email a code just now — use “Sign in with password” below.'); setLoginStep('pwFallback'); }
     } catch (e2) { setErr(e2?.message || 'Sign-in failed.'); } finally { setSubmitting(false); }
   };
   const submitCode = async (e) => {

@@ -70,7 +70,7 @@ export async function GET(req: TenantScopedRequest, res: MedusaResponse): Promis
   const scope = req.tenantScope;
   try {
     if (!scope) throw new ScopeError(401, 'scope_missing', 'Tenant scope was not resolved.');
-    assertCapability(scope, 'commerce.manage', true);
+    assertCapability(scope, 'commerce.manage'); // viewing orders is fine at aal1; creating one still requires the authenticator
 
     const { context } = await readCatalogueData(req, scope, false);
     const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);

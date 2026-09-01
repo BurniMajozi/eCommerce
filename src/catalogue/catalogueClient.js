@@ -113,9 +113,10 @@ async function scopedJson(path, { accessToken, tenantId, siteId = null, signal, 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (isGet && cache.has(cacheKey)) return cache.get(cacheKey).data;
-    // A protected write hit the authenticator (aal2) wall — ask the app to prompt
-    // for step-up. The action can be retried once the session is elevated.
-    if (payload.code === 'mfa_required' && typeof window !== 'undefined') {
+    // A protected WRITE hit the authenticator (aal2) wall — ask the app to prompt
+    // for step-up. Reads never trigger the popup (so it can't fire on a
+    // background fetch / page load); the action can be retried once elevated.
+    if (payload.code === 'mfa_required' && !isGet && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('sightlive:mfa-required'));
     }
     throw new CatalogueApiError(payload.message ?? 'The Medusa request failed.', { status: response.status, code: payload.code });
