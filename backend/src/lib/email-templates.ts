@@ -71,11 +71,11 @@ function linesTable(lines: Array<{ name?: string; sku?: string; qty?: number; un
   </table>`;
 }
 
-const codeBox = (code: string, label = 'Pickup code'): string =>
+const codeBox = (code: string, label = 'Pickup code', note = 'Present this code at the store counter to collect.'): string =>
   `<div style="margin:6px 0 16px;padding:14px 18px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;text-align:center">
     <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:${MUTED}">${esc(label)}</div>
     <div style="font-size:26px;font-weight:800;letter-spacing:.12em;color:${BRAND};margin-top:4px">${esc(code)}</div>
-    <div style="font-size:11.5px;color:${MUTED};margin-top:4px">Present this code at the store counter to collect.</div>
+    ${note ? `<div style="font-size:11.5px;color:${MUTED};margin-top:4px">${esc(note)}</div>` : ''}
   </div>`;
 
 /* ─────────────── 0. AUTH — Supabase send-email hook (OTP / links) ────────── */
@@ -104,7 +104,7 @@ export function authEmail(o: { actionType?: string; token?: string; confirmation
       title: t.title,
       preheader: showCode ? `Your code: ${o.token}` : t.subject,
       bodyHtml: `${p(esc(t.lead))}
-        ${showCode ? codeBox(o.token!, 'Your code') : ''}
+        ${showCode ? codeBox(o.token!, 'Your code', 'Enter this on the sign-in screen. It expires shortly.') : ''}
         ${showButton ? p(btn(type === 'recovery' ? 'Reset password' : type === 'invite' ? 'Accept invitation' : 'Confirm', o.confirmationUrl!)) : ''}
         ${p('<span style="color:#6b7280;font-size:12.5px">If you didn’t request this, you can safely ignore this email.</span>')}`,
     }),

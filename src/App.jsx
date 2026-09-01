@@ -4,6 +4,7 @@ import { Sidebar, NAV_GROUPS } from './components/Sidebar';
 import { LoginGate } from './auth/LoginGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SkeletonPage } from './components/SkeletonLoader';
+import { MfaStepUp } from './components/MfaStepUp';
 import { Menu, ChevronDown, Sun, Moon, CheckCircle2, AlertTriangle, Info, XCircle, LogOut } from 'lucide-react';
 
 const EmployeePortal = lazy(() => import('./components/EmployeePortal').then(m => ({ default: m.EmployeePortal })));
@@ -86,6 +87,8 @@ const AppContent = () => {
           </ErrorBoundary>
         </main>
       </div>
+
+      <MfaStepUp />
 
       {pushNotification && (
         <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 90, maxWidth: 380 }} className="animate-fade-in">

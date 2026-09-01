@@ -29,19 +29,10 @@ export const LoginGate = ({ children }) => {
   const [secret, setSecret] = useState(null);
   const checkedUserIdRef = React.useRef(null);
 
-  const detect = useCallback(async () => {
-    try {
-      const { data: aal } = await auth.getAAL();
-      const { data: factors } = await auth.listMfaFactors();
-      const totps = factors?.totp || [];
-      const verified = totps.find((f) => f.status === 'verified');
-      if (verified && aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') { setFactorId(verified.id); setStage('challenge'); return; }
-      if (!verified && aal?.currentLevel === 'aal1') { setStage('offer'); return; }
-      setStage(null);
-    } catch {
-      setStage(null);
-    }
-  }, [auth]);
+  // Login no longer forces the authenticator. Email-code (or password) sign-in
+  // completes at aal1 and the app renders; the authenticator is requested only
+  // when a protected action needs it (contextual step-up via MfaStepUp).
+  const detect = useCallback(async () => { setStage(null); }, []);
 
   useEffect(() => {
     if (auth.mode !== 'supabase' || !auth.user) {
