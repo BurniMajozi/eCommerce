@@ -78,7 +78,13 @@ export const LoginGate = ({ children }) => {
   };
   const sendCode = async () => {
     const { error } = await auth.signInWithEmailOtp(email.trim());
-    if (error) { setErr(error.message || 'Could not send the code.'); return false; }
+    if (error) {
+      const m = error.message || '';
+      setErr(/rate limit/i.test(m)
+        ? 'Too many code requests — please wait a minute and try again.'
+        : (m || 'Could not send the code.'));
+      return false;
+    }
     setCode(''); return true;
   };
   // First sign-in: verify the one-time password, then email the code. We discard
@@ -90,8 +96,9 @@ export const LoginGate = ({ children }) => {
       const { error } = await auth.signInWithPassword({ email: email.trim(), password });
       if (error) { setErr(error.message || 'Sign-in failed.'); return; }
       await auth.signOut();
-      if (await sendCode()) setLoginStep('code');
-      else { setErr('We could not email a code just now — use “Sign in with password” below.'); setLoginStep('pwFallback'); }
+      // sendCode surfaces the real reason on failure (e.g. rate limit); if it
+      // can't send, fall back to password so the user isn't stranded.
+      setLoginStep((await sendCode()) ? 'code' : 'pwFallback');
     } catch (e2) { setErr(e2?.message || 'Sign-in failed.'); } finally { setSubmitting(false); }
   };
   const submitCode = async (e) => {
