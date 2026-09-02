@@ -5,16 +5,11 @@ import { sendNotificationEmail } from '../catalogue/catalogueClient';
 export const InvoiceModal = ({ invoice, onClose, scope, recipientEmail, triggerNotification }) => {
   const handlePrint = () => window.print();
   const [emailing, setEmailing] = useState(false);
-  const canEmail = !!(scope?.accessToken && recipientEmail);
+  const canEmail = !!(scope?.accessToken && recipientEmail && invoice.sourceOrderId);
 
   const emailInvoice = async () => {
     setEmailing(true);
-    const r = await sendNotificationEmail('invoice', recipientEmail, {
-      number: invoice.invoiceNumber, clientName: invoice.clientName,
-      lines: (invoice.items ?? []).map((it) => ({ name: it.name, sku: it.sku, qty: it.qty, unitPrice: it.unitPrice })),
-      subtotal: invoice.subtotal, vat: invoice.vatAmount, total: invoice.totalAmount,
-      currency: 'ZAR', dueDate: invoice.dueDate, poNumber: invoice.poNumber,
-    }, scope);
+    const r = await sendNotificationEmail('invoice', invoice.sourceOrderId, scope);
     setEmailing(false);
     if (!triggerNotification) return;
     if (r?.sent) triggerNotification('Invoice emailed', `Sent to ${recipientEmail}.`, 'success');

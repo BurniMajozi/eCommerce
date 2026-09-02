@@ -107,6 +107,7 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
           company_name: company,
           metadata: {
             party_type: type,
+            tenant_id: scope.tenantId,
             spend_limit: num(b.limit),
             currency: (b.currency || 'ZAR').toString(),
             tax_exempt: b.taxExempt === true,

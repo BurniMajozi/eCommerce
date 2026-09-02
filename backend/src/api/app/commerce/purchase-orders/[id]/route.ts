@@ -7,6 +7,7 @@ import type { TenantScopedRequest } from '../../../../middlewares/tenant-scope';
 import { getServiceClient } from '../../../../../security/supabase-scope-resolver';
 import { sendEmailAsync } from '../../../../../lib/agentmail';
 import { poDecisionEmail } from '../../../../../lib/email-templates';
+import { applyQualityReturns, buildReceivedLines, PurchaseOrderQuantityError } from '../../../../../commerce/purchase-order-quantities';
 
 const finite = (v: any): number => (typeof v === 'number' && Number.isFinite(v) ? v : (v == null || isNaN(Number(v)) ? 0 : Number(v)));
 // Separation of duties: the buyer (commerce.manage) submits; a manager
@@ -16,17 +17,17 @@ const APPROVE_CAPS = ['ppe.approve.tier1', 'ppe.approve.tier2', 'platform.manage
 const pg = (req: TenantScopedRequest) => req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as any;
 const now = () => new Date().toISOString();
 
-// Receiving a PO increases on-hand stock. Resolve each line product's inventory
-// item + the tenant/site stock location, then bump stocked_quantity by the
-// received qty. Best-effort: returns how many lines updated.
-async function receiveStock(req: TenantScopedRequest, scope: NonNullable<TenantScopedRequest['tenantScope']>, lines: any[]): Promise<{ updated: number; skipped: number; located: boolean }> {
-  let updated = 0, skipped = 0;
+// Applies signed stock deltas after validating that every PO line resolves to
+// the active tenant/site inventory. Positive qty receives; negative qty reverses
+// stock for a quality return.
+async function adjustStock(req: TenantScopedRequest, scope: NonNullable<TenantScopedRequest['tenantScope']>, lines: any[]): Promise<{ updated: number; skipped: number; located: boolean }> {
+  if (!lines.length) return { updated: 0, skipped: 0, located: true };
   const data = await readCatalogueData(req, scope, false);
   const locationId = data.context.stockLocationId;
-  if (!locationId) return { updated: 0, skipped: lines.length, located: false };
+  if (!locationId) throw new ScopeError(409, 'stock_location_missing', 'The active site has no stock location.');
 
   const itemBySku = new Map<string, { itemId: string; required: number }>();
-  const itemByProduct = new Map<string, { itemId: string; required: number }>();
+  const itemById = new Map<string, { itemId: string; required: number }>();
 
   for (const p of data.products) {
     for (const v of p.variants ?? []) {
@@ -34,7 +35,8 @@ async function receiveStock(req: TenantScopedRequest, scope: NonNullable<TenantS
       if (link?.inventory_item_id) {
         const itemInfo = { itemId: link.inventory_item_id, required: Math.max(1, finite(link.required_quantity) || 1) };
         if (v.sku) itemBySku.set(v.sku.toLowerCase(), itemInfo);
-        if (p.id) itemByProduct.set(p.id, itemInfo);
+        if (v.id) itemById.set(v.id, itemInfo);
+        if (p.id) itemById.set(p.id, itemInfo);
       }
     }
   }
@@ -44,19 +46,25 @@ async function receiveStock(req: TenantScopedRequest, scope: NonNullable<TenantS
     if (lvl.inventory_item_id && lvl.location_id === locationId) stockedByItem.set(lvl.inventory_item_id, finite(lvl.stocked_quantity));
   }
 
-  const updates: Array<{ inventory_item_id: string; location_id: string; stocked_quantity: number }> = [];
+  const deltaByItem = new Map<string, number>();
   for (const l of lines) {
     const skuKey = (l.sku ?? '').toString().toLowerCase();
-    const map = (l.sku && itemBySku.get(skuKey)) || (l.product_id && itemByProduct.get(l.product_id)) || (l.variant_id && itemByProduct.get(l.variant_id));
-    if (!map) { skipped++; continue; }
-    const current = stockedByItem.get(map.itemId) ?? 0;
-    updates.push({ inventory_item_id: map.itemId, location_id: locationId, stocked_quantity: current + finite(l.qty) * map.required });
-    updated++;
+    const map = (l.sku && itemBySku.get(skuKey)) || (l.product_id && itemById.get(l.product_id)) || (l.variant_id && itemById.get(l.variant_id));
+    if (!map) throw new ScopeError(409, 'inventory_item_missing', `No active-site inventory item was found for ${l.sku ?? l.product_id ?? 'a PO line'}.`);
+    deltaByItem.set(map.itemId, (deltaByItem.get(map.itemId) ?? 0) + finite(l.qty) * map.required);
+  }
+
+  const updates: Array<{ inventory_item_id: string; location_id: string; stocked_quantity: number }> = [];
+  for (const [itemId, delta] of deltaByItem) {
+    const current = stockedByItem.get(itemId) ?? 0;
+    const next = current + delta;
+    if (next < 0) throw new ScopeError(409, 'insufficient_stock_for_return', 'A quality return cannot reduce stock below zero.');
+    updates.push({ inventory_item_id: itemId, location_id: locationId, stocked_quantity: next });
   }
   if (updates.length) {
     await updateInventoryLevelsWorkflow(req.scope).run({ input: { updates } as Parameters<typeof updateInventoryLevelsWorkflow>[0] extends never ? never : any });
   }
-  return { updated, skipped, located: true };
+  return { updated: updates.length, skipped: 0, located: true };
 }
 
 // PATCH /app/commerce/purchase-orders/:id — drive the approval workflow via an
@@ -112,48 +120,23 @@ export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Prom
       case 'receive': {
         assertCapability(scope, 'commerce.manage');
         expect('approved', 'sent');
-        // Capture the units actually received per line (can be short or over).
-        // receivedLines: [{ sku, qty }]. Missing lines fall back to ordered qty.
         const ordered = (po.lines ?? []) as any[];
-        const recvMap = new Map<string, number>();
-        if (Array.isArray(b.receivedLines)) {
-          for (const r of b.receivedLines) {
-            const key = (r.sku ?? r.product_id ?? '').toString();
-            if (key) recvMap.set(key, Math.max(0, Math.floor(Number(r.qty ?? r.received ?? 0))));
-          }
-        }
-        const receivedQty = (l: any) => {
-          const key = (l.sku ?? l.product_id ?? '').toString();
-          return recvMap.has(key) ? (recvMap.get(key) as number) : Math.floor(Number(l.qty ?? 0));
-        };
-        // Damaged-in-transit per line: received but unusable, so it doesn't add
-        // to stock but is recorded for the supplier scorecard.
-        const dmgMap = new Map<string, number>();
-        if (Array.isArray(b.damagedLines)) for (const r of b.damagedLines) { const k = (r.sku ?? r.product_id ?? '').toString(); if (k) dmgMap.set(k, Math.max(0, Math.floor(Number(r.qty ?? r.damaged ?? 0)))); }
-        const damagedQty = (l: any) => dmgMap.get((l.sku ?? l.product_id ?? '').toString()) ?? 0;
-
-        const effectiveLines = ordered.map((l) => ({ ...l, qty: Math.max(0, receivedQty(l) - damagedQty(l)) })).filter((l) => l.qty > 0);
-        stockResult = await receiveStock(req, scope, effectiveLines);
+        const movement = buildReceivedLines(ordered, b.receivedLines, b.damagedLines);
+        stockResult = await adjustStock(req, scope, movement.stockAdjustments);
         patch.status = 'received'; patch.received_at = now();
-        patch.received_lines = JSON.stringify(ordered.map((l) => ({
-          sku: l.sku, name: l.name, ordered: Math.floor(Number(l.qty ?? 0)), received: receivedQty(l),
-          damaged: damagedQty(l), returned: 0, unitCost: Number(l.unit_cost ?? 0),
-        })));
+        patch.received_lines = JSON.stringify(movement.receivedLines);
         break;
       }
       case 'report_quality': {
-        // Record a post-receipt quality return (short/reject on inspection) for
-        // the supplier scorecard. Does not reverse stock (handled separately).
+        // Quality returns are absolute per-line totals. The delta from the last
+        // report is applied to stock so the scorecard and inventory stay aligned.
         assertCapability(scope, 'commerce.manage');
         expect('received');
-        const returnMap = new Map<string, number>();
-        if (Array.isArray(b.returnedLines)) for (const r of b.returnedLines) { const k = (r.sku ?? '').toString(); if (k) returnMap.set(k, Math.max(0, Math.floor(Number(r.qty ?? 0)))); }
         const existing = (typeof po.received_lines === 'string' ? JSON.parse(po.received_lines) : (po.received_lines ?? [])) as any[];
         const base = existing.length ? existing : (po.lines ?? []).map((l: any) => ({ sku: l.sku, name: l.name, ordered: Math.floor(Number(l.qty ?? 0)), received: Math.floor(Number(l.qty ?? 0)), damaged: 0, returned: 0, unitCost: Number(l.unit_cost ?? 0) }));
-        patch.received_lines = JSON.stringify(base.map((l: any) => {
-          const k = (l.sku ?? '').toString();
-          return { ...l, returned: returnMap.has(k) ? returnMap.get(k) : (l.returned ?? 0) };
-        }));
+        const quality = applyQualityReturns(base, b.returnedLines);
+        stockResult = await adjustStock(req, scope, quality.stockAdjustments);
+        patch.received_lines = JSON.stringify(quality.receivedLines);
         patch.quality_note = (b.note ?? '').toString().slice(0, 1000) || po.quality_note || null;
         break;
       }
@@ -187,6 +170,10 @@ export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Prom
 
     res.json({ id: req.params.id, status: patch.status ?? po.status, stock: stockResult });
   } catch (error) {
+    if (error instanceof PurchaseOrderQuantityError) {
+      res.status(400).json({ code: error.code, message: error.message });
+      return;
+    }
     if (error instanceof ScopeError) { res.status(error.status).json({ code: error.code, message: error.message }); return; }
     res.status(500).json({ code: 'po_update_failed', message: (error as Error).message });
   }

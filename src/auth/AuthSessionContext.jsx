@@ -47,7 +47,7 @@ export const AuthSessionProvider = ({ children }) => {
     events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
     reset();
     return () => { clearTimeout(timer); events.forEach((e) => window.removeEventListener(e, reset)); };
-  }, [session?.user?.id]);
+  }, [session]);
 
   const value = useMemo(() => ({
     configured: isSupabaseConfigured,

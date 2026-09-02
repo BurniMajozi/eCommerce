@@ -292,8 +292,12 @@ const ReceivePoModal = ({ po, busy, onClose, onConfirm }) => {
   });
   const [dmg, setDmg] = useState({});
   const key = (l, i) => l.sku ?? i;
-  const set = (k, v) => setQty((q) => ({ ...q, [k]: Math.max(0, parseInt(v) || 0) }));
-  const setD = (k, v) => setDmg((d) => ({ ...d, [k]: Math.max(0, parseInt(v) || 0) }));
+  const set = (k, v) => {
+    const next = Math.max(0, parseInt(v) || 0);
+    setQty((q) => ({ ...q, [k]: next }));
+    setDmg((d) => ({ ...d, [k]: Math.min(next, d[k] ?? 0) }));
+  };
+  const setD = (k, v, received) => setDmg((d) => ({ ...d, [k]: Math.min(received, Math.max(0, parseInt(v) || 0)) }));
   const anyDiff = lines.some((l, i) => (qty[key(l, i)] ?? 0) !== Math.floor(Number(l.qty ?? 0))) || Object.values(dmg).some((v) => v > 0);
   const submit = () => onConfirm(
     lines.map((l, i) => ({ sku: l.sku, qty: qty[key(l, i)] ?? 0 })),
@@ -322,7 +326,7 @@ const ReceivePoModal = ({ po, busy, onClose, onConfirm }) => {
                       <td>{l.name || l.sku}<div className="eyebrow">{l.sku}</div></td>
                       <td className="num muted">{ordered}</td>
                       <td className="num"><input type="number" min="0" className="input" style={{ width: 76, padding: '4px 8px', textAlign: 'right' }} value={rec} onChange={(e) => set(key(l, i), e.target.value)} /></td>
-                      <td className="num"><input type="number" min="0" max={rec} className="input" style={{ width: 72, padding: '4px 8px', textAlign: 'right' }} value={dmg[key(l, i)] ?? 0} onChange={(e) => setD(key(l, i), e.target.value)} /></td>
+                      <td className="num"><input type="number" min="0" max={rec} className="input" style={{ width: 72, padding: '4px 8px', textAlign: 'right' }} value={dmg[key(l, i)] ?? 0} onChange={(e) => setD(key(l, i), e.target.value, rec)} /></td>
                       <td className="center">{diff === 0 ? <span className="muted">—</span> : <span className={`badge ${diff < 0 ? 'badge-warning' : 'badge-info'}`}>{diff > 0 ? `+${diff} over` : `${diff} short`}</span>}</td>
                     </tr>
                   );
@@ -346,12 +350,17 @@ const QualityReturnModal = ({ po, busy, onClose, onConfirm }) => {
   const parse = (rl) => (Array.isArray(rl) ? rl : (typeof rl === 'string' ? (() => { try { return JSON.parse(rl); } catch { return []; } })() : []));
   const rl = parse(po.receivedLines);
   const lines = rl.length ? rl : (po.lines ?? []).map((l) => ({ sku: l.sku, name: l.name, received: Math.floor(Number(l.qty ?? 0)) }));
-  const [ret, setRet] = useState({});
+  const [ret, setRet] = useState(() => {
+    const initial = {};
+    lines.forEach((line, index) => { initial[line.sku ?? index] = Math.max(0, Number(line.returned ?? 0)); });
+    return initial;
+  });
   const [note, setNote] = useState('');
   const key = (l, i) => l.sku ?? i;
-  const setR = (k, v) => setRet((r) => ({ ...r, [k]: Math.max(0, parseInt(v) || 0) }));
+  const setR = (k, v, max) => setRet((r) => ({ ...r, [k]: Math.min(max, Math.max(0, parseInt(v) || 0)) }));
   const total = Object.values(ret).reduce((a, b) => a + b, 0);
-  const submit = () => onConfirm(lines.map((l, i) => ({ sku: l.sku, qty: ret[key(l, i)] ?? 0 })).filter((x) => x.qty > 0), note.trim());
+  const hasChange = lines.some((line, index) => Number(ret[key(line, index)] ?? 0) !== Number(line.returned ?? 0));
+  const submit = () => onConfirm(lines.map((l, i) => ({ sku: l.sku, qty: ret[key(l, i)] ?? 0 })), note.trim());
   return (
     <div className="overlay" onClick={busy ? undefined : onClose}>
       <div className="modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
@@ -367,11 +376,12 @@ const QualityReturnModal = ({ po, busy, onClose, onConfirm }) => {
               <tbody>
                 {lines.map((l, i) => {
                   const rec = Number(l.received ?? l.qty ?? 0);
+                  const maxReturnable = Math.max(0, rec - Number(l.damaged ?? 0));
                   return (
                     <tr key={key(l, i)}>
                       <td>{l.name || l.sku}<div className="eyebrow">{l.sku}</div></td>
                       <td className="num muted">{rec}</td>
-                      <td className="num"><input type="number" min="0" max={rec} className="input" style={{ width: 84, padding: '4px 8px', textAlign: 'right' }} value={ret[key(l, i)] ?? 0} onChange={(e) => setR(key(l, i), e.target.value)} /></td>
+                      <td className="num"><input type="number" min="0" max={maxReturnable} className="input" style={{ width: 84, padding: '4px 8px', textAlign: 'right' }} value={ret[key(l, i)] ?? 0} onChange={(e) => setR(key(l, i), e.target.value, maxReturnable)} /></td>
                     </tr>
                   );
                 })}
@@ -385,7 +395,7 @@ const QualityReturnModal = ({ po, busy, onClose, onConfirm }) => {
         </div>
         <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 18px', borderTop: '1px solid var(--border)' }}>
           <button className="btn btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
-          <button className="btn btn-primary" onClick={submit} disabled={busy || total === 0}>{busy ? <><Loader2 size={15} className="spin" /> Saving…</> : `Record ${total || ''} return${total === 1 ? '' : 's'}`.trim()}</button>
+          <button className="btn btn-primary" onClick={submit} disabled={busy || !hasChange}>{busy ? <><Loader2 size={15} className="spin" /> Saving…</> : `Save ${total} return${total === 1 ? '' : 's'}`}</button>
         </div>
       </div>
     </div>
@@ -657,10 +667,7 @@ export const MedusaAdminPortal = ({ view }) => {
     const supplier = (parties?.suppliers ?? []).find((s) => s.id === po.supplierId);
     const to = supplier?.email && !String(supplier.email).endsWith('parties.sightlive.local') ? supplier.email : '';
     if (to) {
-      const r = await sendNotificationEmail('purchase_order', to, {
-        reference: po.reference || po.id.slice(0, 8), supplier: po.supplier, lines: po.lines ?? [],
-        total: po.total, currency: po.currency, expectedDate: po.expectedDate, approvedBy: po.approvedBy, createdAt: po.createdAt,
-      }, commerceScope);
+      const r = await sendNotificationEmail('purchase_order', po.id, commerceScope);
       if (r?.sent) triggerNotification('PO emailed', `Sent to ${to}.`, 'success');
       else if (r?.skipped) triggerNotification('PO marked sent', 'Email isn’t configured yet — set AGENTMAIL keys to email suppliers automatically.', 'info');
       else triggerNotification('Email not sent', r?.error || 'Could not email the supplier; marking as sent.', 'warning');
@@ -962,7 +969,7 @@ export const MedusaAdminPortal = ({ view }) => {
       ? liveOrders.map(o => {
           const parsedItems = (o.items ?? []).map(i => {
             const prod = productBySku.bySku.get(i.sku) || (i.name && productBySku.byName.get(i.name.toLowerCase()));
-            const up = Number(i.unitPrice) > 0 ? Number(i.unitPrice) : (prod?.sellingPrice ?? 145);
+            const up = Number(i.unitPrice) > 0 ? Number(i.unitPrice) : (Number(prod?.sellingPrice) > 0 ? Number(prod.sellingPrice) : 0);
             const q = Number(i.qty) > 0 ? Number(i.qty) : 1;
             return { ...i, qty: q, unitPrice: up, total: up * q };
           });
@@ -972,7 +979,7 @@ export const MedusaAdminPortal = ({ view }) => {
             ? o.total
             : (typeof o.subtotal === 'number' && o.subtotal > 0
                 ? (o.taxEnabled === false ? o.subtotal : o.subtotal * 1.15)
-                : (sub > 0 ? (o.taxEnabled === false ? sub : sub * 1.15) : 1450));
+                : (sub > 0 ? (o.taxEnabled === false ? sub : sub * 1.15) : 0));
 
           const totalItemsCount = parsedItems.reduce((a, i) => a + i.qty, 0);
 
@@ -1147,7 +1154,7 @@ export const MedusaAdminPortal = ({ view }) => {
         <Head icon={Truck} title="Fulfilment & Supplier Performance" sub="Supplier scorecard from PO movements — on-time, fill, damage & quality returns — plus inbound receiving and outbound delivery."
           action={<span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span>} />
 
-        <SupplierPerformanceMatrix purchaseOrders={purchaseOrders || []} products={products} />
+        <SupplierPerformanceMatrix purchaseOrders={purchaseOrders || []} profitabilityItems={profitability.items || []} />
 
         <div className="cols cols-2">
           {/* Inbound — from suppliers */}
@@ -1390,7 +1397,7 @@ export const MedusaAdminPortal = ({ view }) => {
 
       const parsedLines = (o.items ?? []).map((i) => {
         const prod = products.find((p) => p.sku === i.sku || (i.name && p.name.toLowerCase() === i.name.toLowerCase()));
-        const up = Number(i.unitPrice) > 0 ? Number(i.unitPrice) : (prod?.sellingPrice ?? 145);
+        const up = Number(i.unitPrice) > 0 ? Number(i.unitPrice) : (Number(prod?.sellingPrice) > 0 ? Number(prod.sellingPrice) : 0);
         const q = Number(i.qty) > 0 ? Number(i.qty) : 1;
         return {
           product_id: i.variant_id || i.sku,
@@ -1402,7 +1409,7 @@ export const MedusaAdminPortal = ({ view }) => {
       });
 
       const calcTotal = parsedLines.reduce((sum, l) => sum + l.qty * l.unit_cost, 0);
-      const orderTotal = typeof o.total === 'number' && o.total > 0 ? o.total : (calcTotal > 0 ? calcTotal : 1450);
+      const orderTotal = typeof o.total === 'number' && o.total > 0 ? o.total : calcTotal;
 
       const override = orderStatusOverrides[`b2b-${o.id}`] || orderStatusOverrides[o.id] || (o.displayId ? orderStatusOverrides[`#${o.displayId}`] : null);
       let initialStatus = isMine ? 'pending_approval' : 'sent';

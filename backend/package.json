@@ -21,6 +21,7 @@
     "bootstrap:bugs": "medusa exec ./src/scripts/bootstrap-bugs.ts",
     "bootstrap:billing": "medusa exec ./src/scripts/bootstrap-billing.ts",
     "bootstrap:login-prefs": "medusa exec ./src/scripts/bootstrap-login-prefs.ts",
+    "bootstrap:store:direct": "node ./scripts/bootstrap-store-db.mjs",
     "bootstrap:promo": "medusa exec ./src/scripts/bootstrap-promo.ts",
     "bootstrap:link-tables": "medusa exec ./src/scripts/bootstrap-links-tables.ts",
     "inspect:state": "medusa exec ./src/scripts/inspect-state.ts",

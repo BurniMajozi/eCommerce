@@ -197,18 +197,8 @@ export const collectStoreOrder = (id, pickupCode, scope) => scopedJson(`/app/sto
 // White-label: the caller's own active-tenant branding (accent + signed logo URL).
 export const fetchBranding = (scope) => scopedJson('/app/branding', scope);
 
-// Email-first login helpers (public, pre-auth). Fail-safe to needsPassword:true
-// so a lookup problem never locks anyone out of the password path.
-export async function loginEmailStatus(email) {
-  if (!isMedusaCatalogueEnabled || !rawBaseUrl) return { needsPassword: true };
-  try {
-    const r = await fetch(new URL('/session/email-status', rawBaseUrl), {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
-    });
-    if (!r.ok) return { needsPassword: true };
-    return await r.json();
-  } catch { return { needsPassword: true }; }
-}
+// Legacy first-login marker retained only for older deployed clients. Current
+// clients use the same email-code flow for every address and never query status.
 export async function markLoginBootstrapped(accessToken) {
   if (!isMedusaCatalogueEnabled || !rawBaseUrl || !accessToken) return;
   try {
@@ -234,13 +224,11 @@ export const issueInvoice = (tenantId, period, scope) => scopedJson('/app/platfo
 export const chargeInvoice = (id, payerEmail, scope) => scopedJson(`/app/platform/billing/invoices/${id}`, { ...scope, method: 'POST', body: { action: 'charge', payerEmail } });
 export const verifyInvoice = (id, reference, scope) => scopedJson(`/app/platform/billing/invoices/${id}`, { ...scope, method: 'POST', body: { action: 'verify', reference } });
 
-// AgentMail transactional email. `template` is one of the server-side templates
-// (po_decision, request_decision, sale_confirmation, promo, purchase_order,
-// invoice); the server builds the HTML and sends. No-ops server-side until the
-// AgentMail env is configured. Never throws — email must not break the action.
-export async function sendNotificationEmail(template, to, data, scope, cc) {
+// Record-bound transactional email. The browser sends only a record id; the
+// backend resolves the tenant-owned recipient and trusted template data.
+export async function sendNotificationEmail(template, recordId, scope) {
   try {
-    return await scopedJson('/app/notifications/email', { ...scope, method: 'POST', body: { template, to, cc, data } });
+    return await scopedJson('/app/notifications/email', { ...scope, method: 'POST', body: { template, recordId } });
   } catch (e) {
     return { sent: false, error: e?.message || 'email failed' };
   }

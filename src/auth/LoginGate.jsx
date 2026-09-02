@@ -3,7 +3,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useAuthSession } from './AuthSessionContext';
 import { LandingPage } from '../components/LandingPage';
 import { readBrandCache } from '../theme/applyBrand';
-import { loginEmailStatus, markLoginBootstrapped } from '../catalogue/catalogueClient';
 
 // Gates the app behind Supabase auth ONLY when Supabase is configured. In demo
 // mode it renders children immediately. Commerce management (cost/profit +
@@ -22,8 +21,7 @@ export const LoginGate = ({ children }) => {
   const [checked, setChecked] = useState(false);
   const [skipped, setSkipped] = useState(false);
   const [showLogin, setShowLogin] = useState(false); // false = show marketing landing first
-  const [loginStep, setLoginStep] = useState('email'); // 'email' | 'password' | 'code' | 'pwFallback'
-  const [firstLogin, setFirstLogin] = useState(false);
+  const [loginStep, setLoginStep] = useState('email'); // 'email' | 'code' | 'pwFallback'
   const [factorId, setFactorId] = useState(null);
   const [qr, setQr] = useState(null);
   const [secret, setSecret] = useState(null);
@@ -55,7 +53,7 @@ export const LoginGate = ({ children }) => {
       }
     });
     return () => { cancelled = true; };
-  }, [auth.user?.id, auth.mode, detect]);
+  }, [auth.user, auth.mode, detect]);
 
   if (auth.mode === 'demo') return children;
 
@@ -67,15 +65,14 @@ export const LoginGate = ({ children }) => {
     } catch (e2) { setErr(e2?.message || 'Sign-in failed.'); } finally { setSubmitting(false); }
   };
 
-  // Email-first journey. Step 1: email → decide password (first login) vs code.
+  // Every address follows the same email-code journey. The public login flow
+  // never reveals whether an account exists or has signed in before.
   const continueEmail = async (e) => {
     e.preventDefault(); setErr(null); setSubmitting(true);
     try {
-      const { needsPassword } = await loginEmailStatus(email.trim().toLowerCase());
-      if (needsPassword) { setFirstLogin(true); setLoginStep('password'); }
-      // Returning user: email a code. If it can't send (outage/rate-limit), fall
-      // through to password so a mail problem can't lock anyone out.
-      else setLoginStep((await sendCode()) ? 'code' : 'pwFallback');
+      // If email delivery fails, the explicit password fallback remains
+      // available without disclosing account state in the response.
+      setLoginStep((await sendCode()) ? 'code' : 'pwFallback');
     } catch (e2) { setErr(e2?.message || 'Could not continue.'); } finally { setSubmitting(false); }
   };
   const sendCode = async () => {
@@ -89,30 +86,15 @@ export const LoginGate = ({ children }) => {
     }
     setCode(''); return true;
   };
-  // First sign-in: verify the one-time password, then email the code. We discard
-  // the password session immediately so the emailed code is the actual sign-in —
-  // otherwise the password alone would log the user in and skip the code.
-  const submitFirstPassword = async (e) => {
-    e.preventDefault(); setErr(null); setSubmitting(true);
-    try {
-      const { error } = await auth.signInWithPassword({ email: email.trim(), password });
-      if (error) { setErr(error.message || 'Sign-in failed.'); return; }
-      await auth.signOut();
-      // sendCode surfaces the real reason on failure (e.g. rate limit); if it
-      // can't send, fall back to password so the user isn't stranded.
-      setLoginStep((await sendCode()) ? 'code' : 'pwFallback');
-    } catch (e2) { setErr(e2?.message || 'Sign-in failed.'); } finally { setSubmitting(false); }
-  };
   const submitCode = async (e) => {
     e.preventDefault(); setErr(null); setSubmitting(true);
     try {
-      const { data, error } = await auth.verifyEmailOtp({ email: email.trim(), token: code.trim() });
+      const { error } = await auth.verifyEmailOtp({ email: email.trim(), token: code.trim() });
       if (error) { setErr(error.message || 'Invalid or expired code — try again.'); return; }
-      if (firstLogin) await markLoginBootstrapped(data?.session?.access_token); // remember: code-only next time
       // success → onAuthStateChange sets the session and the gate proceeds
     } catch (e2) { setErr(e2?.message || 'Verification failed.'); } finally { setSubmitting(false); }
   };
-  const resetLogin = () => { setLoginStep('email'); setFirstLogin(false); setCode(''); setPassword(''); setErr(null); };
+  const resetLogin = () => { setLoginStep('email'); setCode(''); setPassword(''); setErr(null); };
 
   const startEnroll = async () => {
     setErr(null); setSubmitting(true);
@@ -218,18 +200,7 @@ export const LoginGate = ({ children }) => {
       </form>);
   }
 
-  // First sign-in: one-time password, then we email a code.
-  if (loginStep === 'password') {
-    return shell('First sign-in', <>Enter the password for <strong>{email}</strong> to set up your account. After this, you’ll sign in with just an email code.</>,
-      <form onSubmit={submitFirstPassword} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div className="field"><label className="field-label">Password</label><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus required /></div>
-        {errBox}
-        <button className="btn btn-primary btn-block" type="submit" disabled={submitting || !password}>{submitting ? 'Checking…' : 'Continue'}</button>
-        <button type="button" className="btn btn-ghost btn-sm btn-block" onClick={resetLogin}>← Use a different email</button>
-      </form>);
-  }
-
-  // Emailed code step (both first sign-in and returning users).
+  // Emailed code step for every account.
   if (loginStep === 'code') {
     return shell('Enter your email code', <>We emailed a code to <strong>{email}</strong>. Enter it below.</>,
       <form onSubmit={submitCode} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -246,9 +217,8 @@ export const LoginGate = ({ children }) => {
       </form>);
   }
 
-  // Default: email-first. New users get a one-time password step; returning users
-  // go straight to an emailed code.
-  return shell('Sign in', 'Enter your email to continue. New users sign in with a password once — after that it’s just an emailed code.',
+  // Default: an indistinguishable email-first journey for every address.
+  return shell('Sign in', 'Enter your email and we’ll send you a sign-in code.',
     <form onSubmit={continueEmail} style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div className="field"><label className="field-label">Email</label><input className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.co.za" autoFocus required /></div>
       {errBox}

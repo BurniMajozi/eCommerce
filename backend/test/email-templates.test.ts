@@ -81,26 +81,46 @@ const scope = buildTenantScope(
   { sub: '11111111-1111-4111-8111-111111111111', aal: 'aal2' }, TENANT, undefined,
   { user_id: '11111111-1111-4111-8111-111111111111', tenant_id: TENANT, site_id: null, roles: ['merchant'], capabilities: ['commerce.manage'], mfa_capabilities: [] },
 );
+const readOnlyScope = buildTenantScope(
+  { sub: '11111111-1111-4111-8111-111111111111', aal: 'aal2' }, TENANT, undefined,
+  { user_id: '11111111-1111-4111-8111-111111111111', tenant_id: TENANT, site_id: null, roles: ['worker'], capabilities: ['commerce.read'], mfa_capabilities: [] },
+);
+const aal1Scope = buildTenantScope(
+  { sub: '11111111-1111-4111-8111-111111111111', aal: 'aal1' }, TENANT, undefined,
+  { user_id: '11111111-1111-4111-8111-111111111111', tenant_id: TENANT, site_id: null, roles: ['merchant'], capabilities: ['commerce.manage'], mfa_capabilities: ['commerce.manage'] },
+);
 const makeReq = (body: any) => ({ tenantScope: scope, body }) as any;
-const makeRes = () => ({ statusCode: 200, body: null as any, status(c: number) { this.statusCode = c; return this; }, json(o: any) { this.body = o; return this; } });
+const makeRes = (): any => ({ statusCode: 200, body: null as any, status(c: number) { this.statusCode = c; return this; }, json(o: any) { this.body = o; return this; } });
 
 test('endpoint rejects an unknown template', async () => {
   const res = makeRes();
-  await EMAIL_POST(makeReq({ template: 'nope', to: 'a@b.com', data: {} }), res);
+  await EMAIL_POST(makeReq({ template: 'nope', recordId: 'order_1' }), res);
   assert.equal(res.statusCode, 400);
   assert.equal(res.body.code, 'unknown_template');
 });
 
-test('endpoint rejects an invalid recipient', async () => {
+test('endpoint rejects arbitrary recipients and requires a tenant-owned record', async () => {
   const res = makeRes();
-  await EMAIL_POST(makeReq({ template: 'invoice', to: 'not-an-email', data: {} }), res);
+  await EMAIL_POST(makeReq({ template: 'invoice', to: 'outside@example.com', data: { total: 999999 } }), res);
   assert.equal(res.statusCode, 400);
-  assert.equal(res.body.code, 'invalid_recipient');
+  assert.equal(res.body.code, 'notification_record_required');
 });
 
 test('endpoint reports skipped when email is not configured', async () => {
   const res = makeRes();
-  await EMAIL_POST(makeReq({ template: 'invoice', to: 'a@b.com', data: { number: 'INV-1', total: 100 } }), res);
+  await EMAIL_POST(makeReq({ template: 'invoice', recordId: 'order_1' }), res);
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.skipped, true);
+});
+
+test('endpoint denies read-only users and requires MFA for commerce managers', async () => {
+  const readOnly = makeRes();
+  await EMAIL_POST(({ tenantScope: readOnlyScope, body: { template: 'invoice', recordId: 'order_1' } }) as any, readOnly);
+  assert.equal(readOnly.statusCode, 403);
+  assert.equal(readOnly.body.code, 'capability_required');
+
+  const aal1 = makeRes();
+  await EMAIL_POST(({ tenantScope: aal1Scope, body: { template: 'invoice', recordId: 'order_1' } }) as any, aal1);
+  assert.equal(aal1.statusCode, 403);
+  assert.equal(aal1.body.code, 'mfa_required');
 });

@@ -75,7 +75,7 @@ function makeReq(knex: any, { scope, body, params }: any) {
   } as any;
 }
 
-function makeRes() {
+function makeRes(): any {
   return {
     statusCode: 200,
     body: null as any,

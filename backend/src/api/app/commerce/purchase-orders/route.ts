@@ -68,13 +68,19 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
 
     let supplierName = (b.supplierName ?? '').toString().trim();
     const supplierId = (b.supplierId ?? '').toString().trim() || null;
-    if (!supplierName && supplierId) {
+    if (supplierId) {
       try {
         const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-        const { data } = await query.graph({ entity: 'customer', fields: ['id', 'company_name', 'email'], filters: { id: supplierId } } as Parameters<typeof query.graph>[0]);
+        const { data } = await query.graph({ entity: 'customer', fields: ['id', 'company_name', 'email', 'metadata'], filters: { id: supplierId } } as Parameters<typeof query.graph>[0]);
         const c = (data ?? [])[0];
+        if (!c || c.metadata?.tenant_id !== scope.tenantId || c.metadata?.party_type !== 'supplier') {
+          throw new ScopeError(404, 'supplier_not_found', 'Supplier not found in this tenant.');
+        }
         supplierName = c?.company_name || c?.email || 'Supplier';
-      } catch { supplierName = 'Supplier'; }
+      } catch (error) {
+        if (error instanceof ScopeError) throw error;
+        throw new ScopeError(409, 'supplier_lookup_failed', 'The supplier could not be verified.');
+      }
     }
     if (!supplierName) throw new ScopeError(400, 'invalid_supplier', 'A supplier is required.');
 

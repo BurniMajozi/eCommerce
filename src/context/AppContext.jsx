@@ -124,12 +124,9 @@ export const AppProvider = ({ children }) => {
     setCatalogue((current) => ({ ...current, loading: true, error: null }));
     fetchCatalogue({ accessToken, tenantId, siteId, signal: controller.signal })
       .then((response) => {
-        const costMap = new Map(CAGELI_PRODUCTS.map((cp) => [cp.sku, cp.costPrice]));
-        const items = (response.items || []).map((item) => ({
-          ...item,
-          costPrice: item.costPrice ?? costMap.get(item.sku) ?? null,
-        }));
-        setProducts(items);
+        // Live catalogue responses intentionally exclude private cost/margin.
+        // Privileged financial data is fetched separately from /catalogue/profit.
+        setProducts(response.items || []);
         setCatalogue({ source: 'medusa', loading: false, error: null, dataQuality: response.dataQuality ?? null });
       })
       .catch((error) => {
@@ -442,6 +439,7 @@ export const AppProvider = ({ children }) => {
     const taxRate = order.taxEnabled === false ? 0 : 0.15;
     const vatAmount = subtotal * taxRate;
     const invoiceData = {
+      sourceOrderId: order.id,
       invoiceNumber: order.displayId ? `INV-${order.displayId}` : `INV-${Date.now().toString().slice(-6)}`,
       clientName: order.clientName || order.email || 'Customer',
       vatNumber: order.vatNumber || '—',

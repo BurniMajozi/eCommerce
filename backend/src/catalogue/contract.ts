@@ -164,7 +164,6 @@ export function buildCatalogueContract(
       lifespanMonths: metadataNumber(product.metadata, 'lifespan_months') ?? 0,
       supplierId: metadataString(product.metadata, 'supplier_id') ?? null,
       supplier: metadataString(product.metadata, 'supplier_name') ?? null,
-      costPrice: metadataNumber(product.metadata, 'cost_price') ?? metadataNumber(product.variants?.[0]?.metadata, 'cost_price') ?? null,
       variants,
       dataQuality: { complete: missing.length === 0, missing },
     };

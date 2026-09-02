@@ -99,7 +99,7 @@ export const QuotationInvoicingPortal = () => {
       setSubmitting(true);
       try {
         const cust = customers.find(x => x.id === customerId);
-        await createOrder({
+        const created = await createOrder({
           clientName,
           customerId: customerId || undefined,
           email: cust?.email || undefined,
@@ -112,11 +112,7 @@ export const QuotationInvoicingPortal = () => {
         triggerNotification('Order placed', `Draft order created for ${clientName}.`, 'success');
         // Sales confirmation email to the customer (AgentMail; no-ops until configured).
         if (cust?.email) {
-          sendNotificationEmail('sale_confirmation', cust.email, {
-            reference: poNumber || clientName, buyerName: clientName, kind: 'b2b',
-            lines: items.map(i => ({ name: i.name, sku: i.sku, qty: i.qty, unitPrice: i.unitPrice })),
-            subtotal, total: subtotal + vat, currency: 'ZAR',
-          }, scope);
+          sendNotificationEmail('sale_confirmation', created?.order?.id, scope);
         }
         setItems([]);
         loadOrders();

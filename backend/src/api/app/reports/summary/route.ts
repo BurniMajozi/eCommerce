@@ -4,6 +4,7 @@ import { buildCatalogueContract, buildProfitContract } from '../../../../catalog
 import { readCatalogueData, CatalogueConfigurationError } from '../../../../catalogue/read';
 import { assertAnyCapability, ScopeError } from '../../../../security/tenant-scope';
 import type { TenantScopedRequest } from '../../../middlewares/tenant-scope';
+import { resolveOrderTotal } from '../../../../lib/reporting';
 
 // GET /app/reports/summary — real tenant reports built from live commerce data.
 // Reachable by reports.read (tenant admin / manager / executive) OR commerce.read
@@ -52,14 +53,15 @@ export async function GET(req: TenantScopedRequest, res: MedusaResponse): Promis
       } as Parameters<typeof query.graph>[0]);
       for (const o of orders ?? []) {
         const oMeta = (o.metadata ?? {}) as Record<string, any>;
-        const rawTotal = Number(o.total ?? 0);
-        const metaTotal = Number(oMeta.total ?? oMeta.subtotal ?? 0);
-        const orderTotal = rawTotal > 0 ? rawTotal : (metaTotal > 0 ? metaTotal : 1450);
-        if (o.customer_id) spentByCustomer.set(o.customer_id, (spentByCustomer.get(o.customer_id) ?? 0) + orderTotal);
+        const orderTotal = resolveOrderTotal(o.total, oMeta);
+        if (o.customer_id && orderTotal != null) {
+          spentByCustomer.set(o.customer_id, (spentByCustomer.get(o.customer_id) ?? 0) + orderTotal);
+        }
         orderRows.push({
           order: o.display_id ? `#${o.display_id}` : String(o.id).slice(0, 12),
           email: oMeta.client_name || o.email || 'Customer',
           total: orderTotal,
+          dataQuality: { complete: orderTotal != null, missing: orderTotal == null ? ['total'] : [] },
           currency: (o.currency_code ?? 'zar').toUpperCase(),
           status: o.status ?? 'pending',
           date: (o.created_at ? String(o.created_at) : '').slice(0, 10)
