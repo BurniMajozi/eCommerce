@@ -48,6 +48,8 @@ export const MfaStepUp = () => {
       if (error) { setErr(error.message || 'Invalid code — try again.'); return; }
       setMode('done');
       triggerNotification('Verified', 'Authenticator confirmed — please try that action again.', 'success');
+      // Let read-only views that were blocked (e.g. audit log) refetch now.
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sightlive:mfa-elevated'));
       setTimeout(() => setOpen(false), 900);
     } catch (e2) { setErr(e2?.message || 'Verification failed.'); } finally { setBusy(false); }
   };

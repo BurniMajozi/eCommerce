@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { fetchReports, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { MOCK_DEPARTMENT_CONSUMPTION, CAGELI_PRODUCTS } from '../data/mockData';
 import { EmployeeAllocationReport } from './EmployeeAllocationReport';
+import { AuditLogCard } from './AuditLogCard';
 import {
   TrendingUp, AlertTriangle, FileDown, Boxes, Wallet, TriangleAlert, PackageX,
   Users, HardHat, Building2, Layers
@@ -189,6 +190,10 @@ export const InventoryAnalyticsPortal = () => {
           </div>
         )}
       </div>
+
+      {/* Tenant audit trail — for roles with audit.read (e.g. merchant reporting
+          PPE stock activity to the mine). MFA-gated with an authenticator step-up. */}
+      {(tenantAccess?.capabilities ?? []).includes('audit.read') && <AuditLogCard />}
     </div>
   );
 };
