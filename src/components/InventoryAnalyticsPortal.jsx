@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { fetchReports, fetchReportExport, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { MOCK_DEPARTMENT_CONSUMPTION, CAGELI_PRODUCTS } from '../data/mockData';
-import { EmployeeAllocationReport } from './EmployeeAllocationReport';
+import { LiveReportBuilder } from './LiveReportBuilder';
 import { AuditLogCard } from './AuditLogCard';
 import {
   TrendingUp, AlertTriangle, FileDown, Boxes, Wallet, TriangleAlert, PackageX,
@@ -227,8 +227,9 @@ export const InventoryAnalyticsPortal = () => {
         </div>
       </div>
 
-      {/* Stock Allocation by Employee Report */}
-      <EmployeeAllocationReport />
+      {/* Full tenant reports — stock allocation, valuation, reorder, spend, orders
+          (CSV + Print/PDF per report), so a merchant can report PPE to the mine. */}
+      <LiveReportBuilder scope={scope} triggerNotification={triggerNotification} />
 
       {/* Stock ledger */}
       <div className="card">

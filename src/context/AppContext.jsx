@@ -194,6 +194,14 @@ export const AppProvider = ({ children }) => {
     return () => controller.abort();
   }, [auth.session?.access_token, tenantAccess.activeTenantId, tenantAccess.activeSiteId, canManageCommerce, catalogueReloadKey]);
 
+  // When the session is elevated via the authenticator step-up, re-pull catalogue
+  // and profit/cost data — MFA-gated fields (cost, margin, profit) unlock at aal2.
+  useEffect(() => {
+    const onElevated = () => setCatalogueReloadKey((k) => k + 1);
+    window.addEventListener('sightlive:mfa-elevated', onElevated);
+    return () => window.removeEventListener('sightlive:mfa-elevated', onElevated);
+  }, []);
+
   const triggerNotification = (title, message, type = 'info') => {
     setPushNotification({ title, message, type, id: Date.now() });
     setTimeout(() => setPushNotification(null), 5000);
