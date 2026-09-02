@@ -1,18 +1,57 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { fetchReports, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { fetchReports, fetchReportExport, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { MOCK_DEPARTMENT_CONSUMPTION, CAGELI_PRODUCTS } from '../data/mockData';
 import { EmployeeAllocationReport } from './EmployeeAllocationReport';
 import { AuditLogCard } from './AuditLogCard';
 import {
   TrendingUp, AlertTriangle, FileDown, Boxes, Wallet, TriangleAlert, PackageX,
-  Users, HardHat, Building2, Layers
+  Users, HardHat, Building2, Layers, Loader2, ShieldCheck
 } from 'lucide-react';
 
 export const InventoryAnalyticsPortal = () => {
   const { products, activePlant, auth, tenantAccess, triggerNotification } = useApp();
   const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
   const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
+  const canRunReports = (tenantAccess?.capabilities ?? []).includes('reports.run');
+
+  // Export a server-authoritative stock report to send to the mine. reports.run
+  // is MFA-gated, so if the session is aal1 we prompt the authenticator step-up
+  // and retry the export once elevated.
+  const [exporting, setExporting] = useState(false);
+  const pendingExportRef = useRef(false);
+  const runExport = async () => {
+    if (!live) { triggerNotification('Not connected', 'Report export needs the live backend.', 'info'); return; }
+    setExporting(true);
+    try {
+      const r = await fetchReportExport(scope);
+      const cols = [
+        { key: 'sku', label: 'SKU' }, { key: 'name', label: 'Item' }, { key: 'category', label: 'Category' },
+        { key: 'onHand', label: 'On hand' }, { key: 'inTransit', label: 'In transit' },
+        { key: 'unitCost', label: 'Unit cost' }, { key: 'unitPrice', label: 'Unit price (RP)' },
+        { key: 'stockCost', label: 'Stock cost value' }, { key: 'stockRetail', label: 'Stock value (RP)' },
+        { key: 'coverDays', label: 'Cover (days)' },
+      ];
+      downloadCsv(`stock-report-${dateStamp()}`, cols, r.rows ?? []);
+      triggerNotification('Report exported', `Stock report (${(r.rows ?? []).length} SKUs) downloaded — ready to send to the mine.`, 'success');
+    } catch (e) {
+      if (e?.code === 'mfa_required') {
+        pendingExportRef.current = true;
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sightlive:mfa-required'));
+        triggerNotification('Verify to export', 'Confirm with your authenticator to run the report.', 'info');
+      } else {
+        triggerNotification('Export failed', e?.message || 'Could not generate the report.', 'danger');
+      }
+    } finally { setExporting(false); }
+  };
+  // Retry the export automatically once the session is elevated.
+  useEffect(() => {
+    const h = () => { if (pendingExportRef.current) { pendingExportRef.current = false; runExport(); } };
+    window.addEventListener('sightlive:mfa-elevated', h);
+    return () => window.removeEventListener('sightlive:mfa-elevated', h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, scope.accessToken, scope.tenantId]);
 
   // Live tenant reports (stock valuation + reorder)
   const [reports, setReports] = useState(null);
@@ -63,9 +102,11 @@ export const InventoryAnalyticsPortal = () => {
           <h2>{activePlant.name} — PPE Control &amp; Allocation</h2>
           <p>Mine stock valuation, departmental consumption against entitlement, and employee issue registers.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => triggerNotification('Report generated', 'PPE Department & Employee allocation report exported → PDF/XLS.', 'success')}>
-          <FileDown size={16} /> Generate site audit
-        </button>
+        {canRunReports && (
+          <button className="btn btn-primary" onClick={runExport} disabled={exporting} title="Run a live stock report (CSV) to send to the mine">
+            {exporting ? <><Loader2 size={16} className="spin" /> Exporting…</> : <><FileDown size={16} /> Export stock report</>}
+          </button>
+        )}
       </div>
 
       {/* KPIs */}
