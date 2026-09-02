@@ -23,6 +23,9 @@ import {
 
 const cur = (code) => MEDUSA_CURRENCIES.find(c => c.code === code) || MEDUSA_CURRENCIES[0];
 const money = (amount, code) => `${cur(code).symbol} ${amount.toLocaleString('en-ZA')}`;
+const requestMfaStepUp = () => {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sightlive:mfa-required'));
+};
 
 // A B2B order and its auto-derived purchase order share the same display number
 // (e.g. "B2B Order #26"). This canonical key lets a status change on the PO
@@ -424,6 +427,16 @@ export const MedusaAdminPortal = ({ view }) => {
     siteId: tenantAccess.activeSiteId,
   };
 
+  // Profitability is a protected read, so it deliberately does not use the
+  // generic write-error popup in catalogueClient. When a commerce manager
+  // opens Products & Pricing at aal1, offer the authenticator immediately and
+  // keep an explicit button in the error state in case they dismiss it.
+  useEffect(() => {
+    if (view !== 'products' || profitability.error?.code !== 'mfa_required') return undefined;
+    const timer = window.setTimeout(requestMfaStepUp, 0);
+    return () => window.clearTimeout(timer);
+  }, [view, profitability.error]);
+
   // Orders — live list from Medusa.
   const [liveOrders, setLiveOrders] = useState(null);
   const [ordersReloadKey, setOrdersReloadKey] = useState(0);
@@ -795,7 +808,18 @@ export const MedusaAdminPortal = ({ view }) => {
           <div className="card"><div className="card-bd"><div className="kpi-label">Stock at cost</div><div className="kpi-value">{stockValue === null ? 'Restricted' : `R ${(stockValue / 1e6).toFixed(2)}m`}</div><div className="kpi-sub">requires commerce management + MFA</div></div></div>
           <div className="card"><div className="card-bd"><div className="kpi-label">Stock at retail</div><div className="kpi-value">{retailValue === null ? 'Restricted' : `R ${(retailValue / 1e6).toFixed(2)}m`}</div><div className="kpi-sub up">{potentialProfit === null ? 'Profit data unavailable' : `R ${(potentialProfit / 1e3).toFixed(0)}k potential profit`}</div></div></div>
         </div>
-        {liveCatalogue && profitability.error && <div className="card"><div className="card-bd" style={{ color: 'var(--danger)' }}>Profit and cost data is unavailable: {profitability.error.message}</div></div>}
+        {liveCatalogue && profitability.error && (
+          <div className="card">
+            <div className="card-bd" style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+              <span>Profit and cost data is unavailable: {profitability.error.message}</span>
+              {profitability.error.code === 'mfa_required' && (
+                <button type="button" className="btn btn-primary" onClick={requestMfaStepUp}>
+                  Verify or enable MFA
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         <div className="card">
           <div className="card-hd"><h3>Price list · Contract B</h3><span className="badge badge-neutral">{rows.length} products · click a row for variants</span></div>
           <div className="table-wrap">
