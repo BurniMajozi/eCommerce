@@ -5,6 +5,7 @@ import { LoginGate } from './auth/LoginGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SkeletonPage } from './components/SkeletonLoader';
 import { MfaStepUp } from './components/MfaStepUp';
+import { resolveAccessState } from './tenant/accessState';
 import { Menu, ChevronDown, Sun, Moon, CheckCircle2, AlertTriangle, Info, XCircle, LogOut } from 'lucide-react';
 
 const EmployeePortal = lazy(() => import('./components/EmployeePortal').then(m => ({ default: m.EmployeePortal })));
@@ -30,9 +31,44 @@ const navTitle = (id) => {
   return '';
 };
 
+const AccessStartup = ({ state, tenantAccess, auth }) => {
+  const loading = state === 'loading';
+  const failed = state === 'error';
+  const title = loading ? 'Preparing your workspace…' : failed ? 'We could not load your access' : 'Access has not been assigned';
+  const message = loading
+    ? 'Loading your role, company and site permissions.'
+    : failed
+      ? 'The permissions service did not complete. Check your connection and try again.'
+      : 'Your account is signed in, but it does not currently have a platform or company role.';
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'var(--bg)' }}>
+      <div className="card" style={{ width: '100%', maxWidth: 440, boxShadow: 'var(--shadow-lg)' }}>
+        <div className="card-bd" style={{ padding: 28 }}>
+          <img src="/sightlive-logo.svg" alt="SightLive" style={{ height: 30 }} />
+          <h2 style={{ fontSize: 19, marginTop: 18 }}>{title}</h2>
+          <p className="muted" style={{ fontSize: 13, marginTop: 5 }}>{message}</p>
+          {loading ? (
+            <div className="muted" style={{ marginTop: 18, fontSize: 13 }}>One moment…</div>
+          ) : (
+            <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {failed && <button className="btn btn-primary btn-block" type="button" onClick={() => tenantAccess.refresh()}>Try again</button>}
+              <button className="btn btn-secondary btn-block" type="button" onClick={() => auth.signOut()}>Sign out</button>
+            </div>
+          )}
+          <div className="eyebrow" style={{ marginTop: 16 }}>Secure tenant access</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AppContent = () => {
-  const { activeRole, activePlant, setActivePlant, plants, theme, toggleTheme, pushNotification, auth } = useApp();
+  const { activeRole, activePlant, setActivePlant, plants, theme, toggleTheme, pushNotification, auth, tenantAccess } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
+  const accessState = resolveAccessState(tenantAccess);
+
+  if (accessState !== 'ready') return <AccessStartup state={accessState} tenantAccess={tenantAccess} auth={auth} />;
 
   const render = () => {
     if (MED_VIEW[activeRole]) return <MedusaAdminPortal view={MED_VIEW[activeRole]} />;

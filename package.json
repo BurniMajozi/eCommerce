@@ -11,7 +11,7 @@
     "build:backend": "npm --prefix backend run build",
     "lint": "oxlint",
     "test": "npm run test:frontend && npm --prefix backend test",
-    "test:frontend": "node --test test/supplier-performance.test.js",
+    "test:frontend": "node --test test/*.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

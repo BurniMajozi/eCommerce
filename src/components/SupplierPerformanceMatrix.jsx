@@ -25,7 +25,7 @@ export const SupplierPerformanceMatrix = ({ purchaseOrders = [], profitabilityIt
         <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>No received purchase orders yet — the scorecard builds from PO movements (receive stock, log damage, report quality returns).</div>
       ) : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table mobile-stack-table">
             <thead><tr>
               <th>Supplier</th>
               <th className="center" title="Deliveries received">Del.</th>
@@ -40,17 +40,17 @@ export const SupplierPerformanceMatrix = ({ purchaseOrders = [], profitabilityIt
             <tbody>
               {suppliers.map((s) => (
                 <tr key={s.name}>
-                  <td style={{ fontWeight: 600 }}>{s.name}</td>
-                  <td className="center">{s.deliveries}</td>
-                  <td className="center">{s.onTimePct == null
+                  <td data-label="Supplier" style={{ fontWeight: 600 }}>{s.name}</td>
+                  <td data-label="Deliveries" className="center">{s.deliveries}</td>
+                  <td data-label="On-time" className="center">{s.onTimePct == null
                     ? <span className="badge badge-neutral" title="No expected date was recorded">Unknown</span>
                     : <span className={`badge ${s.onTimePct >= 90 ? 'badge-success' : s.onTimePct >= 75 ? 'badge-warning' : 'badge-danger'}`}>{pct(s.onTimePct)}</span>}{s.avgDaysLate > 0 && <div className="eyebrow">avg {s.avgDaysLate.toFixed(1)}d late</div>}</td>
-                  <td className="center">{pct(s.fillPct)}</td>
-                  <td className="center">{s.short > 0 && <span className="badge badge-warning" style={{ marginRight: 4 }}>{s.short} short</span>}{s.over > 0 && <span className="badge badge-neutral">{s.over} over</span>}{s.short === 0 && s.over === 0 && <span className="muted">—</span>}</td>
-                  <td className="center">{s.damaged > 0 ? <span className="badge badge-danger">{s.damaged}</span> : <span className="muted">0</span>}</td>
-                  <td className="center">{s.returned > 0 ? <span className="badge badge-danger">{s.returned}</span> : <span className="muted">0</span>}</td>
-                  <td className="num tabular" style={{ color: s.varianceAmt > 0 ? 'var(--danger)' : s.varianceAmt < 0 ? 'var(--success)' : 'var(--text-muted)' }}>{s.varianceAmt ? `${s.varianceAmt > 0 ? '+' : ''}${rand(s.varianceAmt)}` : '—'}{s.costBaseline > 0 && s.varianceAmt !== 0 && <div className="eyebrow">{s.variancePct > 0 ? '+' : ''}{s.variancePct.toFixed(1)}%</div>}</td>
-                  <td className="center"><span className={`badge ${gradeColor(s.grade)}`} style={{ fontWeight: 700, minWidth: 22 }}>{s.grade}</span></td>
+                  <td data-label="Fill" className="center">{pct(s.fillPct)}</td>
+                  <td data-label="Short / over" className="center">{s.short > 0 && <span className="badge badge-warning" style={{ marginRight: 4 }}>{s.short} short</span>}{s.over > 0 && <span className="badge badge-neutral">{s.over} over</span>}{s.short === 0 && s.over === 0 && <span className="muted">—</span>}</td>
+                  <td data-label="Damaged" className="center">{s.damaged > 0 ? <span className="badge badge-danger">{s.damaged}</span> : <span className="muted">0</span>}</td>
+                  <td data-label="Returns" className="center">{s.returned > 0 ? <span className="badge badge-danger">{s.returned}</span> : <span className="muted">0</span>}</td>
+                  <td data-label="Price variance" className="num tabular" style={{ color: s.varianceAmt > 0 ? 'var(--danger)' : s.varianceAmt < 0 ? 'var(--success)' : 'var(--text-muted)' }}>{s.varianceAmt ? `${s.varianceAmt > 0 ? '+' : ''}${rand(s.varianceAmt)}` : '—'}{s.costBaseline > 0 && s.varianceAmt !== 0 && <div className="eyebrow">{s.variancePct > 0 ? '+' : ''}{s.variancePct.toFixed(1)}%</div>}</td>
+                  <td data-label="Grade" className="center"><span className={`badge ${gradeColor(s.grade)}`} style={{ fontWeight: 700, minWidth: 22 }}>{s.grade}</span></td>
                 </tr>
               ))}
             </tbody>

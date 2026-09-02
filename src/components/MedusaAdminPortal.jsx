@@ -1185,15 +1185,15 @@ export const MedusaAdminPortal = ({ view }) => {
           <div className="card">
             <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ArrowDownLeft size={16} style={{ color: 'var(--success)' }} /><h3>Inbound · from suppliers</h3></div><span className="badge badge-neutral">{suppliers.length}</span></div>
             <div className="table-wrap">
-              <table className="table">
+              <table className="table mobile-stack-table">
                 <thead><tr><th>Supplier</th><th>Category</th><th className="num">Lead time</th></tr></thead>
                 <tbody>
                   {suppliers.length === 0 && <tr><td colSpan={3} className="muted" style={{ textAlign: 'center', padding: 20 }}>{live ? 'No suppliers yet — add them under Suppliers.' : 'Connect the backend to see inbound flows.'}</td></tr>}
                   {suppliers.map((s) => (
                     <tr key={s.id}>
-                      <td style={{ fontWeight: 500 }}>{s.company}</td>
-                      <td className="muted">{s.category || '—'}</td>
-                      <td className="num muted">{s.leadTime || '—'}</td>
+                      <td data-label="Supplier" style={{ fontWeight: 500 }}>{s.company}</td>
+                      <td data-label="Category" className="muted">{s.category || '—'}</td>
+                      <td data-label="Lead time" className="num muted">{s.leadTime || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1205,17 +1205,17 @@ export const MedusaAdminPortal = ({ view }) => {
           <div className="card">
             <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ArrowDownLeft size={16} style={{ color: 'var(--success)' }} /><h3>Inbound · open POs</h3></div><span className="badge badge-neutral">{(purchaseOrders ?? []).length}</span></div>
             <div className="table-wrap">
-              <table className="table">
+              <table className="table mobile-stack-table">
                 <thead><tr><th>Ref</th><th>Supplier</th><th className="num">Total</th><th className="center">Status</th><th>Expected</th></tr></thead>
                 <tbody>
                   {(purchaseOrders ?? []).length === 0 && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 20 }}>{live ? 'No purchase orders yet — raise one under Purchase Orders.' : 'Connect the backend to see inbound POs.'}</td></tr>}
                   {(purchaseOrders ?? []).map((p) => (
                     <tr key={p.id}>
-                      <td className="muted">{p.reference || (p.id?.slice(0, 12) ?? '—')}</td>
-                      <td style={{ fontWeight: 500 }}>{p.supplier || 'Supplier'}</td>
-                      <td className="num" style={{ fontWeight: 600 }}>{money(Number(p.total ?? 0), (p.currency || 'zar'))}</td>
-                      <td className="center"><span className={`badge ${poStatusBadge[p.status] || 'badge-neutral'}`}>{String(p.status || 'draft').replace(/_/g, ' ')}</span></td>
-                      <td className="muted">{p.expectedDate ? String(p.expectedDate).substring(0, 10) : '—'}</td>
+                      <td data-label="Reference" className="muted">{p.reference || (p.id?.slice(0, 12) ?? '—')}</td>
+                      <td data-label="Supplier" style={{ fontWeight: 500 }}>{p.supplier || 'Supplier'}</td>
+                      <td data-label="Total" className="num" style={{ fontWeight: 600 }}>{money(Number(p.total ?? 0), (p.currency || 'zar'))}</td>
+                      <td data-label="Status" className="center"><span className={`badge ${poStatusBadge[p.status] || 'badge-neutral'}`}>{String(p.status || 'draft').replace(/_/g, ' ')}</span></td>
+                      <td data-label="Expected" className="muted">{p.expectedDate ? String(p.expectedDate).substring(0, 10) : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1227,15 +1227,15 @@ export const MedusaAdminPortal = ({ view }) => {
           <div className="card">
             <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ArrowUpRight size={16} style={{ color: 'var(--primary)' }} /><h3>Outbound · to customers</h3></div><span className="badge badge-neutral">{customers.length}</span></div>
             <div className="table-wrap">
-              <table className="table">
+              <table className="table mobile-stack-table">
                 <thead><tr><th>Customer</th><th className="center">Terms</th><th className="num">This month</th></tr></thead>
                 <tbody>
                   {customers.length === 0 && <tr><td colSpan={3} className="muted" style={{ textAlign: 'center', padding: 20 }}>No customers yet.</td></tr>}
                   {customers.map((c, i) => (
                     <tr key={c.id || i}>
-                      <td style={{ fontWeight: 500 }}>{c.company}</td>
-                      <td className="center">{c.taxExempt ? <span className="badge badge-info">0% export</span> : <span className="muted">VAT</span>}</td>
-                      <td className="num tabular muted">{c.spent != null ? money(c.spent, c.currency) : '—'}</td>
+                      <td data-label="Customer" style={{ fontWeight: 500 }}>{c.company}</td>
+                      <td data-label="Terms" className="center">{c.taxExempt ? <span className="badge badge-info">0% export</span> : <span className="muted">VAT</span>}</td>
+                      <td data-label="This month" className="num tabular muted">{c.spent != null ? money(c.spent, c.currency) : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1248,17 +1248,17 @@ export const MedusaAdminPortal = ({ view }) => {
         <div className="card">
           <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Truck size={16} style={{ color: 'var(--primary)' }} /><h3>Shipping providers</h3></div><span className={`badge ${cfgLive(liveConfig?.fulfilment) ? 'badge-success' : 'badge-neutral'}`}>{cfgLive(liveConfig?.fulfilment) ? 'Live' : 'Demo data'}</span></div>
           <div className="table-wrap">
-            <table className="table">
+            <table className="table mobile-stack-table">
               <thead><tr><th>Provider</th><th>Regions</th><th>Rate</th><th>ETA</th><th className="center">Enabled</th></tr></thead>
               <tbody>
                 {(liveConfig?.fulfilment ?? MEDUSA_FULFILMENT).length === 0 && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 22 }}>No fulfilment providers registered.</td></tr>}
                 {(liveConfig?.fulfilment ?? MEDUSA_FULFILMENT).map((f, i) => (
                   <tr key={f.provider || i}>
-                    <td style={{ fontWeight: 500 }}>{f.provider}</td>
-                    <td className="muted">{f.regions}</td>
-                    <td>{f.rate}</td>
-                    <td className="muted">{f.eta}</td>
-                    <td className="center"><span className={`badge ${f.enabled ? 'badge-success' : 'badge-neutral'}`}>{f.enabled ? 'on' : 'off'}</span></td>
+                    <td data-label="Provider" style={{ fontWeight: 500 }}>{f.provider}</td>
+                    <td data-label="Regions" className="muted">{f.regions}</td>
+                    <td data-label="Rate">{f.rate}</td>
+                    <td data-label="ETA" className="muted">{f.eta}</td>
+                    <td data-label="Enabled" className="center"><span className={`badge ${f.enabled ? 'badge-success' : 'badge-neutral'}`}>{f.enabled ? 'on' : 'off'}</span></td>
                   </tr>
                 ))}
               </tbody>
