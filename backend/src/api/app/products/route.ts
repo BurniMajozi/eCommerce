@@ -18,6 +18,8 @@ type Body = {
   abcClass?: string;
   lifespanMonths?: number | string;
   imageUrl?: string;
+  supplierId?: string;
+  supplier?: string;
 };
 
 function num(value: unknown, fallback = 0): number {
@@ -81,6 +83,8 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
               abc_class: (body.abcClass ?? '').toString(),
               lifespan_months: num(body.lifespanMonths),
               cost_price: cost,
+              supplier_id: (body.supplierId ?? '').toString() || null,
+              supplier_name: (body.supplier ?? '').toString() || null,
             },
             options: [{ title: 'Variant', values: ['Standard'] }],
             variants: [

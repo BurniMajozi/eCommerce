@@ -1,6 +1,6 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { createProduct, updateProduct, uploadProductImage, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { createProduct, updateProduct, uploadProductImage, fetchParties, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { catalogueImage } from '../data/catalogueImages';
 import { X, UploadCloud, Loader2, Save } from 'lucide-react';
 
@@ -26,15 +26,27 @@ export const ProductFormModal = ({ onClose, product = null }) => {
     [products],
   );
 
+  // Suppliers to link a SKU to its vendor (feeds the supplier-performance matrix).
+  const [suppliers, setSuppliers] = useState([]);
+  useEffect(() => {
+    if (!live) return;
+    let active = true;
+    fetchParties(scope).then((r) => { if (active) setSuppliers(r.suppliers ?? []); }).catch(() => {});
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, scope.accessToken, scope.tenantId]);
+
   const [form, setForm] = useState(() => (isEdit ? {
     sku: product.sku ?? '', name: product.name ?? '', category: product.category ?? '',
     costPrice: product.costPrice ?? '', sellingPrice: product.sellingPrice ?? '',
     stockOnHand: product.stockOnHand ?? '', stockInTransit: product.stockInTransit ?? '',
     abcClass: product.abcClass || 'C', lifespanMonths: product.lifespanMonths ?? '',
     leadTimeDays: product.leadTimeDays ?? '', dailyConsumption: product.dailyConsumption ?? '',
+    supplierId: product.supplierId ?? '', supplier: product.supplier ?? '',
   } : {
     sku: '', name: '', category: '', costPrice: '', sellingPrice: '',
     stockOnHand: '', stockInTransit: '', abcClass: 'C', lifespanMonths: '', leadTimeDays: '', dailyConsumption: '',
+    supplierId: '', supplier: '',
   }));
   // Show the current photo (live imageUrl or bundled map) as the starting preview.
   const existingImage = isEdit ? (product.imageUrl || catalogueImage(product.sku)) : null;
@@ -89,6 +101,8 @@ export const ProductFormModal = ({ onClose, product = null }) => {
         lifespanMonths: Number(form.lifespanMonths) || 0,
         leadTimeDays: Number(form.leadTimeDays) || 0,
         dailyConsumption: Number(form.dailyConsumption) || 0,
+        supplierId: form.supplierId || '',
+        supplier: form.supplier || '',
         ...(imageUrl ? { imageUrl } : {}),
       };
 
@@ -154,6 +168,18 @@ export const ProductFormModal = ({ onClose, product = null }) => {
                 </div>
               </div>
             </div>
+          </div>
+
+          <div className="field">
+            <label className="field-label">Supplier <span className="muted">(links this SKU to a vendor)</span></label>
+            <select className="select" value={form.supplierId} onChange={(e) => {
+              const s = suppliers.find((x) => x.id === e.target.value);
+              setForm((f) => ({ ...f, supplierId: e.target.value, supplier: s ? (s.company || s.name || '') : '' }));
+            }}>
+              <option value="">— No supplier —</option>
+              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.company || s.name}</option>)}
+              {form.supplierId && !suppliers.some((s) => s.id === form.supplierId) && form.supplier && <option value={form.supplierId}>{form.supplier}</option>}
+            </select>
           </div>
 
           <div className="cols cols-2">

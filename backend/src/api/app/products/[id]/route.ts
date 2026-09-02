@@ -21,6 +21,8 @@ type Body = {
   abcClass?: string;
   lifespanMonths?: number | string;
   imageUrl?: string;
+  supplierId?: string;
+  supplier?: string;
 };
 
 const has = (v: unknown): boolean => v !== undefined && v !== null && `${v}`.trim() !== '';
@@ -64,6 +66,8 @@ export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Prom
     if (has(body.abcClass)) metadata.abc_class = body.abcClass!.toString();
     if (has(body.lifespanMonths)) metadata.lifespan_months = num(body.lifespanMonths);
     if (has(body.costPrice)) metadata.cost_price = num(body.costPrice);
+    if (body.supplierId !== undefined) metadata.supplier_id = body.supplierId ? body.supplierId.toString() : null;
+    if (body.supplier !== undefined) metadata.supplier_name = body.supplier ? body.supplier.toString() : null;
 
     const productUpdate: Record<string, unknown> = { id, metadata };
     if (has(body.name)) productUpdate.title = body.name!.toString().trim();

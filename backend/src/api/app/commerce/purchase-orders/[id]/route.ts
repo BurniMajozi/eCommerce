@@ -126,12 +126,35 @@ export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Prom
           const key = (l.sku ?? l.product_id ?? '').toString();
           return recvMap.has(key) ? (recvMap.get(key) as number) : Math.floor(Number(l.qty ?? 0));
         };
-        const effectiveLines = ordered.map((l) => ({ ...l, qty: receivedQty(l) })).filter((l) => l.qty > 0);
+        // Damaged-in-transit per line: received but unusable, so it doesn't add
+        // to stock but is recorded for the supplier scorecard.
+        const dmgMap = new Map<string, number>();
+        if (Array.isArray(b.damagedLines)) for (const r of b.damagedLines) { const k = (r.sku ?? r.product_id ?? '').toString(); if (k) dmgMap.set(k, Math.max(0, Math.floor(Number(r.qty ?? r.damaged ?? 0)))); }
+        const damagedQty = (l: any) => dmgMap.get((l.sku ?? l.product_id ?? '').toString()) ?? 0;
+
+        const effectiveLines = ordered.map((l) => ({ ...l, qty: Math.max(0, receivedQty(l) - damagedQty(l)) })).filter((l) => l.qty > 0);
         stockResult = await receiveStock(req, scope, effectiveLines);
         patch.status = 'received'; patch.received_at = now();
         patch.received_lines = JSON.stringify(ordered.map((l) => ({
           sku: l.sku, name: l.name, ordered: Math.floor(Number(l.qty ?? 0)), received: receivedQty(l),
+          damaged: damagedQty(l), returned: 0, unitCost: Number(l.unit_cost ?? 0),
         })));
+        break;
+      }
+      case 'report_quality': {
+        // Record a post-receipt quality return (short/reject on inspection) for
+        // the supplier scorecard. Does not reverse stock (handled separately).
+        assertCapability(scope, 'commerce.manage');
+        expect('received');
+        const returnMap = new Map<string, number>();
+        if (Array.isArray(b.returnedLines)) for (const r of b.returnedLines) { const k = (r.sku ?? '').toString(); if (k) returnMap.set(k, Math.max(0, Math.floor(Number(r.qty ?? 0)))); }
+        const existing = (typeof po.received_lines === 'string' ? JSON.parse(po.received_lines) : (po.received_lines ?? [])) as any[];
+        const base = existing.length ? existing : (po.lines ?? []).map((l: any) => ({ sku: l.sku, name: l.name, ordered: Math.floor(Number(l.qty ?? 0)), received: Math.floor(Number(l.qty ?? 0)), damaged: 0, returned: 0, unitCost: Number(l.unit_cost ?? 0) }));
+        patch.received_lines = JSON.stringify(base.map((l: any) => {
+          const k = (l.sku ?? '').toString();
+          return { ...l, returned: returnMap.has(k) ? returnMap.get(k) : (l.returned ?? 0) };
+        }));
+        patch.quality_note = (b.note ?? '').toString().slice(0, 1000) || po.quality_note || null;
         break;
       }
       case 'cancel':
