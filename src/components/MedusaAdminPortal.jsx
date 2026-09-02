@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { downloadProductImportTemplate, validateProductImport, deleteProduct, fetchOrders, updateOrder, fetchCommerceConfig, fetchEngine, runEngineWorkflow, fetchParties, createParty, updateParty, deleteParty, fetchPurchaseOrders, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, fetchPromotions, sendNotificationEmail, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { InlineError, InlineLoading } from './InlineState';
+import { SkeletonPage } from './SkeletonLoader';
 import { ProductThumb } from './ProductThumb';
 import { ProductFormModal } from './ProductFormModal';
 import { PromotionFormModal } from './PromotionFormModal';
@@ -758,6 +759,12 @@ export const MedusaAdminPortal = ({ view }) => {
   };
 
   /* ---------------- Products & Pricing (+ variants) ---------------- */
+  // While the live catalogue is loading, show the skeleton (matching the Suspense
+  // fallback) instead of an empty/zeroed table — the catalogue-backed views.
+  if ((view === 'products' || view === 'inventory') && catalogue.loading && products.length === 0) {
+    return <SkeletonPage />;
+  }
+
   if (view === 'products') {
     const liveProfitBySku = new Map((profitability.items ?? []).map(item => [item.sku, item]));
     const liveCatalogue = catalogue.source === 'medusa';

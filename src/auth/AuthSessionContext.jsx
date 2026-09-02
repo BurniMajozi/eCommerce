@@ -36,11 +36,13 @@ export const AuthSessionProvider = ({ children }) => {
     };
   }, []);
 
-  // Auto sign-out after 30 minutes of inactivity (mouse/keyboard/tab activity
-  // resets the timer). On logout the session clears and the login screen returns.
+  // Auto sign-out after 3 hours of inactivity (mouse/keyboard/tab activity
+  // resets the timer). A longer idle window means fewer re-logins, and each
+  // re-login costs an emailed sign-in code (AgentMail tier usage), so 3h keeps
+  // that spend down. On logout the session clears and the login screen returns.
   useEffect(() => {
     if (!supabase || !session) return undefined;
-    const IDLE_MS = 30 * 60 * 1000;
+    const IDLE_MS = 3 * 60 * 60 * 1000;
     let timer;
     const reset = () => { clearTimeout(timer); timer = setTimeout(() => { supabase.auth.signOut(); }, IDLE_MS); };
     const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'visibilitychange'];

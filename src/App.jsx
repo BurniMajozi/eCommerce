@@ -120,7 +120,13 @@ const AppContent = () => {
         </div>
 
         <main style={{ flex: 1, width: '100%', maxWidth: 1240, margin: '0 auto', padding: '22px 20px 40px' }}>
-          <ErrorBoundary key={activeRole}>
+          {/* All commerce sub-views (Products, Orders, Inventory, POs…) render the
+              SAME MedusaAdminPortal — only its `view` prop changes. Keying the
+              boundary by a stable 'commerce' token (instead of activeRole) keeps
+              that portal MOUNTED across sidebar clicks, so its live data is not
+              torn down and re-fetched on every navigation (no lag, no flash of a
+              loading/old view). Distinct portals still get their own key. */}
+          <ErrorBoundary key={MED_VIEW[activeRole] ? 'commerce' : activeRole}>
             <Suspense fallback={<SkeletonPage />}>
               {render()}
             </Suspense>

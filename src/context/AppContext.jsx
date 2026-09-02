@@ -28,8 +28,12 @@ export const AppProvider = ({ children }) => {
     try { localStorage.setItem('sightlive-theme', theme); } catch { /* ignore */ }
   }, [theme]);
 
-  const [products, setProducts] = useState(CAGELI_PRODUCTS);
-  const [catalogue, setCatalogue] = useState({ source: 'demo', loading: false, error: null, dataQuality: null });
+  // In a live build the catalogue is fetched from Medusa, so start EMPTY and
+  // loading rather than seeding the mock catalogue — otherwise the first paint
+  // flashes demo products before the live data arrives. Only a demo build (live
+  // path disabled) seeds the mock products.
+  const [products, setProducts] = useState(isMedusaCatalogueEnabled ? [] : CAGELI_PRODUCTS);
+  const [catalogue, setCatalogue] = useState({ source: isMedusaCatalogueEnabled ? 'loading' : 'demo', loading: isMedusaCatalogueEnabled, error: null, dataQuality: null });
   const [profitability, setProfitability] = useState({ source: 'demo', loading: false, error: null, items: [], totals: null });
   const [activePlant, setActivePlant] = useState(MOCK_PLANTS[1]); // Default to Kumba Plant Alpha
   // EMPLOYEE, MANAGER, STOREKEEPER, MERCHANT, EXECUTIVE, TENANT_ADMIN, OWNER
@@ -114,9 +118,17 @@ export const AppProvider = ({ children }) => {
     const accessToken = auth.session?.access_token;
     const tenantId = tenantAccess.activeTenantId;
     const siteId = tenantAccess.activeSiteId;
-    if (!isMedusaCatalogueEnabled || !accessToken || !tenantId) {
+    if (!isMedusaCatalogueEnabled) {
+      // Demo build — no live path, show the mock catalogue.
       setProducts(CAGELI_PRODUCTS);
       setCatalogue({ source: 'demo', loading: false, error: null, dataQuality: null });
+      return undefined;
+    }
+    if (!accessToken || !tenantId) {
+      // Live build, but auth/tenant not resolved yet: keep loading (never flash
+      // demo data). The portal isn't shown until access is ready anyway.
+      setProducts([]);
+      setCatalogue({ source: 'loading', loading: true, error: null, dataQuality: null });
       return undefined;
     }
 
