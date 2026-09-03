@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { fetchPurchaseOrders, fetchOrders, updatePurchaseOrder, escalateApproval, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { PoApprovalHistory, RequestApprovalHistory } from './ManagerApprovalPortal';
+import { SearchExportBar, matchQuery } from './TableToolbar';
+import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import {
   ArrowUpCircle, Clock, Factory, HardHat, ClipboardList, Loader2, Mail, X, ShieldAlert, RefreshCcw, Check
 } from 'lucide-react';
@@ -105,10 +107,19 @@ export const MerchantApprovalsPortal = () => {
       tier: r.approvalTierRequired, at: r.requestDate || '',
     }));
 
-  const items = [...poItems, ...requestItems]
+  const [waitSearch, setWaitSearch] = useState('');
+  const allItems = [...poItems, ...requestItems]
     .map((it) => ({ ...it, ageDays: daysSince(it.at) }))
     .sort((a, b) => (b.ageDays ?? 0) - (a.ageDays ?? 0));
+  const items = allItems.filter((it) => matchQuery(it, waitSearch, ['reference', 'subject', 'kind']));
   const stuckCount = items.filter((it) => (it.ageDays ?? 0) >= STUCK_DAYS).length;
+  const exportWaiting = () => { downloadCsv(`sightlive-waiting-approvals-${dateStamp()}`, [
+    { key: 'kind', label: 'Type', map: (it) => (it.kind === 'po' ? 'PO / order' : `PPE${it.tier ? ` Tier ${it.tier}` : ''}`) },
+    { key: 'subject', label: 'Item' }, { key: 'reference', label: 'Reference' },
+    { key: 'total', label: 'Value', map: (it) => (it.total == null ? '' : Number(it.total).toFixed(2)) },
+    { key: 'currency', label: 'Currency', map: (it) => it.currency || 'ZAR' },
+    { key: 'ageDays', label: 'Waiting (days)', map: (it) => it.ageDays ?? '' },
+  ], items); triggerNotification('Export ready', `${items.length} waiting approvals exported to CSV.`, 'success'); };
 
   const openEscalate = (it) => { setNote(''); setAlsoEmail(false); setEscalating(it); };
   const submitEscalate = async () => {
@@ -201,12 +212,15 @@ export const MerchantApprovalsPortal = () => {
       )}
 
       <div className="card">
-        <div className="card-hd">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ClipboardList size={17} style={{ color: 'var(--primary)' }} /><h3>Waiting on an approver</h3></div>
-          {live && <button className="btn btn-ghost btn-sm" onClick={() => setReloadKey((k) => k + 1)} disabled={loading} aria-label="Refresh">{loading ? <Loader2 size={14} className="spin" /> : 'Refresh'}</button>}
+        <div className="card-hd" style={{ gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ClipboardList size={17} style={{ color: 'var(--primary)' }} /><h3>Waiting on an approver</h3>{waitSearch && <span className="badge badge-neutral">{items.length} of {allItems.length}</span>}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {allItems.length > 0 && <SearchExportBar value={waitSearch} onChange={setWaitSearch} placeholder="Search item, reference…" onExport={exportWaiting} exportDisabled={!items.length} width={190} />}
+            {live && <button className="btn btn-ghost btn-sm" onClick={() => setReloadKey((k) => k + 1)} disabled={loading} aria-label="Refresh">{loading ? <Loader2 size={14} className="spin" /> : 'Refresh'}</button>}
+          </div>
         </div>
         {items.length === 0 ? (
-          <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>{loading ? 'Loading…' : 'Nothing is waiting on an approval right now.'}</div>
+          <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>{loading ? 'Loading…' : (waitSearch ? 'No waiting approvals match your search.' : 'Nothing is waiting on an approval right now.')}</div>
         ) : (
           <div className="table-wrap">
             <table className="table">
