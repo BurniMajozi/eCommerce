@@ -5,6 +5,7 @@ import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { MOCK_DEPARTMENT_CONSUMPTION, CAGELI_PRODUCTS } from '../data/mockData';
 import { LiveReportBuilder } from './LiveReportBuilder';
 import { AuditLogCard } from './AuditLogCard';
+import { SearchExportBar, matchQuery } from './TableToolbar';
 import {
   TrendingUp, AlertTriangle, FileDown, Boxes, Wallet, TriangleAlert, PackageX,
   Users, HardHat, Building2, Layers, Loader2, ShieldCheck
@@ -20,6 +21,7 @@ export const InventoryAnalyticsPortal = () => {
   // is MFA-gated, so if the session is aal1 we prompt the authenticator step-up
   // and retry the export once elevated.
   const [exporting, setExporting] = useState(null); // 'csv' | 'pdf' | null
+  const [ledgerSearch, setLedgerSearch] = useState('');
   const pendingExportRef = useRef(null);
 
   const zar = (n) => `R ${Number(n || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -232,13 +234,26 @@ export const InventoryAnalyticsPortal = () => {
       <LiveReportBuilder scope={scope} triggerNotification={triggerNotification} />
 
       {/* Stock ledger */}
+      {(() => {
+        const ledgerRows = products.filter((p) => matchQuery(p, ledgerSearch, ['sku', 'name', 'category']));
+        const exportLedger = () => { downloadCsv(`stock-ledger-${dateStamp()}`, [
+          { key: 'sku', label: 'SKU' }, { key: 'name', label: 'Item' }, { key: 'category', label: 'Category', map: (p) => p.category ?? '' },
+          { key: 'price', label: 'Unit price (RP)', map: (p) => Number(getItemPrice(p) || 0).toFixed(2) },
+          { key: 'stockOnHand', label: 'On hand' }, { key: 'stockInTransit', label: 'In transit', map: (p) => p.stockInTransit ?? 0 },
+          { key: 'value', label: 'Total value (RP)', map: (p) => (Number(getItemPrice(p) || 0) * (p.stockOnHand || 0)).toFixed(2) },
+          { key: 'cover', label: 'Cover (days)', map: (p) => cover(p) },
+        ], ledgerRows); triggerNotification('Export ready', `${ledgerRows.length} SKUs exported to CSV.`, 'success'); };
+        return (
       <div className="card">
-        <div className="card-hd">
+        <div className="card-hd" style={{ gap: 10, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Boxes size={17} style={{ color: 'var(--primary)' }} />
             <h3>Stock ledger — forward cover &amp; valuation</h3>
           </div>
-          <span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? `${products.length} live SKUs` : `${products.length} SKUs`}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {products.length > 0 && <SearchExportBar value={ledgerSearch} onChange={setLedgerSearch} placeholder="Search SKU, item, category…" onExport={exportLedger} exportDisabled={!ledgerRows.length} width={190} />}
+            <span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{ledgerSearch ? `${ledgerRows.length} of ${products.length}` : products.length} SKUs</span>
+          </div>
         </div>
         {live && products.length === 0 && (
           <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>Connecting to the live catalogue… stock will appear here once the tenant link resolves.</div>
@@ -259,7 +274,8 @@ export const InventoryAnalyticsPortal = () => {
                 </tr>
               </thead>
               <tbody>
-                {products.map((p) => {
+                {ledgerRows.length === 0 && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 20 }}>No SKUs match your search.</td></tr>}
+                {ledgerRows.map((p) => {
                   const cv = cover(p);
                   const low = cv < 14;
                   const price = getItemPrice(p);
@@ -282,6 +298,8 @@ export const InventoryAnalyticsPortal = () => {
           </div>
         )}
       </div>
+        );
+      })()}
 
       {/* Tenant audit trail — for roles with audit.read (e.g. merchant reporting
           PPE stock activity to the mine). MFA-gated with an authenticator step-up. */}

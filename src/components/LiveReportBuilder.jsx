@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { fetchReports, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { EmployeeAllocationReport } from './EmployeeAllocationReport';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
-import { FileBarChart, Download, Printer, Loader2, RefreshCw } from 'lucide-react';
+import { matchQuery } from './TableToolbar';
+import { Search, FileBarChart, Download, Printer, Loader2, RefreshCw } from 'lucide-react';
 
 const rand = (n) => `R ${Number(n || 0).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
 
@@ -66,6 +67,8 @@ export const LiveReportBuilder = ({ scope, triggerNotification }) => {
   const [error, setError] = useState(null);
   const [active, setActive] = useState('allocations');
   const [reloadKey, setReloadKey] = useState(0);
+  const [search, setSearch] = useState('');
+  useEffect(() => { setSearch(''); }, [active]);
 
   useEffect(() => {
     if (!live) { setData(null); return; }
@@ -74,7 +77,8 @@ export const LiveReportBuilder = ({ scope, triggerNotification }) => {
   }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const def = REPORT_DEFS[active];
-  const rows = data?.reports && !def.custom ? def.pick(data.reports) : [];
+  const allRows = data?.reports && !def.custom ? def.pick(data.reports) : [];
+  const rows = allRows.filter((r) => matchQuery(r, search, (def.cols || []).map((c) => c.key)));
   const totals = active === 'stock' ? data?.reports?.stockValuation?.totals : null;
   const generatedAt = data?.generatedAt ? new Date(data.generatedAt).toLocaleString('en-ZA') : null;
 
@@ -135,7 +139,11 @@ export const LiveReportBuilder = ({ scope, triggerNotification }) => {
                   <h3 style={{ fontSize: 18 }}>{def.name}</h3>
                   {generatedAt && <div className="eyebrow">as at {generatedAt}</div>}
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {live && <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <Search size={14} style={{ position: 'absolute', left: 9, color: 'var(--text-subtle)', pointerEvents: 'none' }} />
+                    <input className="input" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 30, width: 170, height: 34 }} aria-label="Search report" />
+                  </div>}
                   <button className="btn btn-secondary btn-sm" onClick={exportCsvNow} disabled={!rows.length}><Download size={14} /> CSV</button>
                   <button className="btn btn-primary btn-sm" onClick={printPdf} disabled={!rows.length}><Printer size={14} /> Print / PDF</button>
                 </div>
@@ -148,7 +156,7 @@ export const LiveReportBuilder = ({ scope, triggerNotification }) => {
                   <table className="table">
                     <thead><tr>{def.cols.map((c) => <th key={c.key} className={c.num ? 'num' : ''}>{c.label}</th>)}</tr></thead>
                     <tbody>
-                      {rows.length === 0 && <tr><td colSpan={def.cols.length} className="muted" style={{ textAlign: 'center', padding: 22 }}>{loading ? 'Generating…' : 'No rows for this report yet.'}</td></tr>}
+                      {rows.length === 0 && <tr><td colSpan={def.cols.length} className="muted" style={{ textAlign: 'center', padding: 22 }}>{loading ? 'Generating…' : (search ? 'No rows match your search.' : 'No rows for this report yet.')}</td></tr>}
                       {rows.map((row, i) => (
                         <tr key={i}>
                           {def.cols.map((c) => {

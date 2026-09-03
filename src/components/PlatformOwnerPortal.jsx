@@ -3,6 +3,8 @@ import { useApp } from '../context/AppContext';
 import { MOCK_AUDIT_LOG, ROLE_HOME_CARDS } from '../data/mockData';
 import { uploadTenantLogo, recordAudit } from '../tenant/adminReads';
 import { fetchPlatformOverview, provisionPlatformTenant, updatePlatformTenant, fetchMembers, inviteMember, updateMemberRole, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { SearchExportBar, matchQuery } from './TableToolbar';
+import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { Building2, Plus, Palette, Smartphone, Wallet, ScrollText, LayoutGrid, AlertTriangle, Users, ShieldCheck, HardHat } from 'lucide-react';
 import { BugTriageCard } from './BugTriageCard';
 import { BillingCard } from './BillingCard';
@@ -101,7 +103,15 @@ export const PlatformOwnerPortal = () => {
   const reloadOverview = () => setReloadKey(k => k + 1);
 
   const liveTenants = overview?.tenants ?? null;
-  const tenantRows = liveTenants ?? tenants;
+  const allTenantRows = liveTenants ?? tenants;
+  const [tenantSearch, setTenantSearch] = useState('');
+  const tenantRows = allTenantRows.filter((t) => matchQuery(t, tenantSearch, ['name', 'domain', 'plan', 'status', 'state']));
+  const exportTenants = () => { downloadCsv(`sightlive-tenants-${dateStamp()}`, [
+    { key: 'name', label: 'Tenant' }, { key: 'domain', label: 'Domain', map: (t) => t.domain ?? '' },
+    { key: 'users', label: 'Users', map: (t) => t.users ?? 0 }, { key: 'plan', label: 'Plan', map: (t) => t.plan ?? '' },
+    { key: 'mrr', label: 'MRR', map: (t) => estimateMrr(t) },
+    { key: 'state', label: 'State', map: (t) => t.status ?? t.state ?? '' },
+  ], tenantRows); triggerNotification('Export ready', `${tenantRows.length} tenants exported to CSV.`, 'success'); };
   const tenantsLive = liveTenants !== null;
   const liveRbac = overview?.roles ?? null;
   const rbacLive = liveRbac !== null;
@@ -183,7 +193,8 @@ export const PlatformOwnerPortal = () => {
       <div className="card">
         <div className="card-hd">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Building2 size={17} style={{ color: 'var(--primary)' }} /><h3>Tenants</h3><SourceBadge live={tenantsLive} /></div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {allTenantRows.length > 0 && <SearchExportBar value={tenantSearch} onChange={setTenantSearch} placeholder="Search tenant, domain, plan…" onExport={exportTenants} exportDisabled={!tenantRows.length} width={190} />}
             <input className="input" value={newTenantName} onChange={e => setNewTenantName(e.target.value)} placeholder="New tenant name" style={{ width: 180 }} />
             <button className="btn btn-primary" disabled={!newTenantName.trim() || !backend} onClick={async () => {
               try {
@@ -203,7 +214,7 @@ export const PlatformOwnerPortal = () => {
             <thead><tr><th>Tenant</th><th>Domain</th><th className="num">Users</th><th className="center">Plan</th><th className="num">MRR</th><th className="center">State</th><th className="center">Access</th></tr></thead>
             <tbody>
               {tenantRows.length === 0 && (
-                <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 24 }}>No tenants visible for your access.</td></tr>
+                <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 24 }}>{tenantSearch ? 'No tenants match your search.' : 'No tenants visible for your access.'}</td></tr>
               )}
               {tenantRows.map(t => {
                 const sel = t.id === selectedTenantId;

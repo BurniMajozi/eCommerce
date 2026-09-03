@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { fetchAudit, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { SearchExportBar, matchQuery } from './TableToolbar';
+import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { ScrollText, ShieldCheck, RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
 
 // Tenant audit trail on the Dashboard — lets a merchant report PPE stock activity
@@ -15,6 +17,7 @@ export const AuditLogCard = () => {
   const [needsMfa, setNeedsMfa] = useState(false);
   const [err, setErr] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
     if (!live) return;
@@ -39,12 +42,23 @@ export const AuditLogCard = () => {
 
   const stepUp = () => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sightlive:mfa-required')); };
   const fmt = (t) => (t || '').replace('T', ' ').slice(0, 16);
+  const shown = events.filter((e) => matchQuery(e, search, ['action', 'targetType', 'targetId', 'source', 'actor']));
+  const exportCsvNow = () => { downloadCsv(`sightlive-audit-${dateStamp()}`, [
+    { key: 'at', label: 'When', map: (e) => fmt(e.at) },
+    { key: 'action', label: 'Action' }, { key: 'targetType', label: 'Target type' },
+    { key: 'targetId', label: 'Target id' }, { key: 'source', label: 'Source' }, { key: 'actor', label: 'Actor' },
+  ], shown); triggerNotification('Export ready', `${shown.length} audit events exported to CSV.`, 'success'); };
 
   return (
     <div className="card">
-      <div className="card-hd" style={{ gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ScrollText size={17} style={{ color: 'var(--primary)' }} /><h3>Audit trail</h3>{!needsMfa && <span className="badge badge-neutral">{events.length} events</span>}</div>
-        {live && !needsMfa && <button className="btn btn-ghost btn-sm" onClick={() => setReloadKey((k) => k + 1)} disabled={loading} aria-label="Refresh">{loading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}</button>}
+      <div className="card-hd" style={{ gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ScrollText size={17} style={{ color: 'var(--primary)' }} /><h3>Audit trail</h3>{!needsMfa && <span className="badge badge-neutral">{search ? `${shown.length} of ${events.length}` : events.length} events</span>}</div>
+        {live && !needsMfa && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {events.length > 0 && <SearchExportBar value={search} onChange={setSearch} placeholder="Search action, target…" onExport={exportCsvNow} exportDisabled={!shown.length} width={180} />}
+            <button className="btn btn-ghost btn-sm" onClick={() => setReloadKey((k) => k + 1)} disabled={loading} aria-label="Refresh">{loading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}</button>
+          </div>
+        )}
       </div>
       {!live ? (
         <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>Connect the live backend to view the audit trail.</div>
@@ -57,12 +71,14 @@ export const AuditLogCard = () => {
         <div className="card-bd" style={{ padding: 20, fontSize: 13.5, color: 'var(--danger)', display: 'flex', gap: 8, alignItems: 'center' }}><AlertTriangle size={15} /> {err}</div>
       ) : events.length === 0 ? (
         <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>{loading ? 'Loading…' : 'No audit events yet.'}</div>
+      ) : shown.length === 0 ? (
+        <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>No audit events match your search.</div>
       ) : (
         <div className="card-bd" style={{ maxHeight: 320, overflowY: 'auto', padding: 0 }}>
           <table className="table">
             <thead><tr><th>When</th><th>Action</th><th>Target</th><th>Source</th></tr></thead>
             <tbody>
-              {events.map((e) => (
+              {shown.map((e) => (
                 <tr key={e.id}>
                   <td className="muted" style={{ whiteSpace: 'nowrap', fontSize: 12.5 }}>{fmt(e.at)}</td>
                   <td style={{ fontWeight: 500 }}>{e.action}</td>

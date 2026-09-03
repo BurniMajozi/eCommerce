@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { fetchBugs, updateBug, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { SearchExportBar, matchQuery } from './TableToolbar';
+import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { Bug, RefreshCw, Loader2 } from 'lucide-react';
 
 const STATUSES = ['open', 'triaged', 'in_progress', 'closed'];
@@ -36,14 +38,24 @@ export const BugTriageCard = () => {
     } finally { setBusyId(null); }
   };
 
-  const rows = bugs.filter((b) => showClosed || b.status !== 'closed');
+  const [search, setSearch] = useState('');
+  const rows = bugs
+    .filter((b) => showClosed || b.status !== 'closed')
+    .filter((b) => matchQuery(b, search, ['title', 'description', 'reporterName', 'reporterEmail', 'severity', 'route', 'status']));
   const openCount = bugs.filter((b) => b.status !== 'closed').length;
+  const exportBugs = () => { downloadCsv(`sightlive-bug-reports-${dateStamp()}`, [
+    { key: 'title', label: 'Report' }, { key: 'description', label: 'Description', map: (b) => (b.description || '').replace(/\s+/g, ' ') },
+    { key: 'reporter', label: 'Reporter', map: (b) => b.reporterName || b.reporterEmail || '' },
+    { key: 'severity', label: 'Severity' }, { key: 'route', label: 'Where', map: (b) => b.route || '' },
+    { key: 'status', label: 'Status' }, { key: 'createdAt', label: 'Created', map: (b) => (b.createdAt || '').slice(0, 16).replace('T', ' ') },
+  ], rows); triggerNotification('Export ready', `${rows.length} bug reports exported to CSV.`, 'success'); };
 
   return (
     <div className="card">
-      <div className="card-hd" style={{ gap: 10 }}>
+      <div className="card-hd" style={{ gap: 10, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Bug size={17} style={{ color: 'var(--primary)' }} /><h3>Bug reports</h3><span className={`badge ${openCount ? 'badge-warning' : 'badge-neutral'}`}>{openCount} open</span></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {live && bugs.length > 0 && <SearchExportBar value={search} onChange={setSearch} placeholder="Search report, reporter…" onExport={exportBugs} exportDisabled={!rows.length} width={180} />}
           <label className="muted" style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}><input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} /> show closed</label>
           {live && <button className="btn btn-ghost btn-sm" onClick={() => setReloadKey((k) => k + 1)} disabled={loading} aria-label="Refresh">{loading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}</button>}
         </div>
@@ -51,7 +63,7 @@ export const BugTriageCard = () => {
       {!live ? (
         <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>Connect the live backend to see reported bugs.</div>
       ) : rows.length === 0 ? (
-        <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>{loading ? 'Loading…' : 'No open bug reports. 🎉'}</div>
+        <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>{loading ? 'Loading…' : (search ? 'No reports match your search.' : 'No open bug reports. 🎉')}</div>
       ) : (
         <div className="table-wrap">
           <table className="table">

@@ -7,6 +7,8 @@ import { fetchTenantMembers } from '../tenant/adminReads';
 import { fetchMembers, inviteMember, updateMemberRole, removeMember, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { ConfirmDialog } from './ConfirmDialog';
 import { LiveReportBuilder } from './LiveReportBuilder';
+import { SearchExportBar, matchQuery } from './TableToolbar';
+import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { DEPARTMENTS, PPE_CATEGORIES } from '../entitlement/entitlement';
 import { Plus, Play, Save, ArrowRight, Users, ListChecks, ShieldCheck, Trash2, PackageCheck, ClipboardList, GitBranch, ShieldQuestion, UserPlus, Mail, KeyRound, Copy, Loader2, RefreshCw, Pencil } from 'lucide-react';
 
@@ -91,19 +93,29 @@ const MembersManager = ({ scope, triggerNotification, fallbackRows }) => {
     }
   };
 
-  const rows = live ? (members ?? []) : (fallbackRows ?? []);
+  const [memberSearch, setMemberSearch] = useState('');
+  const allMemberRows = live ? (members ?? []) : (fallbackRows ?? []);
+  const rows = allMemberRows.filter((r) => matchQuery(r, memberSearch, ['name', 'email', 'role', 'dept', 'status']));
+  const exportMembers = () => { downloadCsv(`sightlive-members-${dateStamp()}`, [
+    { key: 'name', label: 'Name' }, { key: 'email', label: 'Email', map: (r) => r.email ?? '' },
+    { key: 'role', label: 'Role', map: (r) => roleLabel(r.role) }, { key: 'dept', label: 'Department', map: (r) => r.dept ?? '' },
+    { key: 'status', label: 'Status', map: (r) => r.status ?? '' },
+  ], rows); triggerNotification('Export ready', `${rows.length} members exported to CSV.`, 'success'); };
 
   return (
     <div className="card">
-      <div className="card-hd">
+      <div className="card-hd" style={{ gap: 10, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Users size={17} style={{ color: 'var(--primary)' }} /><h3>Users &amp; roles</h3><SourceBadge live={live} />
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {allMemberRows.length > 0 && <SearchExportBar value={memberSearch} onChange={setMemberSearch} placeholder="Search name, email, role…" onExport={exportMembers} exportDisabled={!rows.length} width={190} />}
         {live && (
           <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading} aria-label="Refresh members">
             {loading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
           </button>
         )}
+        </div>
       </div>
 
       {/* Invite form — only in live mode (needs the service-role backend). */}
@@ -160,7 +172,7 @@ const MembersManager = ({ scope, triggerNotification, fallbackRows }) => {
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={live ? 5 : 4} className="muted" style={{ textAlign: 'center', padding: 24 }}>{loading ? 'Loading members…' : 'No members yet — invite your first user above.'}</td></tr>
+              <tr><td colSpan={live ? 5 : 4} className="muted" style={{ textAlign: 'center', padding: 24 }}>{loading ? 'Loading members…' : (memberSearch ? 'No members match your search.' : 'No members yet — invite your first user above.')}</td></tr>
             )}
             {live ? rows.map((m) => (
               <tr key={m.membershipId} style={{ opacity: m.status === 'suspended' ? 0.55 : 1 }}>
