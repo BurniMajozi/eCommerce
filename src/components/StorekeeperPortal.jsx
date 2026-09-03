@@ -380,9 +380,11 @@ export const StorekeeperPortal = () => {
       approvalRef: 'Compliant (Auto-dispensed at counter)',
     };
 
-    // Append to requests and immediately dispense
-    createRequest(mockReq);
-    issueStockAndDeduct(reqId, {
+    // Immediate over-the-counter dispense: record THIS walk-in request as
+    // fulfilled and move stock + custody + allocation in one shot. Pass the
+    // object directly (not an id) so it doesn't depend on a not-yet-committed
+    // `requests` update, and so it's keyed to the served staff, not activeEmployee.
+    issueStockAndDeduct(mockReq, {
       staffCardPhotoUrl: staffCardPhoto,
       handoverPhotoUrl: handoverPhoto,
       issuedBy: issuerName,

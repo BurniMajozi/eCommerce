@@ -15,7 +15,7 @@ export const DateRangePicker = ({ range, onChange }) => {
   const [customEnd, setCustomEnd] = useState(range.endDate || '');
 
   const selectPreset = (days) => {
-    const end = new Date(2026, 7, 16); // 2026-08-16 reference date
+    const end = new Date(); // anchor "last N days" to today so newly issued stock shows
     const start = new Date(end);
     start.setDate(end.getDate() - days);
     const sStr = start.toISOString().slice(0, 10);

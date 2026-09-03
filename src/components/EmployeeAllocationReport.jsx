@@ -10,11 +10,13 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
   const { employeeAllocations } = useApp();
   const [selectedEmpId, setSelectedEmpId] = useState('ALL'); // default: all employees
   const [previewPhoto, setPreviewPhoto] = useState(null);
-  const [dateRange, setDateRange] = useState({
-    preset: 30,
-    startDate: '2026-07-17',
-    endDate: '2026-08-16',
-    label: 'Last 30 days',
+  const [dateRange, setDateRange] = useState(() => {
+    // Default to the last 30 days ending TODAY so freshly issued stock shows up
+    // (the old hardcoded window ended in the past and hid new allocations).
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(end.getDate() - 30);
+    return { preset: 30, startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10), label: 'Last 30 days' };
   });
 
   const list = employeeAllocations || [];

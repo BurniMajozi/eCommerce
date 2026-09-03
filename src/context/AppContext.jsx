@@ -281,31 +281,46 @@ export const AppProvider = ({ children }) => {
     triggerNotification('Request Declined', `Request ${reqId} was declined: ${reason}`, 'error');
   };
 
-  const issueStockAndDeduct = (reqId, extraAudit = {}) => {
-    const targetReq = requests.find(r => r.id === reqId);
-    if (!targetReq) return;
+  // Accepts a request id (an existing pending/approved request) OR a request
+  // object (an over-the-counter walk-in dispense that was never a pending row).
+  const issueStockAndDeduct = (reqOrId, extraAudit = {}) => {
+    const targetReq = typeof reqOrId === 'string' ? requests.find(r => r.id === reqOrId) : reqOrId;
+    if (!targetReq || !targetReq.sku) return;
+    const reqId = targetReq.id;
 
     // Deduct stock
     setProducts(prev => prev.map(p => p.sku === targetReq.sku ? { ...p, stockOnHand: Math.max(0, p.stockOnHand - 1) } : p));
-    
-    // Mark request fulfilled
-    setRequests(prev => prev.map(r => r.id === reqId ? { ...r, status: 'FULFILLED_DISPATCHED', ...extraAudit } : r));
 
-    // Update custody register
-    setActiveEmployee(prev => ({
-      ...prev,
-      custody: [
-        {
-          sku: targetReq.sku,
-          name: targetReq.itemName,
-          issueDate: new Date().toISOString().substring(0, 10),
-          lifespanMonths: 6,
-          condition: 'New Issue',
-          status: 'ACTIVE_CUSTODY'
-        },
-        ...prev.custody
-      ]
-    }));
+    // Mark the request fulfilled — update it in place if it already exists,
+    // otherwise add it (a walk-in dispense with no prior pending row). Reading
+    // the just-created object here (not a stale `requests` lookup) is what makes
+    // the walk-in counter actually move stock, custody and the allocation.
+    setRequests(prev => {
+      const exists = prev.some(r => r.id === reqId);
+      if (exists) return prev.map(r => r.id === reqId ? { ...r, status: 'FULFILLED_DISPATCHED', ...extraAudit } : r);
+      return [{ ...targetReq, status: 'FULFILLED_DISPATCHED', ...extraAudit }, ...prev];
+    });
+
+    // Update the holding of the worker the item is issued TO — only when that is
+    // the worker currently in view, so a walk-in for someone else doesn't get
+    // added to this worker's custody list. The Dashboard allocation register
+    // below always records it against the correct employee id regardless.
+    if (targetReq.employeeId === activeEmployee.id) {
+      setActiveEmployee(prev => ({
+        ...prev,
+        custody: [
+          {
+            sku: targetReq.sku,
+            name: targetReq.itemName,
+            issueDate: new Date().toISOString().substring(0, 10),
+            lifespanMonths: 6,
+            condition: 'New Issue',
+            status: 'ACTIVE_CUSTODY'
+          },
+          ...(prev.custody || [])
+        ]
+      }));
+    }
 
     // Update employee allocation register
     const allocItem = {
