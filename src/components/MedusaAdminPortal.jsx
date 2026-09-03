@@ -9,6 +9,7 @@ import { ProductFormModal } from './ProductFormModal';
 import { PromotionFormModal } from './PromotionFormModal';
 import { SupplierPerformanceMatrix } from './SupplierPerformanceMatrix';
 import { ReplenishmentPanel } from './ReplenishmentPanel';
+import { SearchExportBar, matchQuery } from './TableToolbar';
 import { ConfirmDialog } from './ConfirmDialog';
 import {
   MEDUSA_ORDERS, MEDUSA_PROMOTIONS, MEDUSA_TAX_REGIONS, MEDUSA_CUSTOMERS,
@@ -421,6 +422,10 @@ export const MedusaAdminPortal = ({ view }) => {
   const [importDryRun, setImportDryRun] = useState(null);
   const [importSummary, setImportSummary] = useState(null);
   const [importErrors, setImportErrors] = useState([]);
+  // Shared table search — one box per view; reset whenever the view changes so a
+  // query typed on Products doesn't leak into Orders, etc.
+  const [tableSearch, setTableSearch] = useState('');
+  useEffect(() => { setTableSearch(''); }, [view]);
   const [showProductForm, setShowProductForm] = useState(false);
   const [editProduct, setEditProduct] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -818,18 +823,20 @@ export const MedusaAdminPortal = ({ view }) => {
     const stockValue = liveCatalogue ? profitability.totals?.stockCostValue ?? null : rows.reduce((a, r) => a + r.costPrice * r.stockOnHand, 0);
     const retailValue = liveCatalogue ? profitability.totals?.stockRetailValue ?? null : rows.reduce((a, r) => a + r.sellingPrice * r.stockOnHand, 0);
     const potentialProfit = liveCatalogue ? profitability.totals?.potentialProfit ?? null : retailValue - stockValue;
+    const shownRows = rows.filter((r) => matchQuery(r, tableSearch, ['sku', 'name', 'category']));
+    const exportProducts = () => { downloadCsv(`sightlive-pricelist-${dateStamp()}`, [
+      { key: 'sku', label: 'SKU' }, { key: 'name', label: 'Product' }, { key: 'category', label: 'Category', map: (r) => r.category ?? '' },
+      { key: 'costPrice', label: 'Cost (R)', map: (r) => (r.costPrice == null ? 'Restricted' : r.costPrice.toFixed(2)) },
+      { key: 'sellingPrice', label: 'Price (R)', map: (r) => (r.sellingPrice == null ? '' : r.sellingPrice.toFixed(2)) },
+      { key: 'profit', label: 'Profit/unit (R)', map: (r) => (r.profit == null ? 'Restricted' : r.profit.toFixed(2)) },
+      { key: 'margin', label: 'Margin (%)', map: (r) => (r.margin == null ? 'Restricted' : r.margin.toFixed(1)) },
+      { key: 'stockOnHand', label: 'Stock' },
+    ], shownRows); triggerNotification('Export ready', `${shownRows.length} products exported to CSV.`, 'success'); };
     return (
       <Wrap>
         <Head icon={Tag} title="Products & Pricing" sub="Cost, contract price and margin per SKU — with size/colour variants as the lowest stock-keeping level."
-          action={<div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-secondary" onClick={() => { downloadCsv(`sightlive-pricelist-${dateStamp()}`, [
-              { key: 'sku', label: 'SKU' }, { key: 'name', label: 'Product' }, { key: 'category', label: 'Category', map: (r) => r.category ?? '' },
-              { key: 'costPrice', label: 'Cost (R)', map: (r) => (r.costPrice == null ? 'Restricted' : r.costPrice.toFixed(2)) },
-              { key: 'sellingPrice', label: 'Price (R)', map: (r) => (r.sellingPrice == null ? '' : r.sellingPrice.toFixed(2)) },
-              { key: 'profit', label: 'Profit/unit (R)', map: (r) => (r.profit == null ? 'Restricted' : r.profit.toFixed(2)) },
-              { key: 'margin', label: 'Margin (%)', map: (r) => (r.margin == null ? 'Restricted' : r.margin.toFixed(1)) },
-              { key: 'stockOnHand', label: 'Stock' },
-            ], rows); triggerNotification('Export ready', `${rows.length} products exported to CSV.`, 'success'); }} disabled={!rows.length}><Download size={16} /> Export CSV</button>
+          action={<div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <SearchExportBar value={tableSearch} onChange={setTableSearch} placeholder="Search SKU, product, category…" onExport={exportProducts} exportDisabled={!shownRows.length} />
             <button className="btn btn-primary" onClick={() => setShowProductForm(true)}><Plus size={16} /> New product</button>
           </div>} />
         <div className="cols cols-3">
@@ -850,12 +857,13 @@ export const MedusaAdminPortal = ({ view }) => {
           </div>
         )}
         <div className="card">
-          <div className="card-hd"><h3>Price list · Contract B</h3><span className="badge badge-neutral">{rows.length} products · click a row for variants</span></div>
+          <div className="card-hd"><h3>Price list · Contract B</h3><span className="badge badge-neutral">{shownRows.length}{tableSearch ? ` of ${rows.length}` : ''} products · click a row for variants</span></div>
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th></th><th>SKU</th><th>Product</th><th className="num">Cost</th><th className="num">Price</th><th className="num">Profit/unit</th><th className="num">Margin</th><th className="num">Promo</th><th className="num">Stock</th><th></th></tr></thead>
               <tbody>
-                {rows.map(r => {
+                {shownRows.length === 0 && <tr><td colSpan={10} className="muted" style={{ textAlign: 'center', padding: 22 }}>{tableSearch ? 'No products match your search.' : 'No products yet.'}</td></tr>}
+                {shownRows.map(r => {
                   const open = expandedSku === r.sku;
                   const opt = getVariantOptions(r);
                   const variants = open ? buildVariants(r) : [];
@@ -935,8 +943,9 @@ export const MedusaAdminPortal = ({ view }) => {
     const low = products.filter(p => cover(p) < 14).length;
     const reserved = (p) => Math.min(p.stockOnHand, Math.round(p.dailyConsumption * 2));
     const liveStock = catalogue?.source === 'medusa';
+    const shownProducts = products.filter((p) => matchQuery(p, tableSearch, ['sku', 'name', 'category']));
     const exportInventory = () => {
-      const rows = products.map((p) => {
+      const rows = shownProducts.map((p) => {
         const res = reserved(p);
         return { ...p, _reserved: res, _available: p.stockOnHand - res, _cover: cover(p) };
       });
@@ -958,19 +967,20 @@ export const MedusaAdminPortal = ({ view }) => {
     return (
       <Wrap>
         <Head icon={Boxes} title="Inventory & Stock" sub="Multi-location stock levels and reservations across your stores."
-          action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${liveStock ? 'badge-success' : 'badge-neutral'}`}>{liveStock ? 'Live' : 'Demo data'}</span><button className="btn btn-secondary" onClick={exportInventory} disabled={!products.length}><Download size={16} /> Export CSV</button></div>} />
+          action={<div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span className={`badge ${liveStock ? 'badge-success' : 'badge-neutral'}`}>{liveStock ? 'Live' : 'Demo data'}</span><SearchExportBar value={tableSearch} onChange={setTableSearch} placeholder="Search SKU, product, category…" onExport={exportInventory} exportDisabled={!shownProducts.length} /></div>} />
         <div className="cols cols-3">
           <div className="card"><div className="card-bd"><div className="kpi-label">Locations</div><div className="kpi-value">3</div><div className="kpi-sub">Store 1 · Store 2 · Central</div></div></div>
           <div className="card"><div className="card-bd"><div className="kpi-label">SKUs tracked</div><div className="kpi-value">{products.length}</div><div className="kpi-sub">with reservations</div></div></div>
           <div className="card" style={{ borderColor: low ? 'var(--primary-weak-bd)' : 'var(--border)' }}><div className="card-bd"><div className="kpi-label">Below min</div><div className="kpi-value" style={{ color: low ? 'var(--danger)' : 'var(--text)' }}>{low}</div><div className="kpi-sub">under 14-day cover</div></div></div>
         </div>
         <div className="card">
-          <div className="card-hd"><h3>Stock by SKU</h3></div>
+          <div className="card-hd"><h3>Stock by SKU</h3><span className="badge badge-neutral">{shownProducts.length}{tableSearch ? ` of ${products.length}` : ''} SKUs</span></div>
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>SKU</th><th>Product</th><th className="num">On hand</th><th className="num">Reserved</th><th className="num">Available</th><th className="num">In transit</th><th className="num">Cover</th></tr></thead>
               <tbody>
-                {products.map(p => {
+                {shownProducts.length === 0 && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 22 }}>{tableSearch ? 'No SKUs match your search.' : 'No stock yet.'}</td></tr>}
+                {shownProducts.map(p => {
                   const res = reserved(p); const cv = cover(p); const lo = cv < 14;
                   return (
                     <tr key={p.sku} className={lo ? 'row-flag' : ''}>
@@ -1070,22 +1080,33 @@ export const MedusaAdminPortal = ({ view }) => {
     // Interleave sales + POs by date so the newest activity (incl. a just-created
     // PO) is actually at the top — the list claims "newest first".
     const rows = [...orderRows, ...poRows].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const shownRows = rows.filter((r) => matchQuery(r, tableSearch, ['id', 'customer', 'status', 'currency']));
+    const exportOrders = () => { downloadCsv(`sightlive-orders-${dateStamp()}`, [
+      { key: 'type', label: 'Type', map: (o) => (o.direction === 'in' ? 'PO' : 'Sale') },
+      { key: 'id', label: 'Reference' }, { key: 'customer', label: 'Customer / Supplier' },
+      { key: 'currency', label: 'Currency' }, { key: 'total', label: 'Total', map: (o) => Number(o.total || 0).toFixed(2) },
+      { key: 'items', label: 'Items' }, { key: 'status', label: 'Status', map: (o) => String(o.status || '').replace(/_/g, ' ') },
+      { key: 'date', label: 'Date' },
+    ], shownRows); triggerNotification('Export ready', `${shownRows.length} orders exported to CSV.`, 'success'); };
     return (
       <Wrap>
         <Head icon={ShoppingCart} title="Orders" sub={live ? 'Live B2B orders (outbound) and purchase orders (inbound), newest first.' : 'B2B orders across regions and currencies.'}
-          action={live && <button className="btn btn-secondary btn-sm" onClick={() => { reloadOrders(); reloadPo(); }} title="Refresh orders"><RotateCw size={14} /> Refresh</button>} />
+          action={<div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <SearchExportBar value={tableSearch} onChange={setTableSearch} placeholder="Search ref, customer, status…" onExport={exportOrders} exportDisabled={!shownRows.length} />
+            {live && <button className="btn btn-secondary btn-sm" onClick={() => { reloadOrders(); reloadPo(); }} title="Refresh orders"><RotateCw size={14} /> Refresh</button>}
+          </div>} />
         <InlineError error={dataErr.orders} onRetry={reloadOrders} title="Orders didn’t load" />
         <div className="card">
           <div className="card-hd">
             <h3>All orders</h3>
-            <span className={`badge ${live ? 'badge-primary' : 'badge-neutral'}`}>{live ? `${rows.length} live · ${orderRows.length} sales · ${poRows.length} PO` : `${rows.length} orders`}</span>
+            <span className={`badge ${live ? 'badge-primary' : 'badge-neutral'}`}>{tableSearch ? `${shownRows.length} of ${rows.length}` : (live ? `${rows.length} live · ${orderRows.length} sales · ${poRows.length} PO` : `${rows.length} orders`)}</span>
           </div>
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>Type</th><th>Ref</th><th>Customer / Supplier</th><th className="center">Cur</th><th className="num">Total</th><th className="num">Items</th><th className="center">Status</th><th>Date</th></tr></thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 20 }}>No orders yet — create one in B2B Sales or raise a PO.</td></tr>}
-                {rows.map(o => (
+                {shownRows.length === 0 && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 20 }}>{tableSearch ? 'No orders match your search.' : 'No orders yet — create one in B2B Sales or raise a PO.'}</td></tr>}
+                {shownRows.map(o => (
                   <tr key={`${o.direction}-${o.id}`}>
                     <td><span className={`badge ${o.direction === 'in' ? 'badge-info' : 'badge-primary'}`}>{o.direction === 'in' ? 'PO' : 'Sale'}</span></td>
                     <td className="muted">{o.id}</td>
@@ -1109,18 +1130,28 @@ export const MedusaAdminPortal = ({ view }) => {
   if (view === 'promos') {
     const sb = { active: 'badge-success', scheduled: 'badge-info', expired: 'badge-neutral', cancelled: 'badge-danger' };
     const live = promotions !== null;
-    const rows = live ? (promotions ?? []) : (liveConfig?.promotions ?? MEDUSA_PROMOTIONS);
+    const allRows = live ? (promotions ?? []) : (liveConfig?.promotions ?? MEDUSA_PROMOTIONS);
+    const rows = (allRows || []).filter((p) => matchQuery(p, tableSearch, ['sku', 'promoType', 'status']));
+    const exportPromos = () => { downloadCsv(`sightlive-promotions-${dateStamp()}`, [
+      { key: 'sku', label: 'Product' }, { key: 'promoType', label: 'Type', map: (p) => String(p.promoType ?? 'markdown') },
+      { key: 'discountPct', label: 'Discount (%)', map: (p) => Number(p.discountPct ?? 0) },
+      { key: 'costAtCreate', label: 'Cost was (R)', map: (p) => Number(p.costAtCreate ?? 0).toFixed(2) },
+      { key: 'costNow', label: 'Cost now (R)', map: (p) => (Number(p.costAtCreate ?? 0) * (1 - Number(p.discountPct ?? 0) / 100)).toFixed(2) },
+      { key: 'status', label: 'Status', map: (p) => String(p.status ?? 'active') },
+      { key: 'createdAt', label: 'Created', map: (p) => (p.createdAt || '').substring(0, 10) },
+      { key: 'endDate', label: 'Ends', map: (p) => (p.endDate || '').substring(0, 10) },
+    ], rows); triggerNotification('Export ready', `${rows.length} promotions exported to CSV.`, 'success'); };
     return (
       <Wrap>
         <Head icon={BadgePercent} title="Promotions" sub="Mark a product down by a percentage — the cost basis drops so the margin narrows. Created promos go live at once and are sent to managers for visibility."
-          action={<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span><button className="btn btn-primary" onClick={() => setShowPromoModal(true)} disabled={!live}><Plus size={16} /> New promotion</button></div>} />
+          action={<div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span><SearchExportBar value={tableSearch} onChange={setTableSearch} placeholder="Search SKU, type, status…" onExport={exportPromos} exportDisabled={!rows.length} /><button className="btn btn-primary" onClick={() => setShowPromoModal(true)} disabled={!live}><Plus size={16} /> New promotion</button></div>} />
         <InlineError error={dataErr.promos} onRetry={reloadPromo} title="Promotions didn’t load" />
         <div className="card">
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>Product</th><th>Type</th><th className="num">Discount</th><th className="num">Cost was → now</th><th className="num">Margin impact</th><th className="center">Status</th><th>Created</th><th>Ends</th></tr></thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 22 }}>{live ? 'No promotions yet — add one with “New promotion”.' : 'Connect the backend to manage promotions.'}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 22 }}>{tableSearch ? 'No promotions match your search.' : (live ? 'No promotions yet — add one with “New promotion”.' : 'Connect the backend to manage promotions.')}</td></tr>}
                 {rows.map((p, idx) => {
                   if (!p) return null;
                   const cost = Number(p.costAtCreate ?? 0);
@@ -1342,14 +1373,22 @@ export const MedusaAdminPortal = ({ view }) => {
   /* ---------------- Customers & spending limits ---------------- */
   if (view === 'customers') {
     const live = !!parties;
-    const rows = live ? (parties.customers ?? []) : (liveConfig?.customers ?? MEDUSA_CUSTOMERS);
+    const allRows = live ? (parties.customers ?? []) : (liveConfig?.customers ?? MEDUSA_CUSTOMERS);
+    const rows = (allRows || []).filter((c) => matchQuery(c, tableSearch, ['company', 'email', 'currency']));
+    const exportCustomers = () => { downloadCsv(`sightlive-customers-${dateStamp()}`, [
+      { key: 'company', label: 'Company' }, { key: 'currency', label: 'Currency' },
+      { key: 'taxExempt', label: 'Tax-exempt', map: (c) => (c.taxExempt ? 'yes' : 'no') },
+      { key: 'email', label: 'Email', map: (c) => (c.email && !String(c.email).endsWith('parties.sightlive.local') ? c.email : '') },
+      { key: 'limit', label: 'Spend limit', map: (c) => (c.limit == null ? '' : Number(c.limit).toFixed(2)) },
+      { key: 'spent', label: 'Spent', map: (c) => Number(c.spent ?? 0).toFixed(2) },
+    ], rows); triggerNotification('Export ready', `${rows.length} customers exported to CSV.`, 'success'); };
     return (
       <Wrap>
         <Head icon={Wallet} title="Customers & Spending Limits" sub="Internal B2B buyers you sell PPE to. Set a monthly spend limit per company; spend is tracked live from their orders."
-          action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span>{live && <button className="btn btn-primary" onClick={() => setPartyModal({ type: 'customer' })}><Plus size={16} /> Add customer</button>}</div>} />
+          action={<div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span><SearchExportBar value={tableSearch} onChange={setTableSearch} placeholder="Search company, email…" onExport={exportCustomers} exportDisabled={!rows.length} />{live && <button className="btn btn-primary" onClick={() => setPartyModal({ type: 'customer' })}><Plus size={16} /> Add customer</button>}</div>} />
         <InlineError error={dataErr.parties} onRetry={reloadParties} title="Customers didn’t load" />
         {rows.length === 0 && (
-          <div className="card"><div className="card-bd muted" style={{ textAlign: 'center', padding: 22 }}>No customer accounts yet.{live && ' Add your first buyer above.'}</div></div>
+          <div className="card"><div className="card-bd muted" style={{ textAlign: 'center', padding: 22 }}>{tableSearch ? 'No customers match your search.' : <>No customer accounts yet.{live && ' Add your first buyer above.'}</>}</div></div>
         )}
         <div className="cols cols-2">
           {rows.map((c, i) => {
@@ -1400,11 +1439,20 @@ export const MedusaAdminPortal = ({ view }) => {
   /* ---------------- Suppliers (external vendors) ---------------- */
   if (view === 'suppliers') {
     const live = !!parties;
-    const rows = live ? (parties.suppliers ?? []) : [];
+    const allRows = live ? (parties.suppliers ?? []) : [];
+    const rows = allRows.filter((s) => matchQuery(s, tableSearch, ['company', 'email', 'category']));
+    const exportSuppliers = () => { downloadCsv(`sightlive-suppliers-${dateStamp()}`, [
+      { key: 'company', label: 'Supplier' },
+      { key: 'email', label: 'Email', map: (s) => (s.email && !String(s.email).endsWith('parties.sightlive.local') ? s.email : '') },
+      { key: 'category', label: 'Category', map: (s) => s.category ?? '' },
+      { key: 'leadTime', label: 'Lead time', map: (s) => s.leadTime ?? '' },
+      { key: 'limit', label: 'Purchase limit', map: (s) => (s.limit == null ? '' : Number(s.limit).toFixed(2)) },
+      { key: 'taxExempt', label: 'Tax-exempt', map: (s) => (s.taxExempt ? 'yes' : 'no') },
+    ], rows); triggerNotification('Export ready', `${rows.length} suppliers exported to CSV.`, 'success'); };
     return (
       <Wrap>
         <Head icon={Factory} title="Suppliers" sub="External vendors the merchant sources stock from. Add suppliers to the tenant and set a monthly purchase limit for each."
-          action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span>{live && <button className="btn btn-primary" onClick={() => setPartyModal({ type: 'supplier' })}><Plus size={16} /> Add supplier</button>}</div>} />
+          action={<div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span>{live && <SearchExportBar value={tableSearch} onChange={setTableSearch} placeholder="Search supplier, email, category…" onExport={exportSuppliers} exportDisabled={!rows.length} />}{live && <button className="btn btn-primary" onClick={() => setPartyModal({ type: 'supplier' })}><Plus size={16} /> Add supplier</button>}</div>} />
         <InlineError error={dataErr.parties} onRetry={reloadParties} title="Suppliers didn’t load" />
         {!live && <div className="card"><div className="card-bd muted" style={{ textAlign: 'center', padding: 22 }}>Connect the live backend to manage suppliers.</div></div>}
         {live && (
@@ -1413,7 +1461,7 @@ export const MedusaAdminPortal = ({ view }) => {
               <table className="table">
                 <thead><tr><th>Supplier</th><th>Category</th><th>Lead time</th><th className="num">Purchase limit</th><th className="center">Tax</th><th className="center"></th></tr></thead>
                 <tbody>
-                  {rows.length === 0 && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 22 }}>No suppliers yet — add the vendors you buy stock from.</td></tr>}
+                  {rows.length === 0 && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 22 }}>{tableSearch ? 'No suppliers match your search.' : 'No suppliers yet — add the vendors you buy stock from.'}</td></tr>}
                   {rows.map((s) => (
                     <tr key={s.id}>
                       <td><div style={{ fontWeight: 600 }}>{s.company}</div>{s.email && !String(s.email).endsWith('parties.sightlive.local') && <div className="eyebrow">{s.email}</div>}</td>
@@ -1500,9 +1548,10 @@ export const MedusaAdminPortal = ({ view }) => {
     });
     const directPoRefs = new Set(directPos.map((p) => p.reference || p.id));
     const mergedB2bPos = b2bPoRows.filter((p) => !directPoRefs.has(p.reference));
-    const rows = live
+    const allRows = live
       ? [...directPos, ...mergedB2bPos].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
       : [];
+    const rows = allRows.filter((po) => matchQuery(po, tableSearch, ['reference', 'supplier', 'status']));
 
     const stat = {
       draft: 'badge-neutral',
@@ -1528,10 +1577,19 @@ export const MedusaAdminPortal = ({ view }) => {
     };
     const canCreate = live && suppliers.length > 0 && products.length > 0;
     const busy = (po) => poBusyId === po.id;
+    const exportPos = () => { downloadCsv(`sightlive-purchase-orders-${dateStamp()}`, [
+      { key: 'reference', label: 'Reference', map: (po) => po.reference || po.id },
+      { key: 'supplier', label: 'Supplier / Plant' },
+      { key: 'lineCount', label: 'Lines', map: (po) => po.lineCount ?? (po.lines ?? []).length },
+      { key: 'total', label: 'Total', map: (po) => Number(po.total || 0).toFixed(2) },
+      { key: 'currency', label: 'Currency', map: (po) => po.currency || 'ZAR' },
+      { key: 'status', label: 'Status', map: (po) => String(po.status || '').replace(/_/g, ' ') },
+      { key: 'expectedDate', label: 'Expected', map: (po) => po.expectedDate || '' },
+    ], rows); triggerNotification('Export ready', `${rows.length} purchase orders exported to CSV.`, 'success'); };
     return (
       <Wrap>
         <Head icon={ClipboardList} title="Purchase Orders" sub="Inbound POs from mine plants (internal approval) & external vendors (receipt trigger). Receiving adds the stock to inventory."
-          action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span><button className="btn btn-primary" onClick={() => setShowPoModal(true)} disabled={!canCreate}><Plus size={16} /> New PO</button></div>} />
+          action={<div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span>{live && <SearchExportBar value={tableSearch} onChange={setTableSearch} placeholder="Search reference, supplier, status…" onExport={exportPos} exportDisabled={!rows.length} />}<button className="btn btn-primary" onClick={() => setShowPoModal(true)} disabled={!canCreate}><Plus size={16} /> New PO</button></div>} />
         <InlineError error={dataErr.po} onRetry={reloadPo} title="Purchase orders didn’t load" />
         {live && !canCreate && <div className="card"><div className="card-bd muted" style={{ padding: 18 }}>Add at least one supplier and one product before raising a purchase order.</div></div>}
         {live && <ReplenishmentPanel products={productsWithCost} suppliers={suppliers} scope={commerceScope} triggerNotification={triggerNotification} onGenerated={reloadPo} canCreate={canCreate} live={live} />}
@@ -1541,7 +1599,7 @@ export const MedusaAdminPortal = ({ view }) => {
               <thead><tr><th>Reference / Source</th><th>Supplier / Plant</th><th className="num">Lines</th><th className="num">Total</th><th className="center">Workflow Status</th><th className="center">Actions</th></tr></thead>
               <tbody>
                 {!live && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 22 }}>Connect the live backend to manage purchase orders.</td></tr>}
-                {live && rows.length === 0 && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 22 }}>No purchase orders yet — raise one with “New PO” or place a B2B order.</td></tr>}
+                {live && rows.length === 0 && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 22 }}>{tableSearch ? 'No purchase orders match your search.' : 'No purchase orders yet — raise one with “New PO” or place a B2B order.'}</td></tr>}
                 {rows.map((po) => (
                   <tr key={po.id}>
                     <td>
