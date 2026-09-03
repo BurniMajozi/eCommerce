@@ -43,7 +43,7 @@ async function freshDb() {
     status text, currency text, reference text, expected_date text, lines jsonb, total numeric,
     created_by text, submitted_at timestamptz, sent_at timestamptz, sent_to text,
     approved_by text, approved_at timestamptz, approval_signature text, rejection_reason text,
-    received_at timestamptz, received_lines jsonb, created_at timestamptz default now(), updated_at timestamptz
+    received_at timestamptz, received_lines jsonb, origin text, created_at timestamptz default now(), updated_at timestamptz
   )`);
   await knex.raw(`create table product_promotions (
     id text primary key, tenant_id text not null, product_id text, sku text, promo_type text,

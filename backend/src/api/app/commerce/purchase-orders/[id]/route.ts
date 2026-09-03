@@ -84,6 +84,10 @@ export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Prom
     const patch: Record<string, any> = { updated_at: now() };
     let stockResult: { updated: number; skipped: number; located: boolean } | null = null;
     const expect = (...states: string[]) => { if (!states.includes(po.status)) throw new ScopeError(409, 'invalid_transition', `A '${action}' action is not allowed from status '${po.status}'.`); };
+    // Regular POs need an approver (ppe.approve.* / platform.manage). Replenishment
+    // POs are system-generated (not raised by a person), so the merchant/buyer
+    // (commerce.manage) may approve them from their approval queue.
+    const assertCanDecide = () => assertAnyCapability(scope, po.origin === 'replenishment' ? [...APPROVE_CAPS, 'commerce.manage'] : APPROVE_CAPS);
 
     switch (action) {
       case 'edit':
@@ -98,7 +102,7 @@ export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Prom
         patch.rejection_reason = null;
         break;
       case 'approve':
-        assertAnyCapability(scope, APPROVE_CAPS);
+        assertCanDecide();
         expect('pending_approval');
         patch.status = 'approved';
         patch.approved_by = (b.approverName ?? scope.userId ?? 'Approver').toString().slice(0, 200);
@@ -106,7 +110,7 @@ export async function PATCH(req: TenantScopedRequest, res: MedusaResponse): Prom
         patch.approval_signature = (b.signature ?? '').toString().slice(0, 300000) || null;
         break;
       case 'reject':
-        assertAnyCapability(scope, APPROVE_CAPS);
+        assertCanDecide();
         expect('pending_approval');
         patch.status = 'rejected';
         patch.rejection_reason = (b.reason ?? '').toString().slice(0, 1000) || 'Rejected';

@@ -55,6 +55,10 @@ try {
     create index if not exists store_orders_paystack_idx on ${qualified}(paystack_ref);
   `)
 
+  // Replenishment: mark POs raised by the auto-replenishment engine so the
+  // merchant approval queue can surface them and the approve gate can allow it.
+  await client.query(`alter table if exists "${schema}".purchase_orders add column if not exists origin text;`).catch(() => {})
+
   const verification = await client.query(
     `select to_regclass($1) as table_name,
             exists (

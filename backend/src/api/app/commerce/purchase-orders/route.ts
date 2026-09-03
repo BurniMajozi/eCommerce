@@ -37,6 +37,7 @@ const toApi = (po: any) => ({
   receivedAt: po.received_at,
   receivedLines: po.received_lines ?? null,
   qualityNote: po.quality_note ?? null,
+  origin: po.origin ?? null,
   createdAt: po.created_at,
 });
 
@@ -85,10 +86,13 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
     if (!supplierName) throw new ScopeError(400, 'invalid_supplier', 'A supplier is required.');
 
     const isMinePlant = /mine|plant|shaft|kumba|kolomela|tenke|sishen|amandelbult|thabazimbi/i.test(supplierName);
-    // A `draft` PO (e.g. a replenishment suggestion) is created for review — it
-    // is NOT auto-sent and carries no approval; the buyer submits it afterwards.
+    // A `draft` PO is created for review (not sent, no approval). A replenishment
+    // PO goes straight to the merchant's approval queue (pending_approval) and is
+    // tagged so that queue can surface it and the merchant can approve it.
     const wantDraft = b.draft === true;
-    const initialStatus = wantDraft ? 'draft' : (isMinePlant ? 'pending_approval' : 'sent');
+    const isReplenishment = b.origin === 'replenishment';
+    const origin = isReplenishment ? 'replenishment' : null;
+    const initialStatus = wantDraft ? 'draft' : isReplenishment ? 'pending_approval' : (isMinePlant ? 'pending_approval' : 'sent');
     const total = lines.reduce((a, l) => a + (l.qty ?? 0) * (l.unit_cost ?? 0), 0);
     const id = randomUUID();
     await pg(req)('purchase_orders').insert({
@@ -102,9 +106,10 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
       expected_date: b.expectedDate || null,
       lines: JSON.stringify(lines),
       total,
+      origin,
       created_by: scope.userId,
-      ...(wantDraft
-        ? {}
+      ...(wantDraft || isReplenishment
+        ? (isReplenishment ? { submitted_at: new Date() } : {})
         : isMinePlant
           ? { submitted_at: new Date() }
           : { sent_at: new Date(), approved_by: 'B2B Auto-Dispatch (External Vendor)', approved_at: new Date() }),

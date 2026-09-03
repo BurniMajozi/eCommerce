@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
-import { createPurchaseOrder } from '../catalogue/catalogueClient';
-import { AlertTriangle, PackagePlus, Loader2, RefreshCcw, Sliders, ShieldCheck } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { createPurchaseOrder, fetchConsumption, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { AlertTriangle, PackagePlus, Loader2, RefreshCcw, Sliders, ShieldCheck, Activity } from 'lucide-react';
 
 // "5–7 days" / "5 days" / 6 → a single number of days.
 const parseLead = (v) => {
@@ -27,13 +27,27 @@ export const ReplenishmentPanel = ({ products = [], suppliers = [], scope, trigg
   const [targetCoverDays, setTargetCoverDays] = useState(30);
   const [busy, setBusy] = useState(false);
   const [tune, setTune] = useState(false);
+  // Self-driven daily consumption computed on the server from real outflow
+  // history (store pickups + B2B orders) over a trailing window.
+  const [consumption, setConsumption] = useState({ bySku: {}, windowDays: 90, loaded: false });
+
+  useEffect(() => {
+    if (!isMedusaCatalogueEnabled || !scope?.accessToken || !scope?.tenantId) return undefined;
+    let active = true;
+    fetchConsumption(scope, 90)
+      .then((r) => { if (active) setConsumption({ bySku: r.bySku ?? {}, windowDays: r.windowDays ?? 90, loaded: true }); })
+      .catch(() => { if (active) setConsumption((c) => ({ ...c, loaded: true })); });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope?.accessToken, scope?.tenantId, scope?.siteId]);
 
   const supplierById = useMemo(() => { const m = new Map(); for (const s of suppliers) m.set(s.id, s); return m; }, [suppliers]);
 
   const suggestions = useMemo(() => {
     const out = [];
     for (const p of products) {
-      const daily = Number(p.dailyConsumption || 0);
+      // Prefer history-driven consumption; fall back to any configured rate.
+      const daily = Number(consumption.bySku[p.sku] ?? p.dailyConsumption ?? 0);
       if (daily <= 0) continue; // no consumption signal → cover is undefined
       const onHand = Number(p.stockOnHand || 0);
       const inTransit = Number(p.stockInTransit || 0);
@@ -56,7 +70,7 @@ export const ReplenishmentPanel = ({ products = [], suppliers = [], scope, trigg
       });
     }
     return out.sort((a, b) => a.coverDays - b.coverDays);
-  }, [products, supplierById, safetyDays, targetCoverDays]);
+  }, [products, supplierById, safetyDays, targetCoverDays, consumption]);
 
   const groups = useMemo(() => {
     const m = new Map();
@@ -77,13 +91,14 @@ export const ReplenishmentPanel = ({ products = [], suppliers = [], scope, trigg
     try {
       for (const g of groups) {
         const lines = g.lines.map((l) => ({ productId: l.productId, sku: l.sku, name: l.name, qty: l.suggestedQty, unitCost: l.unitCost ?? 0 }));
-        await createPurchaseOrder({ draft: true, supplierId: g.supplierId, supplierName: g.supplierName, currency: g.currency, reference: `Auto-replenishment ${new Date().toISOString().slice(0, 10)}`, lines }, scope);
+        // origin: 'replenishment' → the PO lands in the merchant approval queue.
+        await createPurchaseOrder({ origin: 'replenishment', supplierId: g.supplierId, supplierName: g.supplierName, currency: g.currency, reference: `Auto-replenishment ${new Date().toISOString().slice(0, 10)}`, lines }, scope);
         created += 1;
       }
-      triggerNotification('Draft POs raised', `${created} draft purchase order${created === 1 ? '' : 's'} created from replenishment — review & approve them below.`, 'success');
+      triggerNotification('Sent for approval', `${created} replenishment order${created === 1 ? '' : 's'} sent to the merchant approval queue.`, 'success');
       onGenerated?.();
     } catch (e) {
-      triggerNotification('Replenishment failed', e?.message || 'Could not raise the draft purchase orders.', 'danger');
+      triggerNotification('Replenishment failed', e?.message || 'Could not send the replenishment orders for approval.', 'danger');
     } finally { setBusy(false); }
   };
 
@@ -103,7 +118,7 @@ export const ReplenishmentPanel = ({ products = [], suppliers = [], scope, trigg
           <button className="btn btn-ghost btn-sm" onClick={() => setTune((t) => !t)}><Sliders size={14} /> Tune</button>
           {suggestions.length > 0 && live && canCreate && (
             <button className="btn btn-primary btn-sm" onClick={generate} disabled={busy || !groups.length}>
-              {busy ? <><Loader2 size={14} className="spin" /> Raising…</> : <><PackagePlus size={14} /> Generate {groups.length} draft PO{groups.length === 1 ? '' : 's'}</>}
+              {busy ? <><Loader2 size={14} className="spin" /> Sending…</> : <><PackagePlus size={14} /> Send {groups.length} to merchant approval</>}
             </button>
           )}
         </div>
@@ -127,7 +142,9 @@ export const ReplenishmentPanel = ({ products = [], suppliers = [], scope, trigg
 
       {suggestions.length === 0 ? (
         <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>
-          Every SKU with a consumption signal is above its reorder point (forward cover &gt; lead time + {safetyDays} days). Nothing to reorder right now.
+          {consumption.loaded && Object.keys(consumption.bySku).length === 0
+            ? <>No outflow in the last {consumption.windowDays} days yet — as store pickups and B2B orders accrue, SKUs with falling cover will appear here automatically.</>
+            : <>Every SKU with measured demand is above its reorder point (forward cover &gt; lead time + {safetyDays} days). Nothing to reorder right now.</>}
         </div>
       ) : (
         <div className="table-wrap">
@@ -164,8 +181,9 @@ export const ReplenishmentPanel = ({ products = [], suppliers = [], scope, trigg
             </tbody>
           </table>
           <div className="card-bd" style={{ paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <p className="muted" style={{ fontSize: 11.5, margin: 0 }}>
-              Forward cover = (on hand + in transit) ÷ daily use. A SKU is due when cover ≤ lead time + {safetyDays}d; the order tops it up to lead time + {targetCoverDays}d. Generating raises one <strong>draft</strong> PO per supplier — nothing is sent until it is reviewed &amp; approved.
+            <p className="muted" style={{ fontSize: 11.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Activity size={12} style={{ color: 'var(--primary)' }} />
+              Daily use is measured from the last {consumption.windowDays} days of real outflow (store pickups + B2B orders). Forward cover = (on hand + in transit) ÷ daily use; a SKU is due when cover ≤ lead time + {safetyDays}d, and the order tops it up to lead time + {targetCoverDays}d. Sending raises one order per supplier <strong>to the merchant approval queue</strong> — nothing ships until the merchant approves it.
             </p>
             {unassigned.length > 0 && (
               <p style={{ fontSize: 12, margin: 0, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 6 }}>

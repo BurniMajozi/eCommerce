@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
-import { fetchPurchaseOrders, fetchOrders, escalateApproval, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
+import { fetchPurchaseOrders, fetchOrders, updatePurchaseOrder, escalateApproval, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { PoApprovalHistory, RequestApprovalHistory } from './ManagerApprovalPortal';
 import {
-  ArrowUpCircle, Clock, Factory, HardHat, ClipboardList, Loader2, Mail, X, ShieldAlert
+  ArrowUpCircle, Clock, Factory, HardHat, ClipboardList, Loader2, Mail, X, ShieldAlert, RefreshCcw, Check
 } from 'lucide-react';
 
 const rands = (n, cur = 'ZAR') => `${cur === 'ZAR' ? 'R' : cur + ' '}${Number(n || 0).toLocaleString('en-ZA')}`;
@@ -20,6 +20,10 @@ export const MerchantApprovalsPortal = () => {
   const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
 
   const [poItems, setPoItems] = useState([]);
+  const [replenPos, setReplenPos] = useState([]); // replenishment POs awaiting merchant approval
+  const [decidingId, setDecidingId] = useState(null);
+  const [rejecting, setRejecting] = useState(null); // replenishment PO being rejected
+  const [rejectReason, setRejectReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [escalating, setEscalating] = useState(null); // item being escalated
@@ -48,8 +52,22 @@ export const MerchantApprovalsPortal = () => {
         fetchPurchaseOrders(scope).catch(() => ({ orders: [] })),
         fetchOrders(scope).catch(() => ({ orders: [] })),
       ]);
-      const pos = (poRes.orders ?? [])
-        .filter((p) => ['pending_approval', 'submitted', 'submit', 'draft'].includes(p.status))
+      const allPos = poRes.orders ?? [];
+      // Replenishment POs the merchant can approve directly (their own queue).
+      const replen = allPos
+        .filter((p) => p.origin === 'replenishment' && p.status === 'pending_approval')
+        .map((p) => ({
+          id: p.id, reference: p.reference || p.id, supplier: p.supplier || 'Supplier',
+          total: p.total, currency: p.currency || 'ZAR',
+          lines: Array.isArray(p.lines) ? p.lines : [],
+          lineCount: Array.isArray(p.lines) ? p.lines.length : (p.lineCount || 0),
+          at: p.submittedAt || p.createdAt || '',
+        }))
+        .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+      // Everything else pending is a "stuck approval" the merchant escalates
+      // (exclude replenishment — it has its own approve section above).
+      const pos = allPos
+        .filter((p) => p.origin !== 'replenishment' && ['pending_approval', 'submitted', 'submit', 'draft'].includes(p.status))
         .map((p) => ({
           key: p.id, kind: 'po', reference: p.reference || p.id,
           subject: p.supplier || 'Purchase order',
@@ -71,7 +89,7 @@ export const MerchantApprovalsPortal = () => {
           lineCount: (o.items ?? []).length || 1,
           at: o.createdAt || '',
         }));
-      if (active) { setPoItems([...pos, ...mine]); setLoading(false); }
+      if (active) { setPoItems([...pos, ...mine]); setReplenPos(replen); setLoading(false); }
     })();
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -111,18 +129,76 @@ export const MerchantApprovalsPortal = () => {
     } finally { setBusy(false); }
   };
 
+  // Merchant decision on a replenishment order (system-generated → merchant approves).
+  const me = auth?.session?.user?.user_metadata?.display_name || auth?.session?.user?.email || 'Merchant';
+  const approveReplen = async (po) => {
+    setDecidingId(po.id);
+    try {
+      await updatePurchaseOrder(po.id, { action: 'approve', approverName: me }, scope);
+      triggerNotification('Replenishment approved', `${po.supplier} · ${rands(po.total, po.currency)} approved — ready to send to the supplier.`, 'success');
+      setReplenPos((prev) => prev.filter((x) => x.id !== po.id));
+    } catch (e) { triggerNotification('Approval failed', e?.message || 'Could not approve the order.', 'danger'); }
+    finally { setDecidingId(null); }
+  };
+  const submitRejectReplen = async () => {
+    if (!rejecting) return;
+    setDecidingId(rejecting.id);
+    try {
+      await updatePurchaseOrder(rejecting.id, { action: 'reject', reason: rejectReason.trim() || 'Not required' }, scope);
+      triggerNotification('Replenishment rejected', `${rejecting.supplier} order rejected.`, 'info');
+      setReplenPos((prev) => prev.filter((x) => x.id !== rejecting.id));
+      setRejecting(null); setRejectReason('');
+    } catch (e) { triggerNotification('Reject failed', e?.message || 'Could not reject the order.', 'danger'); }
+    finally { setDecidingId(null); }
+  };
+  const replenTotal = replenPos.reduce((a, p) => a + Number(p.total || 0), 0);
+
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 22, paddingBottom: 24 }}>
       <div className="page-head">
         <div>
-          <h2>Approvals · escalation</h2>
-          <p>See approvals that are waiting and nudge the responsible approver. You can flag a stuck approval (and optionally email the approver) — approving or signing stays with the mine manager.</p>
+          <h2>Approvals</h2>
+          <p>Approve auto-raised <strong>replenishment</strong> orders here. For other stuck approvals you can flag &amp; nudge the responsible approver (approving PPE/manual POs stays with the mine manager).</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {replenPos.length > 0 && <span className="badge badge-warning">{replenPos.length} replenishment</span>}
           <span className={`badge ${stuckCount ? 'badge-danger' : 'badge-neutral'}`}>{stuckCount} stuck &ge; {STUCK_DAYS}d</span>
           <span className="badge badge-primary">{items.length} waiting</span>
         </div>
       </div>
+
+      {/* Replenishment orders the merchant approves directly */}
+      {replenPos.length > 0 && (
+        <div className="card">
+          <div className="card-hd">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <RefreshCcw size={17} style={{ color: 'var(--primary)' }} />
+              <h3>Replenishment orders to approve</h3>
+              <span className="badge badge-warning">{replenPos.length} · {rands(replenTotal, replenPos[0]?.currency)}</span>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Reference</th><th>Supplier</th><th className="num">Lines</th><th className="num">Total</th><th className="center">Decision</th></tr></thead>
+              <tbody>
+                {replenPos.map((po) => (
+                  <tr key={po.id}>
+                    <td style={{ fontWeight: 500 }}>{po.reference}</td>
+                    <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Factory size={13} style={{ color: 'var(--text-subtle)' }} />{po.supplier}</span></td>
+                    <td className="num">{po.lineCount}</td>
+                    <td className="num tabular" style={{ fontWeight: 600 }}>{rands(po.total, po.currency)}</td>
+                    <td className="center" style={{ whiteSpace: 'nowrap' }}>
+                      <button className="btn btn-primary btn-sm" disabled={decidingId === po.id} onClick={() => approveReplen(po)}>{decidingId === po.id ? <Loader2 size={13} className="spin" /> : <Check size={13} />} Approve</button>
+                      <button className="btn btn-danger btn-sm" style={{ marginLeft: 6 }} disabled={decidingId === po.id} onClick={() => { setRejectReason(''); setRejecting(po); }}><X size={13} /> Reject</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="muted" style={{ fontSize: 11.5, padding: '10px 14px', margin: 0 }}>Auto-raised by the replenishment engine when forward cover fell to lead time + buffer. Approving sends the order to the supplier; rejecting discards it.</p>
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <div className="card-hd">
@@ -202,6 +278,27 @@ export const MerchantApprovalsPortal = () => {
             <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
               <button className="btn btn-secondary" onClick={() => setEscalating(null)} disabled={busy}>Cancel</button>
               <button className="btn btn-primary" onClick={submitEscalate} disabled={busy}>{busy ? <><Loader2 size={15} className="spin" /> Escalating…</> : <><ArrowUpCircle size={15} /> Escalate</>}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject a replenishment order */}
+      {rejecting && (
+        <div className="overlay" onClick={decidingId ? undefined : () => setRejecting(null)}>
+          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-hd" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3>Reject replenishment order</h3>
+              <button className="icon-btn" onClick={() => setRejecting(null)} aria-label="Close"><X size={17} /></button>
+            </div>
+            <div className="modal-bd" style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <p className="muted" style={{ fontSize: 13, margin: 0 }}>{rejecting.supplier} · {rands(rejecting.total, rejecting.currency)}. The order will be discarded and not sent.</p>
+              <div className="field" style={{ margin: 0 }}><label className="field-label">Reason (optional)</label>
+                <textarea className="input" rows={3} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="e.g. covered by an existing PO / over budget this cycle" /></div>
+            </div>
+            <div className="modal-ft" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
+              <button className="btn btn-secondary" onClick={() => setRejecting(null)} disabled={!!decidingId}>Cancel</button>
+              <button className="btn btn-danger" onClick={submitRejectReplen} disabled={!!decidingId}>{decidingId ? <><Loader2 size={15} className="spin" /> Rejecting…</> : 'Reject order'}</button>
             </div>
           </div>
         </div>

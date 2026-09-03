@@ -173,6 +173,8 @@ export const deleteParty = (id, scope) => scopedJson(`/app/commerce/parties/${id
 });
 
 export const fetchPurchaseOrders = (scope) => scopedJson('/app/commerce/purchase-orders', scope);
+// Self-driven daily consumption per SKU from real outflow history (store + B2B).
+export const fetchConsumption = (scope, days = 90) => scopedJson(`/app/commerce/consumption?days=${days}`, scope);
 
 export const createPurchaseOrder = (po, scope) => scopedJson('/app/commerce/purchase-orders', {
   ...scope, method: 'POST', body: po,
