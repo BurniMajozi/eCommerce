@@ -16,9 +16,13 @@ export const NAV_GROUPS = [
   {
     label: 'Operations',
     items: [
-      { id: 'STORE', label: 'Contractor Store', icon: Store, cap: 'ppe.request.create' },
+      // Contractor Store is visible to store operators (issue stock) as well as
+      // requesters, so a merchant with counter access sees what's being sold.
+      { id: 'STORE', label: 'Contractor Store', icon: Store, capAny: ['ppe.request.create', 'ppe.stock.issue'] },
       { id: 'EMPLOYEE', label: 'Request PPE', icon: HardHat, cap: 'ppe.request.create' },
       { id: 'MANAGER', label: 'Approvals', icon: ClipboardCheck, cap: 'ppe.approve.tier1' },
+      // Merchant escalation view — see & escalate stuck approvals (no approve/sign).
+      { id: 'MERCHANT_APPROVALS', label: 'Escalations', icon: ClipboardCheck, cap: 'ppe.approve.escalate' },
       { id: 'STOREKEEPER', label: 'Store Counter', icon: PackageOpen, cap: 'ppe.stock.issue' },
       { id: 'EXECUTIVE', label: 'Dashboard', icon: LineChart, cap: 'reports.read' }
     ]
@@ -58,8 +62,13 @@ export const NAV_GROUPS = [
 // Returns the nav groups visible to the current capability set (empty groups removed).
 export function visibleNavGroups(tenantAccess) {
   const showAll = !tenantAccess || tenantAccess.mode === 'demo' || tenantAccess.hasCapability?.('platform.manage');
+  const canSee = (item) => {
+    if (showAll) return true;
+    if (item.capAny) return item.capAny.some((c) => tenantAccess.hasCapability?.(c));
+    return !item.cap || tenantAccess.hasCapability?.(item.cap);
+  };
   return NAV_GROUPS
-    .map((group) => ({ ...group, items: showAll ? group.items : group.items.filter((i) => !i.cap || tenantAccess.hasCapability?.(i.cap)) }))
+    .map((group) => ({ ...group, items: group.items.filter(canSee) }))
     .filter((group) => group.items.length > 0);
 }
 

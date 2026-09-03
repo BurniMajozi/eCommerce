@@ -17,6 +17,7 @@ const InventoryAnalyticsPortal = lazy(() => import('./components/InventoryAnalyt
 const TenantAdminPortal = lazy(() => import('./components/TenantAdminPortal').then(m => ({ default: m.TenantAdminPortal })));
 const PlatformOwnerPortal = lazy(() => import('./components/PlatformOwnerPortal').then(m => ({ default: m.PlatformOwnerPortal })));
 const MedusaAdminPortal = lazy(() => import('./components/MedusaAdminPortal').then(m => ({ default: m.MedusaAdminPortal })));
+const MerchantApprovalsPortal = lazy(() => import('./components/MerchantApprovalsPortal').then(m => ({ default: m.MerchantApprovalsPortal })));
 
 const MED_VIEW = {
   MED_PRODUCTS: 'products', MED_INVENTORY: 'inventory', MED_ORDERS: 'orders', MED_PROMOS: 'promos',
@@ -76,6 +77,7 @@ const AppContent = () => {
       case 'STORE': return <ContractorStorePortal />;
       case 'EMPLOYEE': return <EmployeePortal />;
       case 'MANAGER': return <ManagerApprovalPortal />;
+      case 'MERCHANT_APPROVALS': return <MerchantApprovalsPortal />;
       case 'STOREKEEPER': return <StorekeeperPortal />;
       case 'MERCHANT': return <QuotationInvoicingPortal />;
       case 'EXECUTIVE': return <InventoryAnalyticsPortal />;

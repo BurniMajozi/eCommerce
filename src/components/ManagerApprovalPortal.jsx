@@ -302,7 +302,7 @@ const PromoSubmissions = () => {
 
 // Approval history — POs that have already been decided (approved / rejected /
 // sent / received), so a manager can review what was approved and when.
-const PoApprovalHistory = () => {
+export const PoApprovalHistory = () => {
   const { auth, tenantAccess } = useApp();
   const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
   const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
@@ -375,7 +375,7 @@ const PoApprovalHistory = () => {
 
 // PPE request approval history — internal issue requests the manager has
 // approved or rejected (from the app's request state), with search + CSV.
-const RequestApprovalHistory = () => {
+export const RequestApprovalHistory = () => {
   const { requests } = useApp();
   const [search, setSearch] = useState('');
   const decided = (requests || [])

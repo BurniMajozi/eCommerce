@@ -169,6 +169,27 @@ export function requestDecisionEmail(o: { employeeName?: string; itemName?: stri
   };
 }
 
+/* ─────────────────── 2c. APPROVALS — merchant escalation ────────────────── */
+// Sent when a merchant escalates a stuck approval to the responsible approver(s).
+export function approvalEscalationEmail(o: { kind?: 'po' | 'request'; reference?: string; subject?: string; note?: string; escalatedBy?: string; ageDays?: number | null; loginUrl?: string | null }): EmailContent {
+  const accent = '#d97706';
+  const what = o.kind === 'request' ? 'PPE issue request' : 'purchase order';
+  const age = o.ageDays != null && o.ageDays >= 0 ? `${o.ageDays} day${o.ageDays === 1 ? '' : 's'}` : null;
+  return {
+    subject: `Action needed: approval escalated${o.reference ? ` — ${o.reference}` : ''}`,
+    html: layout({
+      accent,
+      title: 'An approval needs your attention',
+      preheader: `${o.escalatedBy ?? 'A merchant'} escalated a ${what} waiting on your sign-off.`,
+      bodyHtml: `${p(`${o.escalatedBy ? `<strong>${esc(o.escalatedBy)}</strong>` : 'A merchant'} has escalated a ${esc(what)} that is waiting on an approver's decision.`)}
+        ${p(`<span style="color:${MUTED}">Item:</span> <strong>${esc(o.subject || o.reference || 'Pending approval')}</strong>${o.reference && o.subject ? ` <span style="color:${MUTED}">(${esc(o.reference)})</span>` : ''}${age ? ` <span style="color:${MUTED}">· waiting ${age}</span>` : ''}`)}
+        ${o.note ? p(`<span style="color:${MUTED}">Note from the merchant:</span> ${esc(o.note)}`) : ''}
+        ${p('Please review it in the Approvals queue and approve or reject so the flow can continue.')}
+        ${o.loginUrl ? `<div style="margin-top:6px">${btn('Open Approvals', o.loginUrl, accent)}</div>` : ''}`,
+    }),
+  };
+}
+
 /* ─────────────────────────── 3. SALES — order confirmation ──────────────── */
 export function saleConfirmationEmail(o: { reference?: string; buyerName?: string; kind?: 'store' | 'b2b'; lines?: any[]; subtotal?: number; discount?: number; total?: number; currency?: string; pickupCode?: string }): EmailContent {
   const cur = o.currency || 'ZAR';

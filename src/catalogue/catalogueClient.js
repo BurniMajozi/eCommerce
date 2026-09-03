@@ -150,6 +150,8 @@ export const fetchProfitability = (scope) => scopedJson('/app/catalogue/profit',
 export const fetchReports = (scope) => scopedJson('/app/reports/summary', scope);
 export const fetchAudit = (scope) => scopedJson('/app/audit', scope);
 export const fetchReportExport = (scope) => scopedJson('/app/reports/export', scope);
+// Merchant escalation: flag a stuck approval (and optionally email the approver).
+export const escalateApproval = (body, scope) => scopedJson('/app/approvals/escalate', { ...scope, method: 'POST', body });
 export const fetchCommerceConfig = (scope) => scopedJson('/app/commerce/config', scope);
 
 // Platform Owner panel — service-role reads/writes (no browser RLS needed).
