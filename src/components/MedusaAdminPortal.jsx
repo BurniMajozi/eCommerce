@@ -8,6 +8,7 @@ import { ProductThumb } from './ProductThumb';
 import { ProductFormModal } from './ProductFormModal';
 import { PromotionFormModal } from './PromotionFormModal';
 import { SupplierPerformanceMatrix } from './SupplierPerformanceMatrix';
+import { ReplenishmentPanel } from './ReplenishmentPanel';
 import { ConfirmDialog } from './ConfirmDialog';
 import {
   MEDUSA_ORDERS, MEDUSA_PROMOTIONS, MEDUSA_TAX_REGIONS, MEDUSA_CUSTOMERS,
@@ -189,8 +190,12 @@ const PurchaseOrderModal = ({ suppliers, products, scope, onClose, onSaved, trig
 
   const filteredProducts = (() => {
     const q = productSearch.trim().toLowerCase();
-    if (!q) return products;
-    return products.filter((p) => `${p.sku} ${p.name}`.toLowerCase().includes(q));
+    // Prefer the SKUs linked to the chosen supplier (keeping unlinked ones
+    // pickable); fall back to the full list if none are linked yet.
+    const linked = products.filter((p) => !p.supplierId || p.supplierId === supplierId);
+    const base = linked.length ? linked : products;
+    if (!q) return base;
+    return base.filter((p) => `${p.sku} ${p.name}`.toLowerCase().includes(q));
   })();
 
   const total = lines.reduce((a, l) => a + l.qty * l.unitCost, 0);
@@ -568,6 +573,23 @@ export const MedusaAdminPortal = ({ view }) => {
     for (const p of products) { if (p.sku) bySku.set(p.sku, p); if (p.name) byName.set(p.name.toLowerCase(), p); }
     return { bySku, byName };
   }, [products]);
+
+  // The catalogue read strips cost (it is a protected read), so merge the linked
+  // cost back in from the profit data by SKU. Purchase orders and replenishment
+  // then default the unit cost to the loaded cost instead of 0, so buyers don't
+  // key in a different price than what the SKU↔supplier link was set up with.
+  const costBySku = React.useMemo(() => {
+    const m = new Map();
+    for (const it of (profitability.items ?? [])) {
+      const c = it.averageCost ?? it.costPrice ?? null;
+      if (it.sku && c != null) m.set(it.sku, c);
+    }
+    return m;
+  }, [profitability.items]);
+  const productsWithCost = React.useMemo(
+    () => products.map((p) => ({ ...p, costPrice: p.costPrice ?? costBySku.get(p.sku) ?? null })),
+    [products, costBySku],
+  );
 
   const poAction = async (po, action, extra = {}) => {
     setPoBusyId(po.id);
@@ -1512,6 +1534,7 @@ export const MedusaAdminPortal = ({ view }) => {
           action={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span><button className="btn btn-primary" onClick={() => setShowPoModal(true)} disabled={!canCreate}><Plus size={16} /> New PO</button></div>} />
         <InlineError error={dataErr.po} onRetry={reloadPo} title="Purchase orders didn’t load" />
         {live && !canCreate && <div className="card"><div className="card-bd muted" style={{ padding: 18 }}>Add at least one supplier and one product before raising a purchase order.</div></div>}
+        {live && <ReplenishmentPanel products={productsWithCost} suppliers={suppliers} scope={commerceScope} triggerNotification={triggerNotification} onGenerated={reloadPo} canCreate={canCreate} live={live} />}
         <div className="card">
           <div className="table-wrap">
             <table className="table">
@@ -1561,7 +1584,7 @@ export const MedusaAdminPortal = ({ view }) => {
             </table>
           </div>
         </div>
-        {showPoModal && <PurchaseOrderModal suppliers={suppliers} products={products} scope={commerceScope} triggerNotification={triggerNotification} onClose={() => setShowPoModal(false)} onSaved={reloadPo} />}
+        {showPoModal && <PurchaseOrderModal suppliers={suppliers} products={productsWithCost} scope={commerceScope} triggerNotification={triggerNotification} onClose={() => setShowPoModal(false)} onSaved={reloadPo} />}
         {poReceive && <ReceivePoModal po={poReceive} busy={busy(poReceive)} onClose={() => setPoReceive(null)} onConfirm={(receivedLines, damagedLines) => { poAction(poReceive, 'receive', { receivedLines, damagedLines }); setPoReceive(null); }} />}
         {poQuality && <QualityReturnModal po={poQuality} busy={busy(poQuality)} onClose={() => setPoQuality(null)} onConfirm={(returnedLines, note) => { poAction(poQuality, 'report_quality', { returnedLines, note }); setPoQuality(null); }} />}
         {poDelete && <ConfirmDialog title="Delete purchase order" message={`Delete the ${poDelete.supplier} purchase order? This cannot be undone.`} confirmLabel="Delete" onConfirm={() => doDeletePo(poDelete)} onClose={() => setPoDelete(null)} />}
