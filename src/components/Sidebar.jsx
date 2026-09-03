@@ -4,7 +4,7 @@ import {
   HardHat, ClipboardCheck, PackageOpen, LineChart, Receipt,
   Building2, ShieldEllipsis, Tag, Boxes, ShoppingCart, BadgePercent,
   Percent, Truck, Upload, Wallet, Workflow, Radio, X, Factory, ClipboardList,
-  PanelLeftClose, PanelLeftOpen, Store, Bug
+  PanelLeftClose, PanelLeftOpen, Store, Bug, ArrowUpCircle
 } from 'lucide-react';
 import { BugReportModal } from './BugReportModal';
 
@@ -22,7 +22,7 @@ export const NAV_GROUPS = [
       { id: 'EMPLOYEE', label: 'Request PPE', icon: HardHat, cap: 'ppe.request.create' },
       { id: 'MANAGER', label: 'Approvals', icon: ClipboardCheck, cap: 'ppe.approve.tier1' },
       // Merchant escalation view — see & escalate stuck approvals (no approve/sign).
-      { id: 'MERCHANT_APPROVALS', label: 'Escalations', icon: ClipboardCheck, cap: 'ppe.approve.escalate' },
+      { id: 'MERCHANT_APPROVALS', label: 'Escalations', icon: ArrowUpCircle, cap: 'ppe.approve.escalate' },
       { id: 'STOREKEEPER', label: 'Store Counter', icon: PackageOpen, cap: 'ppe.stock.issue' },
       { id: 'EXECUTIVE', label: 'Dashboard', icon: LineChart, cap: 'reports.read' }
     ]
