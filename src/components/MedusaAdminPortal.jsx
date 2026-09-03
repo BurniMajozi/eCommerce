@@ -10,6 +10,7 @@ import { PromotionFormModal } from './PromotionFormModal';
 import { SupplierPerformanceMatrix } from './SupplierPerformanceMatrix';
 import { ReplenishmentPanel } from './ReplenishmentPanel';
 import { SearchExportBar, matchQuery } from './TableToolbar';
+import { triggerPrint } from '../utils/printDoc';
 import { ConfirmDialog } from './ConfirmDialog';
 import {
   MEDUSA_ORDERS, MEDUSA_PROMOTIONS, MEDUSA_TAX_REGIONS, MEDUSA_CUSTOMERS,
@@ -699,7 +700,7 @@ export const MedusaAdminPortal = ({ view }) => {
       <div class="sign"><div>${sig}<br/>Approved by: ${po.approvedBy || '—'}${po.approvedAt ? ' · ' + po.approvedAt.slice(0, 10) : ''}</div>
         <div style="min-width:220px">&nbsp;<br/>Supplier acceptance</div></div>
     </body></html>`);
-    w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+    w.document.close(); triggerPrint(w);
   };
   // Email the PO to the supplier via AgentMail (server-built template), then
   // mark it sent. If the supplier has no email on file, fall back to the

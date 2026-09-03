@@ -1,13 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { DateRangePicker } from './DateRangePicker';
+import { printDocument, escapeHtml } from '../utils/printDoc';
 import {
   User, ShieldCheck, Printer, Download, Search, CheckCircle2, AlertCircle, FileSpreadsheet,
   Building2, Hash, HardHat, CalendarRange, Camera, Image
 } from 'lucide-react';
 
 export const EmployeeAllocationReport = ({ embedded = false }) => {
-  const { employeeAllocations } = useApp();
+  const { employeeAllocations, triggerNotification } = useApp();
   const [selectedEmpId, setSelectedEmpId] = useState('ALL'); // default: all employees
   const [previewPhoto, setPreviewPhoto] = useState(null);
   const [dateRange, setDateRange] = useState(() => {
@@ -75,7 +76,32 @@ export const EmployeeAllocationReport = ({ embedded = false }) => {
   };
 
   const handlePrint = () => {
-    window.print();
+    const cols = [
+      ...(isAll ? [{ h: 'Employee', get: (a) => a._empName || employee.employeeName }] : []),
+      { h: 'Alloc ID', get: (a) => a.id },
+      { h: 'Item', get: (a) => a.name },
+      { h: 'Category', get: (a) => a.category },
+      { h: 'Qty', n: true, get: (a) => a.qty },
+      { h: 'Unit price', n: true, get: (a) => `R ${Number(a.unitPrice || 0).toFixed(2)}` },
+      { h: 'Total', n: true, get: (a) => `R ${Number(a.totalValue || 0).toFixed(2)}` },
+      { h: 'Issue date', get: (a) => a.issueDate },
+      { h: 'Issued by', get: (a) => a.issuedBy },
+      { h: 'Signed by', get: (a) => a.signedBy },
+    ];
+    const th = cols.map((c) => `<th class="${c.n ? 'n' : ''}">${escapeHtml(c.h)}</th>`).join('');
+    const tb = filteredAllocations.length
+      ? filteredAllocations.map((a) => `<tr>${cols.map((c) => `<td class="${c.n ? 'n' : ''}">${escapeHtml(c.get(a))}</td>`).join('')}</tr>`).join('')
+      : `<tr><td colspan="${cols.length}" style="text-align:center;color:#6b7280;padding:18px">No allocations in this period.</td></tr>`;
+    const who = isAll ? 'All employees' : `${employee.employeeName}${employee.department ? ' · ' + employee.department : ''}`;
+    const body = `
+      <h1><span class="brand">SightLive</span> · Stock allocation by employee</h1>
+      <div class="sub">${escapeHtml(who)} · ${escapeHtml(dateRange.label || `${dateRange.startDate} → ${dateRange.endDate}`)} · ${filteredAllocations.length} allocations · generated ${new Date().toLocaleString('en-ZA')}</div>
+      <table><thead><tr>${th}</tr></thead><tbody>${tb}</tbody>
+      <tfoot><tr><td colspan="${cols.length}">Total: ${totalItems} item(s) · R ${Number(totalValue).toFixed(2)} (@ RP)</td></tr></tfoot>
+      </table>`;
+    if (!printDocument(`Stock allocation — ${isAll ? 'all employees' : employee.employeeName}`, body)) {
+      triggerNotification?.('Popup blocked', 'Allow popups for this site to print / save the allocation sheet as PDF.', 'warning');
+    }
   };
 
   return (

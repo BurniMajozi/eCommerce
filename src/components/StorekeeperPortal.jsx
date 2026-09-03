@@ -898,7 +898,7 @@ export const StorekeeperPortal = () => {
       ───────────────────────────────────────────────────────────── */}
       {issuedReceipt && (
         <div className="overlay" onClick={() => setIssuedReceipt(null)}>
-          <div className="modal modal-md" style={{ maxWidth: 540 }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal-md invoice-print" style={{ maxWidth: 540 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-hd" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <CheckCircle2 size={18} style={{ color: 'var(--success)' }} />
@@ -945,7 +945,7 @@ export const StorekeeperPortal = () => {
                 )}
               </div>
             </div>
-            <div className="modal-ft" style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
+            <div className="modal-ft no-print" style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
               <button className="btn btn-secondary" onClick={() => setIssuedReceipt(null)}>Close</button>
               <button className="btn btn-primary" onClick={() => window.print()}><Printer size={15} /> Print slip</button>
             </div>

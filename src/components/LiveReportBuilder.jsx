@@ -3,6 +3,7 @@ import { fetchReports, isMedusaCatalogueEnabled } from '../catalogue/catalogueCl
 import { EmployeeAllocationReport } from './EmployeeAllocationReport';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { matchQuery } from './TableToolbar';
+import { triggerPrint } from '../utils/printDoc';
 import { Search, FileBarChart, Download, Printer, Loader2, RefreshCw } from 'lucide-react';
 
 const rand = (n) => `R ${Number(n || 0).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
@@ -107,7 +108,7 @@ export const LiveReportBuilder = ({ scope, triggerNotification }) => {
       <h1>${def.name}</h1><div class="sub">SightLive · generated ${generatedAt ?? dateStamp()} · ${rows.length} rows</div>
       <table><thead><tr>${th}</tr></thead><tbody>${tb}</tbody>${totals ? `<tfoot><tr><td colspan="${def.cols.length - 1}">Total stock value (@ RP)</td><td style="text-align:right">${rand(totals.stockRetailValue)}</td></tr></tfoot>` : ''}</table>
     </body></html>`);
-    w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+    w.document.close(); triggerPrint(w);
     triggerNotification('Print / PDF', `${def.name} opened — use “Save as PDF”.`, 'info');
   };
 
