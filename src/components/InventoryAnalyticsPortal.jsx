@@ -102,18 +102,27 @@ export const InventoryAnalyticsPortal = () => {
   }, [live, scope.accessToken, scope.tenantId]);
 
   // Live tenant reports (stock valuation + reorder)
-  const [reports, setReports] = useState(null);
+  const [reportData, setReportData] = useState(null);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsError, setReportsError] = useState(null);
+  const [reportsReloadKey, setReportsReloadKey] = useState(0);
   useEffect(() => {
-    if (!live) { setReports(null); return; }
+    if (!live) { setReportData(null); setReportsLoading(false); setReportsError(null); return; }
     let active = true;
-    fetchReports(scope).then((r) => { if (active) setReports(r.reports ?? null); }).catch(() => { if (active) setReports(null); });
+    setReportData(null);
+    setReportsLoading(true);
+    setReportsError(null);
+    fetchReports(scope)
+      .then((r) => { if (active) { setReportData(r.reports ? r : { reports: r }); setReportsLoading(false); } })
+      .catch((error) => { if (active) { setReportData(null); setReportsLoading(false); setReportsError(error); } });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, scope.accessToken, scope.tenantId, scope.siteId]);
+  }, [live, scope.accessToken, scope.tenantId, scope.siteId, reportsReloadKey]);
+  const reports = reportData?.reports ?? null;
 
   const getItemPrice = (p) => {
     if (p.sellingPrice != null && !isNaN(Number(p.sellingPrice)) && Number(p.sellingPrice) > 0) return Number(p.sellingPrice);
-    const mock = CAGELI_PRODUCTS.find((cp) => cp.sku === p.sku);
+    const mock = live ? null : CAGELI_PRODUCTS.find((cp) => cp.sku === p.sku);
     return mock?.sellingPrice || 0;
   };
 
@@ -232,7 +241,14 @@ export const InventoryAnalyticsPortal = () => {
 
       {/* Full tenant reports — stock allocation, valuation, reorder, spend, orders
           (CSV + Print/PDF per report), so a merchant can report PPE to the mine. */}
-      <LiveReportBuilder scope={scope} triggerNotification={triggerNotification} />
+      <LiveReportBuilder
+        scope={scope}
+        triggerNotification={triggerNotification}
+        sharedData={reportData}
+        sharedLoading={reportsLoading}
+        sharedError={reportsError}
+        onRefresh={() => setReportsReloadKey((key) => key + 1)}
+      />
 
       {/* Stock ledger */}
       {(() => {

@@ -182,10 +182,12 @@ export const LoginGate = ({ children }) => {
   if (auth.user && (skipped || (checked && !stage))) return children;
   if (auth.user && !checked) return shell('Signing in…', 'Checking your security level…', <div className="muted" style={{ marginTop: 18, fontSize: 13 }}>One moment…</div>);
 
+  // Wait for the persisted Supabase session before choosing between the app
+  // and marketing page. Otherwise returning users briefly see the landing page.
+  if (auth.loading) return shell('Sign in', 'Use your SightLive account.', <div className="muted" style={{ marginTop: 22, fontSize: 13 }}>Connecting…</div>);
+
   // Marketing front page first; the Sign in / Get started buttons reveal the form.
   if (!showLogin) return <LandingPage onSignIn={() => setShowLogin(true)} />;
-
-  if (auth.loading) return shell('Sign in', 'Use your SightLive account.', <div className="muted" style={{ marginTop: 22, fontSize: 13 }}>Connecting…</div>);
 
   // Password fallback — always reachable so a missing email code never locks
   // anyone out. Signs straight in with email + password (TOTP step-up still applies).

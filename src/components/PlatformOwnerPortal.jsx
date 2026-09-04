@@ -64,6 +64,8 @@ export const PlatformOwnerPortal = () => {
   const backend = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
   const [newTenantName, setNewTenantName] = useState('');
   const [overview, setOverview] = useState(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [liveMembers, setLiveMembers] = useState(null);
   // Per-tenant local overlays: module enablement + an instant logo preview
@@ -94,16 +96,21 @@ export const PlatformOwnerPortal = () => {
 
   // Everything the panel reads comes from one service-role call (no browser RLS).
   useEffect(() => {
-    if (!backend) { setOverview(null); return; }
+    if (!backend) { setOverview(null); setOverviewLoading(false); setOverviewError(null); return; }
     let active = true;
-    fetchPlatformOverview(scope).then(r => { if (active) setOverview(r); }).catch(() => { if (active) setOverview(null); });
+    setOverview(null);
+    setOverviewLoading(true);
+    setOverviewError(null);
+    fetchPlatformOverview(scope)
+      .then(r => { if (active) { setOverview(r); setOverviewLoading(false); } })
+      .catch((error) => { if (active) { setOverview(null); setOverviewLoading(false); setOverviewError(error?.message ?? 'Platform overview could not be loaded.'); } });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backend, scope.accessToken, scope.tenantId, reloadKey]);
   const reloadOverview = () => setReloadKey(k => k + 1);
 
   const liveTenants = overview?.tenants ?? null;
-  const allTenantRows = liveTenants ?? tenants;
+  const allTenantRows = backend ? (liveTenants ?? []) : tenants;
   const [tenantSearch, setTenantSearch] = useState('');
   const tenantRows = allTenantRows.filter((t) => matchQuery(t, tenantSearch, ['name', 'domain', 'plan', 'status', 'state']));
   const exportTenants = () => { downloadCsv(`sightlive-tenants-${dateStamp()}`, [
@@ -112,11 +119,11 @@ export const PlatformOwnerPortal = () => {
     { key: 'mrr', label: 'MRR', map: (t) => estimateMrr(t) },
     { key: 'state', label: 'State', map: (t) => t.status ?? t.state ?? '' },
   ], tenantRows); triggerNotification('Export ready', `${tenantRows.length} tenants exported to CSV.`, 'success'); };
-  const tenantsLive = liveTenants !== null;
+  const tenantsLive = backend;
   const liveRbac = overview?.roles ?? null;
   const rbacLive = liveRbac !== null;
-  const auditRows = overview?.audit ?? MOCK_AUDIT_LOG;
-  const auditLive = !!overview?.audit;
+  const auditRows = backend ? (overview?.audit ?? []) : MOCK_AUDIT_LOG;
+  const auditLive = backend;
 
   // Selected tenant — live-aware and normalised so branding/modules always exist.
   const rawSel = tenantRows.find(t => t.id === selectedTenantId) || tenantRows[0] || {};
@@ -151,6 +158,7 @@ export const PlatformOwnerPortal = () => {
   useEffect(() => {
     if (!backend) { setLiveMembers(null); return; }
     let active = true;
+    setLiveMembers(null);
     fetchMembers(scope)
       .then(r => { if (active) { setLiveMembers(r.members ?? []); setAssignableRoles(r.assignableRoles ?? []); } })
       .catch(() => { if (active) setLiveMembers([]); });
@@ -170,8 +178,11 @@ export const PlatformOwnerPortal = () => {
           <h2>Platform owner</h2>
           <p>Level 1 — across every tenant. Provision plants, set white-label branding, toggle modules, and watch platform usage &amp; audit.</p>
         </div>
-        <span className="badge badge-neutral">{tenants.length} tenants · {liveCount} live · {trialCount} trial · {totalUsers} users</span>
+        <span className="badge badge-neutral">{tenantRows.length} tenants · {liveCount} live · {trialCount} trial · {totalUsers} users</span>
       </div>
+
+      {overviewLoading && <div className="card"><div className="card-bd muted">Loading live platform overview…</div></div>}
+      {overviewError && <div className="card" style={{ borderColor: 'var(--danger)' }}><div className="card-bd" style={{ color: 'var(--danger)' }}>{overviewError}</div></div>}
 
       {/* Two levels explainer */}
       <div className="cols cols-2">

@@ -438,6 +438,8 @@ export const MedusaAdminPortal = ({ view }) => {
     tenantId: tenantAccess.activeTenantId,
     siteId: tenantAccess.activeSiteId,
   };
+  const expectingLive = isMedusaCatalogueEnabled && !!commerceScope.accessToken && !!commerceScope.tenantId;
+  const scopeKey = expectingLive ? `${commerceScope.tenantId}:${commerceScope.siteId ?? '*'}` : null;
 
   // Profitability is a protected read, so it deliberately does not use the
   // generic write-error popup in catalogueClient. When a commerce manager
@@ -454,45 +456,44 @@ export const MedusaAdminPortal = ({ view }) => {
   const [ordersReloadKey, setOrdersReloadKey] = useState(0);
   const reloadOrders = () => setOrdersReloadKey((k) => k + 1);
   useEffect(() => {
-    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) {
-      setLiveOrders(null);
-      return undefined;
-    }
+    if (!expectingLive || !['orders', 'purchaseorders'].includes(view)) return undefined;
     let cancelled = false;
+    setErr?.('orders', null);
     fetchOrders(commerceScope)
       .then((r) => { if (!cancelled) { setLiveOrders(r.orders ?? []); setErr?.('orders', null); } })
       .catch((e) => { if (!cancelled) { setLiveOrders(null); setErr?.('orders', e); } });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, ordersReloadKey]);
+  }, [scopeKey, view, ordersReloadKey]);
 
   // Promotions / price markdowns.
   const [promotions, setPromotions] = useState(null);
   const [promoReloadKey, setPromoReloadKey] = useState(0);
   const reloadPromo = () => setPromoReloadKey((k) => k + 1);
   useEffect(() => {
-    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setPromotions(null); return undefined; }
+    if (!expectingLive || !['products', 'inventory', 'promos'].includes(view)) return undefined;
     let cancelled = false;
+    setErr('promos', null);
     fetchPromotions(commerceScope)
       .then((r) => { if (!cancelled) setPromotions(r.promotions ?? []); })
       .catch((e) => { if (!cancelled) { setPromotions(null); setErr('promos', e); } });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, promoReloadKey]);
+  }, [scopeKey, view, promoReloadKey]);
 
   // Store config (tax regions, currencies, etc.)
   const [liveConfig, setLiveConfig] = useState(null);
   useEffect(() => {
-    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setLiveConfig(null); return undefined; }
+    if (!expectingLive || !['tax', 'fulfil'].includes(view)) return undefined;
     let cancelled = false;
+    setErr('config', null);
     fetchCommerceConfig(commerceScope)
-      .then((r) => { if (!cancelled) setLiveConfig(r); })
-      .catch(() => { if (!cancelled) setLiveConfig(null); });
+      .then((r) => { if (!cancelled) { setLiveConfig(r); setErr('config', null); } })
+      .catch((e) => { if (!cancelled) { setLiveConfig(null); setErr('config', e); } });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId]);
+  }, [scopeKey, view]);
 
-  const cfgLive = (arr) => Array.isArray(arr);
   // Shared PO status → badge map, used by the Orders and Fulfilment tabs.
   const poStatusBadge = { draft: 'badge-neutral', submitted: 'badge-warning', pending_approval: 'badge-warning', approved: 'badge-info', sent: 'badge-info', received: 'badge-success', rejected: 'badge-danger', cancelled: 'badge-neutral' };
 
@@ -511,14 +512,15 @@ export const MedusaAdminPortal = ({ view }) => {
   const [runSku, setRunSku] = useState('');
   const [runQty, setRunQty] = useState(5);
   useEffect(() => {
-    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setEngine(null); return undefined; }
+    if (!expectingLive || !['workflows', 'events'].includes(view)) return undefined;
     let cancelled = false;
+    setErr('engine', null);
     fetchEngine(commerceScope)
-      .then((r) => { if (!cancelled) setEngine(r); })
-      .catch(() => { if (!cancelled) setEngine(null); });
+      .then((r) => { if (!cancelled) { setEngine(r); setErr('engine', null); } })
+      .catch((e) => { if (!cancelled) { setEngine(null); setErr('engine', e); } });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, engineReloadKey]);
+  }, [scopeKey, view, engineReloadKey]);
 
   // Trading parties (customers + suppliers) with editable spend/purchase limits.
   const [parties, setParties] = useState(null);
@@ -529,14 +531,15 @@ export const MedusaAdminPortal = ({ view }) => {
   const [dataErr, setDataErr] = useState({});
   const setErr = (k, e) => setDataErr((p) => ({ ...p, [k]: e ? (e.message || String(e)) : null }));
   useEffect(() => {
-    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setParties(null); return undefined; }
+    if (!expectingLive || !['customers', 'suppliers', 'purchaseorders', 'fulfil'].includes(view)) return undefined;
     let cancelled = false;
+    setErr('parties', null);
     fetchParties(commerceScope)
       .then((r) => { if (!cancelled) { setParties(r); setErr('parties', null); } })
       .catch((e) => { if (!cancelled) { setParties(null); setErr('parties', e); } });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, partiesReloadKey]);
+  }, [scopeKey, view, partiesReloadKey]);
   const reloadParties = () => setPartiesReloadKey((k) => k + 1);
   const doDeleteParty = async (p) => {
     await deleteParty(p.id, commerceScope);
@@ -556,15 +559,28 @@ export const MedusaAdminPortal = ({ view }) => {
   const [poQuality, setPoQuality] = useState(null);
   const [poBusyId, setPoBusyId] = useState(null);
   useEffect(() => {
-    if (!isMedusaCatalogueEnabled || !commerceScope.accessToken || !commerceScope.tenantId) { setPurchaseOrders(null); return undefined; }
+    if (!expectingLive || !['orders', 'purchaseorders', 'fulfil'].includes(view)) return undefined;
     let cancelled = false;
+    setErr('po', null);
     fetchPurchaseOrders(commerceScope)
       .then((r) => { if (!cancelled) { setPurchaseOrders(r.orders ?? []); setErr('po', null); } })
       .catch((e) => { if (!cancelled) { setPurchaseOrders(null); setErr('po', e); } });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commerceScope.accessToken, commerceScope.tenantId, commerceScope.siteId, poReloadKey]);
+  }, [scopeKey, view, poReloadKey]);
   const reloadPo = () => setPoReloadKey((k) => k + 1);
+
+  // Never retain a previous tenant/site payload across a scope transition.
+  // The active panel's effect above will repopulate only the data it requires.
+  useEffect(() => {
+    setLiveOrders(null);
+    setPromotions(null);
+    setLiveConfig(null);
+    setEngine(null);
+    setParties(null);
+    setPurchaseOrders(null);
+    setDataErr({});
+  }, [scopeKey]);
   const NOTE = { submit: 'submitted for approval', send: 'sent to supplier', cancel: 'cancelled' };
 
   // Product lookups built once per render — used for name display AND to price
@@ -1011,11 +1027,10 @@ export const MedusaAdminPortal = ({ view }) => {
   /* ---------------- Orders ---------------- */
   if (view === 'orders') {
     const statusBadge = { captured: 'badge-success', authorized: 'badge-info', requires_action: 'badge-warning', draft: 'badge-warning', pending: 'badge-info' };
-    const live = liveOrders !== null;
+    const live = expectingLive;
     // Show a loading state instead of flashing mock data while the live orders
     // are still loading in a connected tenant.
-    const expectingLive = isMedusaCatalogueEnabled && !!commerceScope.accessToken && !!commerceScope.tenantId;
-    if (expectingLive && liveOrders === null && !dataErr.orders) {
+    if (expectingLive && (liveOrders === null || purchaseOrders === null) && !dataErr.orders && !dataErr.po) {
       return (<Wrap><Head icon={ShoppingCart} title="Orders" sub="Live B2B orders (outbound) and purchase orders (inbound)." /><InlineLoading label="Loading orders…" /></Wrap>);
     }
     // A sale order's fulfilment status is the LIVE status of its linked mine PO
@@ -1096,7 +1111,7 @@ export const MedusaAdminPortal = ({ view }) => {
             <SearchExportBar value={tableSearch} onChange={setTableSearch} placeholder="Search ref, customer, status…" onExport={exportOrders} exportDisabled={!shownRows.length} />
             {live && <button className="btn btn-secondary btn-sm" onClick={() => { reloadOrders(); reloadPo(); }} title="Refresh orders"><RotateCw size={14} /> Refresh</button>}
           </div>} />
-        <InlineError error={dataErr.orders} onRetry={reloadOrders} title="Orders didn’t load" />
+        <InlineError error={dataErr.orders || dataErr.po} onRetry={() => { reloadOrders(); reloadPo(); }} title="Orders didn’t load" />
         <div className="card">
           <div className="card-hd">
             <h3>All orders</h3>
@@ -1130,8 +1145,11 @@ export const MedusaAdminPortal = ({ view }) => {
   /* ---------------- Promotions ---------------- */
   if (view === 'promos') {
     const sb = { active: 'badge-success', scheduled: 'badge-info', expired: 'badge-neutral', cancelled: 'badge-danger' };
-    const live = promotions !== null;
-    const allRows = live ? (promotions ?? []) : (liveConfig?.promotions ?? MEDUSA_PROMOTIONS);
+    if (expectingLive && promotions === null && !dataErr.promos) {
+      return (<Wrap><Head icon={BadgePercent} title="Promotions" sub="Loading tenant promotions." /><InlineLoading label="Loading promotions…" /></Wrap>);
+    }
+    const live = expectingLive;
+    const allRows = live ? (promotions ?? []) : MEDUSA_PROMOTIONS;
     const rows = (allRows || []).filter((p) => matchQuery(p, tableSearch, ['sku', 'promoType', 'status']));
     const exportPromos = () => { downloadCsv(`sightlive-promotions-${dateStamp()}`, [
       { key: 'sku', label: 'Product' }, { key: 'promoType', label: 'Type', map: (p) => String(p.promoType ?? 'markdown') },
@@ -1190,9 +1208,14 @@ export const MedusaAdminPortal = ({ view }) => {
 
   /* ---------------- Tax & VAT ---------------- */
   if (view === 'tax') {
+    if (expectingLive && liveConfig === null && !dataErr.config) {
+      return (<Wrap><Head icon={Percent} title="Tax & VAT" sub="Loading tenant tax configuration." /><InlineLoading label="Loading tax regions…" /></Wrap>);
+    }
+    const taxRegions = expectingLive ? (liveConfig?.taxRegions ?? []) : MEDUSA_TAX_REGIONS;
     return (
       <Wrap>
         <Head icon={Percent} title="Tax & VAT" sub="Tax regions and rates. The merchant chooses whether VAT is added to quotes and invoices." />
+        <InlineError error={dataErr.config} title="Tax configuration didn’t load" />
         <div className="card">
           <div className="card-bd" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
             <div>
@@ -1206,13 +1229,13 @@ export const MedusaAdminPortal = ({ view }) => {
           </div>
         </div>
         <div className="card">
-          <div className="card-hd"><h3>Tax regions</h3><div style={{ display: 'flex', gap: 8 }}><span className={`badge ${cfgLive(liveConfig?.taxRegions) ? 'badge-success' : 'badge-neutral'}`}>{cfgLive(liveConfig?.taxRegions) ? 'Live' : 'Demo data'}</span><span className={`badge ${taxEnabled ? 'badge-success' : 'badge-warning'}`}>{taxEnabled ? 'VAT applied' : 'VAT off'}</span></div></div>
+          <div className="card-hd"><h3>Tax regions</h3><div style={{ display: 'flex', gap: 8 }}><span className={`badge ${expectingLive ? 'badge-success' : 'badge-neutral'}`}>{expectingLive ? 'Live' : 'Demo data'}</span><span className={`badge ${taxEnabled ? 'badge-success' : 'badge-warning'}`}>{taxEnabled ? 'VAT applied' : 'VAT off'}</span></div></div>
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>Region</th><th className="center">Code</th><th>Tax name</th><th className="num">Rate</th><th className="center">Default</th></tr></thead>
               <tbody>
-                {(liveConfig?.taxRegions ?? MEDUSA_TAX_REGIONS).length === 0 && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 22 }}>No tax regions configured.</td></tr>}
-                {(liveConfig?.taxRegions ?? MEDUSA_TAX_REGIONS).map((t, i) => (
+                {taxRegions.length === 0 && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 22 }}>No tax regions configured.</td></tr>}
+                {taxRegions.map((t, i) => (
                   <tr key={t.code || i}>
                     <td style={{ fontWeight: 500 }}>{t.region}</td>
                     <td className="center muted">{t.code}</td>
@@ -1231,13 +1254,18 @@ export const MedusaAdminPortal = ({ view }) => {
 
   /* ---------------- Fulfilment (inbound from suppliers + outbound to customers) ---------------- */
   if (view === 'fulfil') {
-    const live = !!parties;
-    const suppliers = live ? (parties.suppliers ?? []) : [];
-    const customers = live ? (parties.customers ?? []) : (liveConfig?.customers ?? MEDUSA_CUSTOMERS);
+    if (expectingLive && (!parties || !liveConfig || purchaseOrders === null) && !dataErr.parties && !dataErr.config && !dataErr.po) {
+      return (<Wrap><Head icon={Truck} title="Fulfilment & Supplier Performance" sub="Loading inbound and outbound fulfilment." /><InlineLoading label="Loading fulfilment…" /></Wrap>);
+    }
+    const live = expectingLive;
+    const suppliers = live ? (parties?.suppliers ?? []) : [];
+    const customers = live ? (parties?.customers ?? []) : MEDUSA_CUSTOMERS;
+    const fulfilmentProviders = live ? (liveConfig?.fulfilment ?? []) : MEDUSA_FULFILMENT;
     return (
       <Wrap>
         <Head icon={Truck} title="Fulfilment & Supplier Performance" sub="Supplier scorecard from PO movements — on-time, fill, damage & quality returns — plus inbound receiving and outbound delivery."
           action={<span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span>} />
+        <InlineError error={dataErr.parties || dataErr.config || dataErr.po} title="Fulfilment data didn’t load" />
 
         <SupplierPerformanceMatrix purchaseOrders={purchaseOrders || []} profitabilityItems={profitability.items || []} />
 
@@ -1307,13 +1335,13 @@ export const MedusaAdminPortal = ({ view }) => {
 
         {/* Shipping providers (the rails both directions use) */}
         <div className="card">
-          <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Truck size={16} style={{ color: 'var(--primary)' }} /><h3>Shipping providers</h3></div><span className={`badge ${cfgLive(liveConfig?.fulfilment) ? 'badge-success' : 'badge-neutral'}`}>{cfgLive(liveConfig?.fulfilment) ? 'Live' : 'Demo data'}</span></div>
+          <div className="card-hd"><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Truck size={16} style={{ color: 'var(--primary)' }} /><h3>Shipping providers</h3></div><span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live' : 'Demo data'}</span></div>
           <div className="table-wrap">
             <table className="table mobile-stack-table">
               <thead><tr><th>Provider</th><th>Regions</th><th>Rate</th><th>ETA</th><th className="center">Enabled</th></tr></thead>
               <tbody>
-                {(liveConfig?.fulfilment ?? MEDUSA_FULFILMENT).length === 0 && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 22 }}>No fulfilment providers registered.</td></tr>}
-                {(liveConfig?.fulfilment ?? MEDUSA_FULFILMENT).map((f, i) => (
+                {fulfilmentProviders.length === 0 && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 22 }}>No fulfilment providers registered.</td></tr>}
+                {fulfilmentProviders.map((f, i) => (
                   <tr key={f.provider || i}>
                     <td data-label="Provider" style={{ fontWeight: 500 }}>{f.provider}</td>
                     <td data-label="Regions" className="muted">{f.regions}</td>
@@ -1373,8 +1401,11 @@ export const MedusaAdminPortal = ({ view }) => {
 
   /* ---------------- Customers & spending limits ---------------- */
   if (view === 'customers') {
-    const live = !!parties;
-    const allRows = live ? (parties.customers ?? []) : (liveConfig?.customers ?? MEDUSA_CUSTOMERS);
+    if (expectingLive && parties === null && !dataErr.parties) {
+      return (<Wrap><Head icon={Wallet} title="Customers & Spending Limits" sub="Loading tenant customers." /><InlineLoading label="Loading customers…" /></Wrap>);
+    }
+    const live = expectingLive;
+    const allRows = live ? (parties?.customers ?? []) : MEDUSA_CUSTOMERS;
     const rows = (allRows || []).filter((c) => matchQuery(c, tableSearch, ['company', 'email', 'currency']));
     const exportCustomers = () => { downloadCsv(`sightlive-customers-${dateStamp()}`, [
       { key: 'company', label: 'Company' }, { key: 'currency', label: 'Currency' },
@@ -1439,8 +1470,11 @@ export const MedusaAdminPortal = ({ view }) => {
 
   /* ---------------- Suppliers (external vendors) ---------------- */
   if (view === 'suppliers') {
-    const live = !!parties;
-    const allRows = live ? (parties.suppliers ?? []) : [];
+    if (expectingLive && parties === null && !dataErr.parties) {
+      return (<Wrap><Head icon={Factory} title="Suppliers" sub="Loading tenant suppliers." /><InlineLoading label="Loading suppliers…" /></Wrap>);
+    }
+    const live = expectingLive;
+    const allRows = live ? (parties?.suppliers ?? []) : [];
     const rows = allRows.filter((s) => matchQuery(s, tableSearch, ['company', 'email', 'category']));
     const exportSuppliers = () => { downloadCsv(`sightlive-suppliers-${dateStamp()}`, [
       { key: 'company', label: 'Supplier' },
@@ -1489,7 +1523,10 @@ export const MedusaAdminPortal = ({ view }) => {
 
   /* ---------------- Purchase Orders (inbound procurement) ---------------- */
   if (view === 'purchaseorders') {
-    const live = purchaseOrders !== null || liveOrders !== null;
+    if (expectingLive && (purchaseOrders === null || liveOrders === null || parties === null) && !dataErr.po && !dataErr.orders && !dataErr.parties) {
+      return (<Wrap><Head icon={ClipboardList} title="Purchase Orders" sub="Loading tenant purchase orders." /><InlineLoading label="Loading purchase orders…" /></Wrap>);
+    }
+    const live = expectingLive;
     const suppliers = parties?.suppliers ?? [];
 
     // Convert live B2B orders into Purchase Order rows with proper approval / receipt routing
@@ -1653,6 +1690,9 @@ export const MedusaAdminPortal = ({ view }) => {
 
   /* ---------------- Workflows (real saga canvas) ---------------- */
   if (view === 'workflows') {
+    if (expectingLive && engine === null && !dataErr.engine) {
+      return (<Wrap><Head icon={Workflow} title="Workflow Engine" sub="Loading workflow engine status." /><InlineLoading label="Loading workflow engine…" /></Wrap>);
+    }
     const engineLive = !!engine && Array.isArray(engine.workflows);
     const relTime = (iso) => {
       if (!iso) return '—';
@@ -1666,7 +1706,8 @@ export const MedusaAdminPortal = ({ view }) => {
     return (
       <Wrap>
         <Head icon={Workflow} title="Workflow Engine" sub="Durable, compensatable workflows — the actual step design, like a flow canvas. This is what makes issuing stock roll back cleanly."
-          action={<span className={`badge ${engineLive ? 'badge-success' : 'badge-neutral'}`}>{engineLive ? `Live · ${engine.workflowCount} workflows registered` : 'Demo data'}</span>} />
+          action={<span className={`badge ${engineLive ? 'badge-success' : 'badge-neutral'}`}>{engineLive ? `Live · ${engine.workflowCount} workflows registered` : (expectingLive ? 'Unavailable' : 'Demo data')}</span>} />
+        <InlineError error={dataErr.engine} onRetry={() => setEngineReloadKey((k) => k + 1)} title="Workflow engine didn’t load" />
 
         {/* Live engine — real registered workflows + execution history */}
         {engineLive && (
@@ -1784,6 +1825,10 @@ export const MedusaAdminPortal = ({ view }) => {
 
   /* ---------------- Event bus (interactive) ---------------- */
   if (view === 'events') {
+    if (expectingLive && engine === null && !dataErr.engine) {
+      return (<Wrap><Head icon={Radio} title="Event Bus & Subscribers" sub="Loading event-bus status." /><InlineLoading label="Loading event bus…" /></Wrap>);
+    }
+    const eventRows = expectingLive ? [] : MEDUSA_EVENTS;
     const publish = (e) => {
       const time = new Date().toLocaleTimeString('en-ZA', { hour12: false });
       setEventLog(prev => [{ id: `${e.event}-${time}-${prev.length}`, event: e.event, time, subs: e.subscribers }, ...prev].slice(0, 14));
@@ -1793,7 +1838,8 @@ export const MedusaAdminPortal = ({ view }) => {
     return (
       <Wrap>
         <Head icon={Radio} title="Event Bus & Subscribers" sub="Domain events and the async subscribers that react. Publish a test event and watch it fan out."
-          action={<span className={`badge ${engine ? 'badge-success' : 'badge-neutral'}`}>{engine ? 'Engine connected · Redis' : 'Demo data'}</span>} />
+          action={<span className={`badge ${engine ? 'badge-success' : 'badge-neutral'}`}>{engine ? 'Engine connected · Redis' : (expectingLive ? 'Unavailable' : 'Demo data')}</span>} />
+        <InlineError error={dataErr.engine} onRetry={() => setEngineReloadKey((k) => k + 1)} title="Event bus didn’t load" />
         <div className="cols" style={{ gridTemplateColumns: '1.4fr 1fr' }}>
           <div className="card">
             <div className="card-hd"><h3>Events</h3></div>
@@ -1801,7 +1847,8 @@ export const MedusaAdminPortal = ({ view }) => {
               <table className="table">
                 <thead><tr><th>Event</th><th>Subscribers</th><th className="center"></th></tr></thead>
                 <tbody>
-                  {MEDUSA_EVENTS.map(e => {
+                  {eventRows.length === 0 && <tr><td colSpan={3} className="muted" style={{ textAlign: 'center', padding: 22 }}>The live backend does not expose an event catalogue or test-publish endpoint.</td></tr>}
+                  {eventRows.map(e => {
                     const active = firing === e.event;
                     return (
                       <tr key={e.event} style={{ background: active ? 'var(--primary-weak)' : undefined, transition: 'background .2s' }}>

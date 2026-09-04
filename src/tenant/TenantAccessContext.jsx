@@ -137,20 +137,22 @@ export const TenantAccessProvider = ({ children }) => {
     setActiveSiteId((current) => tenantSites.some((site) => site.id === current) ? current : tenantSites[0]?.id ?? null);
   }, [access.sites, activeTenantId, auth.configured]);
 
+  const activeSite = access.sites.find((site) => site.id === activeSiteId && site.tenant_id === activeTenantId) ?? null;
   const value = useMemo(() => ({
     ...access,
     mode: auth.configured ? 'supabase' : 'demo',
     loading: auth.loading || loading || Boolean(auth.configured && auth.user && resolvedUserId !== auth.user.id),
     error,
     activeTenantId,
-    activeSiteId,
+    // Never expose a site from the previous tenant during the transition.
+    activeSiteId: activeSite?.id ?? null,
     activeTenant: access.tenants.find((tenant) => tenant.id === activeTenantId) ?? null,
-    activeSite: access.sites.find((site) => site.id === activeSiteId && site.tenant_id === activeTenantId) ?? null,
+    activeSite,
     setActiveTenantId,
     setActiveSiteId,
     hasCapability: (capability) => access.capabilities.includes(capability),
     refresh: loadAccess,
-  }), [access, auth.configured, auth.loading, auth.user, resolvedUserId, loading, error, activeTenantId, activeSiteId, loadAccess]);
+  }), [access, auth.configured, auth.loading, auth.user, resolvedUserId, loading, error, activeTenantId, activeSite, loadAccess]);
 
   return <TenantAccessContext.Provider value={value}>{children}</TenantAccessContext.Provider>;
 };

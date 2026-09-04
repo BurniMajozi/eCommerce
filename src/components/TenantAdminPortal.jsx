@@ -266,7 +266,7 @@ export const TenantAdminPortal = () => {
     return () => { active = false; };
   }, [integrationMode, activeTenantId]);
 
-  const memberRows = liveMembers ?? MOCK_TENANT_USERS;
+  const memberRows = integrationMode === 'supabase' ? (liveMembers ?? []) : MOCK_TENANT_USERS;
 
   const targetName = (r) => {
     if (r.scope === 'all') return 'Everyone';

@@ -20,6 +20,9 @@ export const AppProvider = ({ children }) => {
   const auth = useAuthSession();
   const tenantAccess = useTenantAccess();
   const canManageCommerce = tenantAccess.capabilities.includes('commerce.manage');
+  const currentScopeKey = isMedusaCatalogueEnabled && tenantAccess.activeTenantId
+    ? `${tenantAccess.activeTenantId}:${tenantAccess.activeSiteId ?? '*'}`
+    : null;
   const [theme, setTheme] = useState(getInitialTheme);
   const toggleTheme = () => setTheme(t => (t === 'dark' ? 'light' : 'dark'));
 
@@ -33,9 +36,20 @@ export const AppProvider = ({ children }) => {
   // flashes demo products before the live data arrives. Only a demo build (live
   // path disabled) seeds the mock products.
   const [products, setProducts] = useState(isMedusaCatalogueEnabled ? [] : CAGELI_PRODUCTS);
+  const [productsScopeKey, setProductsScopeKey] = useState(isMedusaCatalogueEnabled ? null : 'demo');
   const [catalogue, setCatalogue] = useState({ source: isMedusaCatalogueEnabled ? 'loading' : 'demo', loading: isMedusaCatalogueEnabled, error: null, dataQuality: null });
-  const [profitability, setProfitability] = useState({ source: 'demo', loading: false, error: null, items: [], totals: null });
-  const [activePlant, setActivePlant] = useState(MOCK_PLANTS[1]); // Default to Kumba Plant Alpha
+  const [profitability, setProfitability] = useState({ source: isMedusaCatalogueEnabled ? 'unavailable' : 'demo', loading: false, error: null, items: [], totals: null });
+  const [demoActivePlant, setDemoActivePlant] = useState(MOCK_PLANTS[1]); // Default to Kumba Plant Alpha
+  const plants = tenantAccess.mode === 'supabase'
+    ? tenantAccess.sites.filter((site) => site.tenant_id === tenantAccess.activeTenantId)
+    : MOCK_PLANTS;
+  const activePlant = tenantAccess.mode === 'supabase'
+    ? (tenantAccess.activeSite ?? plants[0] ?? { id: '', name: 'No active site', code: '—' })
+    : demoActivePlant;
+  const setActivePlant = (plant) => {
+    if (tenantAccess.mode === 'supabase') tenantAccess.setActiveSiteId(plant?.id ?? null);
+    else setDemoActivePlant(plant);
+  };
   // EMPLOYEE, MANAGER, STOREKEEPER, MERCHANT, EXECUTIVE, TENANT_ADMIN, OWNER
   const [activeRole, setActiveRole] = useState('EMPLOYEE');
   const [tenants, setTenants] = useState(MOCK_TENANTS);
@@ -121,6 +135,7 @@ export const AppProvider = ({ children }) => {
     if (!isMedusaCatalogueEnabled) {
       // Demo build — no live path, show the mock catalogue.
       setProducts(CAGELI_PRODUCTS);
+      setProductsScopeKey('demo');
       setCatalogue({ source: 'demo', loading: false, error: null, dataQuality: null });
       return undefined;
     }
@@ -128,17 +143,22 @@ export const AppProvider = ({ children }) => {
       // Live build, but auth/tenant not resolved yet: keep loading (never flash
       // demo data). The portal isn't shown until access is ready anyway.
       setProducts([]);
+      setProductsScopeKey(null);
       setCatalogue({ source: 'loading', loading: true, error: null, dataQuality: null });
       return undefined;
     }
 
     const controller = new AbortController();
-    setCatalogue((current) => ({ ...current, loading: true, error: null }));
+    // A scope change must invalidate the prior tenant/site payload immediately.
+    setProducts([]);
+    setProductsScopeKey(null);
+    setCatalogue({ source: 'loading', loading: true, error: null, dataQuality: null });
     fetchCatalogue({ accessToken, tenantId, siteId, signal: controller.signal })
       .then((response) => {
         // Live catalogue responses intentionally exclude private cost/margin.
         // Privileged financial data is fetched separately from /catalogue/profit.
         setProducts(response.items || []);
+        setProductsScopeKey(`${tenantId}:${siteId ?? '*'}`);
         setCatalogue({ source: 'medusa', loading: false, error: null, dataQuality: response.dataQuality ?? null });
       })
       .catch((error) => {
@@ -146,6 +166,7 @@ export const AppProvider = ({ children }) => {
         // Once the live path is explicitly enabled, never disguise an auth,
         // scope or service failure as real catalogue data by showing mocks.
         setProducts([]);
+        setProductsScopeKey(`${tenantId}:${siteId ?? '*'}`);
         setCatalogue({ source: 'error', loading: false, error, dataQuality: null });
       });
 
@@ -158,50 +179,69 @@ export const AppProvider = ({ children }) => {
   // PWA stay branded while signed out.
   const [brand, setBrand] = useState(() => {
     const c = readBrandCache();
-    return { accent: c?.accent ?? null, logoUrl: c?.logoUrl ?? null, tenantName: c?.tenantName ?? null };
+    return { accent: c?.accent ?? null, logoUrl: c?.logoUrl ?? null, tenantName: c?.tenantName ?? null, tenantId: c?.tenantId ?? null };
   });
+  const visibleBrand = isMedusaCatalogueEnabled && tenantAccess.activeTenantId && brand.tenantId !== tenantAccess.activeTenantId
+    ? { accent: null, logoUrl: null, tenantName: null, tenantId: tenantAccess.activeTenantId }
+    : brand;
   useEffect(() => {
     const accessToken = auth.session?.access_token;
     const tenantId = tenantAccess.activeTenantId;
     // Not live (demo / signed out): keep whatever the cache seeded — don't reset.
     if (!isMedusaCatalogueEnabled || !accessToken || !tenantId) return undefined;
     let active = true;
+    // A cached brand is useful before auth, but must not survive into a
+    // different authenticated tenant while the new branding request is pending.
+    setBrand((current) => current.tenantId === tenantId
+      ? current
+      : { accent: null, logoUrl: null, tenantName: null, tenantId });
     fetchBranding({ accessToken, tenantId, siteId: tenantAccess.activeSiteId })
       .then((r) => {
         if (!active) return;
-        const b = { accent: r?.accent ?? null, logoUrl: r?.logoUrl ?? null, tenantName: r?.tenantName ?? null };
+        const b = { accent: r?.accent ?? null, logoUrl: r?.logoUrl ?? null, tenantName: r?.tenantName ?? null, tenantId };
         setBrand(b);
         // Persist for the pre-auth login screen + PWA on this device, and update
         // the install name/icon/theme-color live (reset to default if unbranded).
         writeBrandCache(b);
         applyBrandChrome(b);
       })
-      .catch(() => { /* keep the cached brand on a transient failure */ });
+      .catch(() => { /* retain the neutral, correctly scoped brand on failure */ });
     return () => { active = false; };
   }, [auth.session?.access_token, tenantAccess.activeTenantId, tenantAccess.activeSiteId]);
 
   // Re-apply the accent whenever the brand or the light/dark theme changes so the
   // derived shades stay correct across a theme toggle.
-  useEffect(() => { applyBrand(brand.accent, theme); }, [brand.accent, theme]);
+  useEffect(() => { applyBrand(visibleBrand.accent, theme); }, [visibleBrand.accent, theme]);
+
+  const [profitabilityScopeKey, setProfitabilityScopeKey] = useState(null);
 
   useEffect(() => {
     const accessToken = auth.session?.access_token;
     const tenantId = tenantAccess.activeTenantId;
     const siteId = tenantAccess.activeSiteId;
-    if (!isMedusaCatalogueEnabled || !accessToken || !tenantId || !canManageCommerce) {
+    if (!isMedusaCatalogueEnabled) {
       setProfitability({ source: 'demo', loading: false, error: null, items: [], totals: null });
+      setProfitabilityScopeKey('demo');
+      return undefined;
+    }
+    if (!accessToken || !tenantId || !canManageCommerce) {
+      setProfitability({ source: 'unavailable', loading: false, error: null, items: [], totals: null });
+      setProfitabilityScopeKey(null);
       return undefined;
     }
 
     const controller = new AbortController();
-    setProfitability((current) => ({ ...current, loading: true, error: null }));
+    setProfitability({ source: 'loading', loading: true, error: null, items: [], totals: null });
+    setProfitabilityScopeKey(null);
     fetchProfitability({ accessToken, tenantId, siteId, signal: controller.signal })
-      .then((response) => setProfitability({
-        source: 'medusa', loading: false, error: null, items: response.items ?? [], totals: response.totals ?? null,
-      }))
+      .then((response) => {
+        setProfitability({ source: 'medusa', loading: false, error: null, items: response.items ?? [], totals: response.totals ?? null });
+        setProfitabilityScopeKey(`${tenantId}:${siteId ?? '*'}`);
+      })
       .catch((error) => {
         if (error?.name === 'AbortError') return;
         setProfitability({ source: 'error', loading: false, error, items: [], totals: null });
+        setProfitabilityScopeKey(`${tenantId}:${siteId ?? '*'}`);
       });
     return () => controller.abort();
   }, [auth.session?.access_token, tenantAccess.activeTenantId, tenantAccess.activeSiteId, canManageCommerce, catalogueReloadKey]);
@@ -515,12 +555,16 @@ export const AppProvider = ({ children }) => {
     <AppContext.Provider value={{
       theme,
       toggleTheme,
-      brand,
-      products,
+      brand: visibleBrand,
+      products: isMedusaCatalogueEnabled && productsScopeKey !== currentScopeKey ? [] : products,
       setProducts,
       receiveStockDirectly,
-      catalogue,
-      profitability,
+      catalogue: isMedusaCatalogueEnabled && productsScopeKey !== currentScopeKey
+        ? { source: 'loading', loading: true, error: null, dataQuality: null }
+        : catalogue,
+      profitability: isMedusaCatalogueEnabled && profitabilityScopeKey !== currentScopeKey
+        ? { source: profitability.loading ? 'loading' : 'unavailable', loading: profitability.loading, error: null, items: [], totals: null }
+        : profitability,
       activePlant,
       setActivePlant,
       activeRole,
@@ -546,7 +590,7 @@ export const AppProvider = ({ children }) => {
       saveQuotation,
       convertQuoteToInvoice,
       convertOrderToInvoice,
-      plants: MOCK_PLANTS,
+      plants,
       tenants,
       selectedTenantId,
       setSelectedTenantId,

@@ -53,7 +53,7 @@ export function readBrandCache() {
 export function writeBrandCache(brand) {
   try {
     if (brand && isHex(brand.accent)) {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ accent: brand.accent, logoUrl: brand.logoUrl || null, tenantName: brand.tenantName || null }));
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ accent: brand.accent, logoUrl: brand.logoUrl || null, tenantName: brand.tenantName || null, tenantId: brand.tenantId || null }));
     } else {
       localStorage.removeItem(CACHE_KEY);
     }

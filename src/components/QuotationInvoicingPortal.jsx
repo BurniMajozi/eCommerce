@@ -7,12 +7,12 @@ import { MOCK_PARTIES, MOCK_PLANTS } from '../data/mockData';
 import { Receipt, Plus, FileText, ArrowRight, Store, TrendingUp, Loader2, Factory } from 'lucide-react';
 
 export const QuotationInvoicingPortal = () => {
-  const { products, quotations, saveQuotation, convertQuoteToInvoice, convertOrderToInvoice, selectedInvoice, setSelectedInvoice, taxEnabled, setTaxEnabled, auth, tenantAccess, triggerNotification, orderStatusOverrides } = useApp();
+  const { products, quotations, saveQuotation, convertQuoteToInvoice, convertOrderToInvoice, selectedInvoice, setSelectedInvoice, taxEnabled, setTaxEnabled, auth, tenantAccess, triggerNotification, orderStatusOverrides, profitability } = useApp();
   const stockFor = (sku) => products.find(p => p.sku === sku)?.stockOnHand ?? 0;
 
   // Live mode writes real Medusa draft orders; demo mode uses local quotations.
   const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
-  const live = isMedusaCatalogueEnabled && scope.accessToken && scope.tenantId;
+  const live = Boolean(isMedusaCatalogueEnabled && scope.accessToken && scope.tenantId);
   const [orders, setOrders] = useState([]);
   const [ordersError, setOrdersError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -35,31 +35,46 @@ export const QuotationInvoicingPortal = () => {
   };
   useEffect(() => { loadOrders(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [live, scope.accessToken, scope.tenantId, scope.siteId]);
 
-  const [clientName, setClientName] = useState('Rand Colliery');
+  const [clientName, setClientName] = useState(isMedusaCatalogueEnabled ? '' : 'Rand Colliery');
   const [customers, setCustomers] = useState([]);
   const [customerId, setCustomerId] = useState('');
   const [suppliers, setSuppliers] = useState([]);
+  const [partiesLoading, setPartiesLoading] = useState(false);
+  const [partiesError, setPartiesError] = useState(null);
   const [selectedSupplier, setSelectedSupplier] = useState('ALL');
-  const [vatNumber, setVatNumber] = useState('ZA4920194821');
+  const [vatNumber, setVatNumber] = useState(isMedusaCatalogueEnabled ? '' : 'ZA4920194821');
 
   // Live customers & suppliers
   useEffect(() => {
     if (!live) {
       setCustomers(MOCK_PARTIES.customers);
       setSuppliers(MOCK_PARTIES.suppliers);
+      setPartiesLoading(false);
+      setPartiesError(null);
       return;
     }
     let active = true;
+    setCustomers([]);
+    setSuppliers([]);
+    setCustomerId('');
+    setClientName('');
+    setVatNumber('');
+    setPartiesLoading(true);
+    setPartiesError(null);
     fetchParties(scope).then(r => {
       if (!active) return;
-      const cs = r.customers?.length ? r.customers : MOCK_PARTIES.customers;
-      const ss = r.suppliers?.length ? r.suppliers : MOCK_PARTIES.suppliers;
+      const cs = r.customers ?? [];
+      const ss = r.suppliers ?? [];
       setCustomers(cs);
       setSuppliers(ss);
       if (cs[0]) { setCustomerId(cs[0].id); setClientName(cs[0].company); }
-    }).catch(() => {
-      setCustomers(MOCK_PARTIES.customers);
-      setSuppliers(MOCK_PARTIES.suppliers);
+      setPartiesLoading(false);
+    }).catch((error) => {
+      if (!active) return;
+      setCustomers([]);
+      setSuppliers([]);
+      setPartiesError(error?.message ?? 'Customers and suppliers could not be loaded.');
+      setPartiesLoading(false);
     });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -70,7 +85,7 @@ export const QuotationInvoicingPortal = () => {
     const c = customers.find(x => x.id === id);
     if (c) setClientName(c.company);
   };
-  const [poNumber, setPoNumber] = useState('PO-88213');
+  const [poNumber, setPoNumber] = useState(isMedusaCatalogueEnabled ? '' : 'PO-88213');
   const [catalogueSearch, setCatalogueSearch] = useState('');
   // Seed a couple of demo lines from whatever products exist.
   const seedLine = (idx, qty) => {
@@ -87,7 +102,9 @@ export const QuotationInvoicingPortal = () => {
   const setQty = (sku, q) => setItems(prev => prev.map(i => i.sku === sku ? { ...i, qty: Math.max(1, parseInt(q) || 1) } : i));
 
   const subtotal = items.reduce((a, i) => a + i.unitPrice * i.qty, 0);
-  const costTotal = items.reduce((a, i) => a + i.unitCost * i.qty, 0);
+  const canSeeProfit = !live || profitability?.source === 'medusa';
+  const privateCostBySku = new Map((profitability?.items ?? []).map((item) => [item.sku, Number(item.averageCost ?? item.costPrice ?? 0)]));
+  const costTotal = items.reduce((a, i) => a + (live ? (privateCostBySku.get(i.sku) ?? 0) : i.unitCost) * i.qty, 0);
   const profit = subtotal - costTotal;
   const marginPct = subtotal ? (profit / subtotal) * 100 : 0;
   const vat = taxEnabled ? subtotal * 0.15 : 0;
@@ -141,11 +158,11 @@ export const QuotationInvoicingPortal = () => {
   const allSupplierGroups = [
     {
       group: 'Mine Plants & Operational Sites',
-      items: MOCK_PLANTS.map(p => ({ id: `PLANT-${p.id}`, name: p.name, type: 'Mine Plant' }))
+      items: (live ? (tenantAccess?.sites ?? []) : MOCK_PLANTS).map(p => ({ id: `PLANT-${p.id}`, name: p.name, type: 'Mine Plant' }))
     },
     {
       group: 'Commercial Safety Equipment Suppliers',
-      items: (suppliers.length > 0 ? suppliers : MOCK_PARTIES.suppliers).map(s => ({ id: s.id, name: s.company, type: 'Vendor' }))
+      items: (live ? suppliers : MOCK_PARTIES.suppliers).map(s => ({ id: s.id, name: s.company, type: 'Vendor' }))
     }
   ];
 
@@ -167,6 +184,8 @@ export const QuotationInvoicingPortal = () => {
             <span className="badge badge-neutral">Contract price list B</span>
           </div>
           <form className="card-bd" onSubmit={createQuote} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {partiesLoading && <div className="muted" style={{ fontSize: 13 }}>Loading customers and suppliers…</div>}
+            {partiesError && <div style={{ color: 'var(--danger)', fontSize: 13 }}>{partiesError}</div>}
             <div className="cols cols-2">
               <div className="field"><label className="field-label">Client</label>
                 {customers.length > 0
@@ -230,11 +249,11 @@ export const QuotationInvoicingPortal = () => {
             <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
               <div className="card-bd" style={{ padding: 14, display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><TrendingUp size={16} style={{ color: 'var(--success)' }} /><span className="eyebrow">Profitability</span></div>
-                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginLeft: 'auto' }}>
+                {!canSeeProfit ? <span className="muted" style={{ marginLeft: 'auto', fontSize: 13 }}>Restricted · commerce management and MFA required</span> : <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginLeft: 'auto' }}>
                   <div><div className="eyebrow">Cost</div><div className="tabular" style={{ fontWeight: 600 }}>R {costTotal.toFixed(2)}</div></div>
                   <div><div className="eyebrow">Profit</div><div className="tabular" style={{ fontWeight: 600, color: 'var(--success)' }}>R {profit.toFixed(2)}</div></div>
                   <div><div className="eyebrow">Margin</div><div><span className={`badge ${marginPct >= 30 ? 'badge-success' : marginPct >= 18 ? 'badge-warning' : 'badge-danger'}`}>{marginPct.toFixed(1)}%</span></div></div>
-                </div>
+                </div>}
               </div>
             </div>
 

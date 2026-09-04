@@ -1,11 +1,12 @@
 import React, { useState, lazy, Suspense } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
-import { Sidebar, NAV_GROUPS } from './components/Sidebar';
+import { Sidebar, NAV_GROUPS, visibleNavGroups } from './components/Sidebar';
 import { LoginGate } from './auth/LoginGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SkeletonPage } from './components/SkeletonLoader';
 import { MfaStepUp } from './components/MfaStepUp';
 import { resolveAccessState } from './tenant/accessState';
+import { resolveActiveRole } from './navigation/activeRole';
 import { Menu, ChevronDown, Sun, Moon, CheckCircle2, AlertTriangle, Info, XCircle, LogOut } from 'lucide-react';
 
 const EmployeePortal = lazy(() => import('./components/EmployeePortal').then(m => ({ default: m.EmployeePortal })));
@@ -68,12 +69,18 @@ const AppContent = () => {
   const { activeRole, activePlant, setActivePlant, plants, theme, toggleTheme, pushNotification, auth, tenantAccess } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
   const accessState = resolveAccessState(tenantAccess);
+  const scopeKey = `${tenantAccess.activeTenantId ?? 'none'}:${tenantAccess.activeSiteId ?? '*'}`;
+
+  // Resolve the first permitted view during render. Sidebar still persists the
+  // selection, but the user never sees the default employee screen for a frame.
+  const visibleRoleIds = visibleNavGroups(tenantAccess).flatMap((group) => group.items.map((item) => item.id));
+  const displayedRole = resolveActiveRole(activeRole, visibleRoleIds);
 
   if (accessState !== 'ready') return <AccessStartup state={accessState} tenantAccess={tenantAccess} auth={auth} />;
 
   const render = () => {
-    if (MED_VIEW[activeRole]) return <MedusaAdminPortal view={MED_VIEW[activeRole]} />;
-    switch (activeRole) {
+    if (MED_VIEW[displayedRole]) return <MedusaAdminPortal view={MED_VIEW[displayedRole]} />;
+    switch (displayedRole) {
       case 'STORE': return <ContractorStorePortal />;
       case 'EMPLOYEE': return <EmployeePortal />;
       case 'MANAGER': return <ManagerApprovalPortal />;
@@ -91,18 +98,18 @@ const AppContent = () => {
 
   return (
     <div className="app-layout">
-      <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} activeRoleOverride={displayedRole} />
 
       <div className="main-col">
         <div className="topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
             <button className="icon-btn hamburger" onClick={() => setMenuOpen(true)} aria-label="Open menu"><Menu size={18} /></button>
-            <span style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{navTitle(activeRole)}</span>
+            <span style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{navTitle(displayedRole)}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {/* The site picker only makes sense for site-scoped operations. On
                 commerce / platform (global) views it's confusing, so hide it. */}
-            {['EMPLOYEE', 'STOREKEEPER', 'MANAGER', 'EXECUTIVE', 'STORE'].includes(activeRole) && (
+            {['EMPLOYEE', 'STOREKEEPER', 'MANAGER', 'EXECUTIVE', 'STORE'].includes(displayedRole) && (
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <select className="select" value={activePlant.id} onChange={(e) => setActivePlant(plants.find(p => p.id === e.target.value))} style={{ paddingRight: 32, fontWeight: 500, fontSize: 13, maxWidth: 220 }} aria-label="Active site">
                   {plants.map(p => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
@@ -128,7 +135,7 @@ const AppContent = () => {
               that portal MOUNTED across sidebar clicks, so its live data is not
               torn down and re-fetched on every navigation (no lag, no flash of a
               loading/old view). Distinct portals still get their own key. */}
-          <ErrorBoundary key={MED_VIEW[activeRole] ? 'commerce' : activeRole}>
+          <ErrorBoundary key={`${MED_VIEW[displayedRole] ? 'commerce' : displayedRole}:${scopeKey}`}>
             <Suspense fallback={<SkeletonPage />}>
               {render()}
             </Suspense>

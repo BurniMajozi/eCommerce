@@ -72,7 +72,7 @@ export function visibleNavGroups(tenantAccess) {
     .filter((group) => group.items.length > 0);
 }
 
-export const Sidebar = ({ open, onClose }) => {
+export const Sidebar = ({ open, onClose, activeRoleOverride = null }) => {
   const { activeRole, setActiveRole, tenantAccess, brand } = useApp();
   const [bugOpen, setBugOpen] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(() => {
@@ -86,6 +86,7 @@ export const Sidebar = ({ open, onClose }) => {
 
   const groups = React.useMemo(() => visibleNavGroups(tenantAccess), [tenantAccess]);
   const visibleIds = React.useMemo(() => groups.flatMap((g) => g.items.map((i) => i.id)), [groups]);
+  const selectedRole = activeRoleOverride ?? activeRole;
 
   // Land the user on a view they can actually access (e.g. a worker on Request
   // PPE, a merchant on B2B Sales) instead of a hidden default.
@@ -119,7 +120,7 @@ export const Sidebar = ({ open, onClose }) => {
               {group.items.map(item => {
                 const Icon = item.icon;
                 return (
-                  <button key={item.id} className={`nav-item ${activeRole === item.id ? 'active' : ''}`} onClick={() => pick(item.id)} title={collapsed ? item.label : undefined}>
+                  <button key={item.id} className={`nav-item ${selectedRole === item.id ? 'active' : ''}`} onClick={() => pick(item.id)} title={collapsed ? item.label : undefined}>
                     <Icon size={17} />
                     <span>{item.label}</span>
                   </button>

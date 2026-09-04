@@ -61,21 +61,28 @@ const fmtCell = (col, v) => {
   return v;
 };
 
-export const LiveReportBuilder = ({ scope, triggerNotification }) => {
+export const LiveReportBuilder = ({ scope, triggerNotification, sharedData, sharedLoading, sharedError, onRefresh }) => {
   const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const usesSharedData = sharedData !== undefined;
+  const [localData, setLocalData] = useState(null);
+  const [localLoading, setLocalLoading] = useState(false);
+  const [localError, setLocalError] = useState(null);
   const [active, setActive] = useState('allocations');
   const [reloadKey, setReloadKey] = useState(0);
   const [search, setSearch] = useState('');
   useEffect(() => { setSearch(''); }, [active]);
 
   useEffect(() => {
-    if (!live) { setData(null); return; }
-    setLoading(true); setError(null);
-    fetchReports(scope).then((r) => setData(r.reports ? r : { reports: r })).catch((e) => setError(e)).finally(() => setLoading(false));
-  }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (usesSharedData) return;
+    if (!live) { setLocalData(null); return; }
+    setLocalData(null); setLocalLoading(true); setLocalError(null);
+    fetchReports(scope).then((r) => setLocalData(r.reports ? r : { reports: r })).catch((e) => setLocalError(e)).finally(() => setLocalLoading(false));
+  }, [usesSharedData, live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const data = usesSharedData ? sharedData : localData;
+  const loading = usesSharedData ? sharedLoading : localLoading;
+  const error = usesSharedData ? sharedError : localError;
+  const refresh = () => { if (usesSharedData) onRefresh?.(); else setReloadKey((key) => key + 1); };
 
   const def = REPORT_DEFS[active];
   const allRows = data?.reports && !def.custom ? def.pick(data.reports) : [];
@@ -119,7 +126,7 @@ export const LiveReportBuilder = ({ scope, triggerNotification }) => {
           <FileBarChart size={17} style={{ color: 'var(--primary)' }} /><h3>Reports &amp; Stock Allocations</h3>
           <span className={`badge ${live ? 'badge-success' : 'badge-neutral'}`}>{live ? 'Live data' : 'Demo mode'}</span>
         </div>
-        {live && <button className="btn btn-ghost btn-sm" onClick={() => setReloadKey((k) => k + 1)} disabled={loading} aria-label="Refresh">{loading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}</button>}
+        {live && <button className="btn btn-ghost btn-sm" onClick={refresh} disabled={loading} aria-label="Refresh">{loading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}</button>}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap' }}>
         <div style={{ width: 230, borderRight: '1px solid var(--border)', padding: 16, minWidth: 190 }}>
