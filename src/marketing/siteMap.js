@@ -4,26 +4,26 @@ export const MARKETING_ROUTES = [
   {
     path: '/',
     label: 'Home',
-    title: 'SightLive | PPE Operations, Commerce & Tenant Management',
-    description: 'Run PPE requests, approvals, stock, procurement, B2B commerce and tenant administration in one secure, multi-site platform.',
+    title: 'PPE Stock Management from Purchase to Allocation | SightLive',
+    description: 'Manage PPE purchasing, receiving, employee and contractor requests, approvals, store handover, dispatch, returns and allocation audit in SightLive.',
   },
   {
     path: '/operations',
     label: 'Operations',
     title: 'PPE Operations & Inventory Management | SightLive',
-    description: 'Control PPE requests, entitlements, approvals, issuing, custody, replenishment and multi-site inventory with SightLive.',
+    description: 'Connect digital and physical PPE stores with employee and contractor requests, approvals, OTP handover, returns, SKU lifetime and allocation audit.',
   },
   {
     path: '/commerce',
     label: 'Commerce',
     title: 'PPE Commerce, Procurement & Fulfilment | SightLive',
-    description: 'Manage PPE catalogues, contract pricing, quotes, orders, payments, suppliers, purchase orders and fulfilment in SightLive.',
+    description: 'See the PPE purchasing pipeline, supplier performance, stock receipts, quality exceptions, customer orders, payments and dispatch in SightLive.',
   },
   {
     path: '/tenant-administration',
     label: 'Tenant administration',
-    title: 'Multi-Tenant PPE Administration & Governance | SightLive',
-    description: 'Give every company and site secure roles, branding, policies, audit trails and scoped access with SightLive tenant administration.',
+    title: 'PPE Eligibility, Roles and Allocation Governance | SightLive',
+    description: 'Manage companies, sites, employee and contractor access, department PPE eligibility, approvals, branding and POPIA-aligned audit controls.',
   },
   {
     path: '/pricing',
