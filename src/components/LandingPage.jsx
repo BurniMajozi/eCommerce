@@ -1,399 +1,144 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { MARKETING_ROUTES, marketingCanonical, marketingStructuredData, resolveMarketingRoute } from '../marketing/siteMap';
 
-// Public marketing front page shown before sign-in. Self-contained styling
-// (scoped .lp- classes + its own theme via prefers-color-scheme and a local
-// toggle) so it never fights the app shell. `onSignIn` reveals the LoginGate.
 const CSS = `
-.lp{--bg:#f6f4f0;--bg2:#eeeae3;--surface:#fff;--surface2:#f3efe9;--ink:#191b21;--ink2:#3d4048;--muted:#6b6f78;--line:#e2ddd4;--line2:#d3ccc0;--accent:#ec5c15;--accent-ink:#fff;--accent-weak:#fbe7d8;--steel:#3f6690;--hi:#63a80f;--grid:rgba(25,27,33,.045);--shadow:0 1px 2px rgba(20,16,10,.05),0 12px 34px -12px rgba(20,16,10,.14);
-  background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;line-height:1.55;min-height:100vh;-webkit-font-smoothing:antialiased}
-@media (prefers-color-scheme:dark){.lp:not([data-lp-theme="light"]){--bg:#0c0d10;--bg2:#101217;--surface:#15171d;--surface2:#1b1e25;--ink:#f4f1ea;--ink2:#c3c5cc;--muted:#8b8f99;--line:#262a33;--line2:#333844;--accent:#f5721a;--accent-ink:#140b03;--accent-weak:#2a1a0c;--steel:#7ba0c9;--hi:#b9f24a;--grid:rgba(255,255,255,.035);--shadow:0 24px 60px -24px rgba(0,0,0,.7)}}
-.lp[data-lp-theme="dark"]{--bg:#0c0d10;--bg2:#101217;--surface:#15171d;--surface2:#1b1e25;--ink:#f4f1ea;--ink2:#c3c5cc;--muted:#8b8f99;--line:#262a33;--line2:#333844;--accent:#f5721a;--accent-ink:#140b03;--accent-weak:#2a1a0c;--steel:#7ba0c9;--hi:#b9f24a;--grid:rgba(255,255,255,.035);--shadow:0 24px 60px -24px rgba(0,0,0,.7)}
-.lp *{box-sizing:border-box}
-.lp .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
-.lp a{color:inherit;text-decoration:none}
-.lp h1,.lp h2,.lp h3{margin:0;line-height:1.05;letter-spacing:-.02em}
-.lp p{margin:0}
-.lp .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
-.lp .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
-.lp .muted{color:var(--muted)}
-.lp .pill{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;padding:5px 11px;border:1px solid var(--line2);border-radius:999px;color:var(--ink2);background:var(--surface)}
-.lp .dot{width:7px;height:7px;border-radius:50%;background:var(--hi);box-shadow:0 0 0 3px color-mix(in srgb,var(--hi) 22%,transparent)}
-.lp .btn{display:inline-flex;align-items:center;gap:8px;font-weight:650;font-size:14.5px;padding:12px 20px;border-radius:11px;border:1px solid transparent;cursor:pointer;transition:transform .12s,background .15s;font-family:inherit}
-.lp .btn:active{transform:translateY(1px)}
-.lp .btn-primary{background:var(--accent);color:var(--accent-ink)}
-.lp .btn-primary:hover{background:color-mix(in srgb,var(--accent) 88%,#000)}
-.lp .btn-ghost{background:transparent;color:var(--ink);border-color:var(--line2)}
-.lp .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
-.lp nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);background:color-mix(in srgb,var(--bg) 82%,transparent);border-bottom:1px solid var(--line)}
-.lp .navrow{display:flex;align-items:center;justify-content:space-between;height:64px}
-.lp .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em;font-size:18px}
-.lp .logo{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:var(--accent);color:var(--accent-ink);flex:none}
-.lp .navlinks{display:flex;gap:26px;align-items:center;font-size:14px;font-weight:550;color:var(--ink2)}
-.lp .navlinks a{cursor:pointer}
-.lp .navlinks a:hover{color:var(--accent)}
-.lp .navactions{display:flex;gap:10px;align-items:center}
-.lp .icobtn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line2);background:var(--surface);display:grid;place-items:center;cursor:pointer;color:var(--ink2)}
-@media(max-width:820px){.lp .navlinks{display:none}}
-.lp .hero{position:relative;padding:72px 0 40px;overflow:hidden}
-.lp .hero::before{content:"";position:absolute;inset:0;z-index:0;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:34px 34px;-webkit-mask-image:radial-gradient(ellipse 90% 70% at 50% 0%,#000 30%,transparent 78%);mask-image:radial-gradient(ellipse 90% 70% at 50% 0%,#000 30%,transparent 78%)}
-.lp .hero-in{position:relative;z-index:1}
-.lp .h1{font-size:clamp(38px,6.4vw,72px);font-weight:830;letter-spacing:-.035em;margin-top:22px;text-wrap:balance}
-.lp .h1 .hl{color:var(--accent)}
-.lp .lead{font-size:clamp(16px,2.2vw,20px);color:var(--ink2);max-width:640px;margin-top:20px}
-.lp .herocta{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}
-.lp .trust{display:flex;gap:26px;flex-wrap:wrap;align-items:center;margin-top:44px;padding-top:22px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px;font-weight:600}
-.lp .trust b{color:var(--ink)}
-.lp .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:16px;overflow:hidden}
-.lp .stat{background:var(--surface);padding:22px 20px}
-.lp .stat .n{font-size:28px;font-weight:800;letter-spacing:-.03em}
-.lp .stat .l{font-size:12.5px;color:var(--muted);margin-top:3px}
-@media(max-width:720px){.lp .stats{grid-template-columns:repeat(2,1fr)}}
-.lp section{padding:74px 0}
-.lp .sec-head{max-width:680px;margin-bottom:40px}
-.lp .sec-head h2{font-size:clamp(27px,3.6vw,40px);font-weight:800;margin-top:12px;text-wrap:balance}
-.lp .sec-head p{color:var(--ink2);font-size:16.5px;margin-top:14px}
-.lp .caps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-@media(max-width:900px){.lp .caps{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:560px){.lp .caps{grid-template-columns:1fr}}
-.lp .cap{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px;transition:border-color .15s,transform .15s}
-.lp .cap:hover{border-color:var(--accent);transform:translateY(-2px)}
-.lp .cap .ic{width:40px;height:40px;border-radius:11px;background:var(--accent-weak);display:grid;place-items:center;margin-bottom:14px;font-size:20px}
-.lp .cap h3{font-size:16.5px;font-weight:720}
-.lp .cap p{color:var(--muted);font-size:13.8px;margin-top:7px}
-.lp .lenses{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-@media(max-width:900px){.lp .lenses{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:520px){.lp .lenses{grid-template-columns:1fr}}
-.lp .lens{border:1px solid var(--line);border-radius:14px;padding:20px;background:linear-gradient(180deg,var(--surface),var(--surface2))}
-.lp .lens .role{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
-.lp .lens h3{font-size:18px;margin-top:6px;font-weight:760}
-.lp .lens ul{margin:12px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
-.lp .lens li{font-size:13.5px;color:var(--ink2);display:flex;gap:9px;align-items:flex-start}
-.lp .lens li::before{content:"";width:6px;height:6px;border-radius:2px;background:var(--accent);margin-top:6px;flex:none}
-.lp .flowband{background:var(--surface2);border-block:1px solid var(--line)}
-.lp figure{margin:0}
-.lp .flowsvg{width:100%;height:auto;display:block}
-.lp figcaption{color:var(--muted);font-size:13px;margin-top:14px;text-align:center}
-.lp .billtoggle{display:inline-flex;background:var(--surface2);border:1px solid var(--line2);border-radius:999px;padding:4px;gap:2px;margin-top:18px}
-.lp .billtoggle button{border:none;background:transparent;color:var(--ink2);font-weight:650;font-size:13.5px;padding:8px 16px;border-radius:999px;cursor:pointer;font-family:inherit}
-.lp .billtoggle button.on{background:var(--accent);color:var(--accent-ink)}
-.lp .save{margin-left:9px;font-size:11.5px;font-weight:700;color:var(--hi)}
-.lp .tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:38px;align-items:start}
-@media(max-width:900px){.lp .tiers{grid-template-columns:1fr;max-width:460px;margin-inline:auto}}
-.lp .tier{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:26px;display:flex;flex-direction:column;gap:14px;position:relative}
-.lp .tier.feat{border-color:var(--accent);box-shadow:var(--shadow)}
-.lp .tier .tag{position:absolute;top:-11px;left:26px;background:var(--accent);color:var(--accent-ink);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:4px 11px;border-radius:999px}
-.lp .tier .who{font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
-.lp .tier.steel .who{color:var(--steel)}
-.lp .tier h3{font-size:22px;font-weight:800}
-.lp .tier .desc{color:var(--muted);font-size:13.5px;margin-top:-6px}
-.lp .price{display:flex;align-items:flex-end;gap:6px}
-.lp .price .amt{font-size:34px;font-weight:830;letter-spacing:-.03em}
-.lp .price .per{color:var(--muted);font-size:13px;padding-bottom:7px}
-.lp .price .strike{color:var(--muted);text-decoration:line-through;font-size:14px;font-weight:600;margin-left:2px;padding-bottom:8px}
-.lp .seatline{font-size:12.5px;color:var(--ink2);background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 11px;margin-top:-2px}
-.lp .seatline b{color:var(--accent)}
-.lp .tier ul{margin:2px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
-.lp .tier li{font-size:13.6px;color:var(--ink2);display:flex;gap:10px;align-items:flex-start;line-height:1.4}
-.lp .chk{flex:none;color:var(--accent);margin-top:1px;font-weight:800}
-.lp .tier.steel .chk{color:var(--steel)}
-.lp .tier .btn{width:100%;justify-content:center;margin-top:6px}
-.lp .tier.steel .btn-primary{background:var(--steel);color:#fff}
-.lp .addons{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-top:26px}
-.lp .addon{background:var(--surface);padding:18px}
-.lp .addon .t{font-weight:700;font-size:14px}
-.lp .addon .p{font-size:13px;color:var(--accent);font-weight:700;margin-top:4px}
-.lp .addon .d{font-size:12px;color:var(--muted);margin-top:6px}
-@media(max-width:820px){.lp .addons{grid-template-columns:repeat(2,1fr)}}
-.lp .faq{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
-@media(max-width:720px){.lp .faq{grid-template-columns:1fr}}
-.lp details{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:4px 18px}
-.lp summary{cursor:pointer;font-weight:650;font-size:15px;padding:15px 0;list-style:none;display:flex;justify-content:space-between;gap:12px;align-items:center}
-.lp summary::-webkit-details-marker{display:none}
-.lp summary::after{content:"+";color:var(--accent);font-size:20px;font-weight:700}
-.lp details[open] summary::after{content:"–"}
-.lp details p{color:var(--ink2);font-size:14px;padding:0 0 16px}
-.lp .final{position:relative;border-radius:24px;overflow:hidden;padding:56px 40px;text-align:center;background:radial-gradient(120% 140% at 50% 0%,color-mix(in srgb,var(--accent) 20%,var(--surface)) 0%,var(--surface) 60%);border:1px solid var(--line2)}
-.lp .final h2{font-size:clamp(28px,4vw,44px);font-weight:830}
-.lp .final p{color:var(--ink2);max-width:520px;margin:14px auto 0;font-size:16.5px}
-.lp footer{border-top:1px solid var(--line);padding:40px 0;color:var(--muted);font-size:13px}
-.lp .foot{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:center}
-.lp .disc{font-size:11.5px;color:var(--muted);max-width:760px;margin:26px auto 0;text-align:center;line-height:1.6}
+.lp{--bg:#f6f4f0;--bg2:#ece8e0;--surface:#fff;--surface2:#f2eee8;--ink:#181b21;--ink2:#3e424a;--muted:#6c717a;--line:#e1dcd3;--line2:#cec6ba;--accent:#ec5c15;--accent-ink:#fff;--accent-weak:#fbe5d6;--steel:#315f8c;--steel-weak:#e5edf5;--green:#5f930f;--grid:rgba(24,27,33,.045);--shadow:0 1px 2px rgba(20,16,10,.05),0 18px 44px -20px rgba(20,16,10,.2);background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.55;min-height:100vh;-webkit-font-smoothing:antialiased}
+@media(prefers-color-scheme:dark){.lp:not([data-lp-theme="light"]){--bg:#0c0d10;--bg2:#101217;--surface:#15171d;--surface2:#1b1e25;--ink:#f4f1ea;--ink2:#c3c5cc;--muted:#9297a2;--line:#282c35;--line2:#3a404c;--accent:#f5721a;--accent-ink:#160b03;--accent-weak:#2c1b0d;--steel:#82a9d0;--steel-weak:#172330;--green:#b9f24a;--grid:rgba(255,255,255,.035);--shadow:0 24px 60px -24px rgba(0,0,0,.75)}}
+.lp[data-lp-theme="dark"]{--bg:#0c0d10;--bg2:#101217;--surface:#15171d;--surface2:#1b1e25;--ink:#f4f1ea;--ink2:#c3c5cc;--muted:#9297a2;--line:#282c35;--line2:#3a404c;--accent:#f5721a;--accent-ink:#160b03;--accent-weak:#2c1b0d;--steel:#82a9d0;--steel-weak:#172330;--green:#b9f24a;--grid:rgba(255,255,255,.035);--shadow:0 24px 60px -24px rgba(0,0,0,.75)}
+.lp *{box-sizing:border-box}.lp a{color:inherit;text-decoration:none}.lp button{font:inherit}.lp h1,.lp h2,.lp h3{margin:0;line-height:1.06;letter-spacing:-.025em}.lp p{margin:0}.lp ul{margin:0;padding:0;list-style:none}.lp .wrap{width:min(1160px,calc(100% - 40px));margin-inline:auto}.lp .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}.lp .eyebrow{font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}.lp .muted{color:var(--muted)}
+.lp .marketing-nav{position:sticky;top:0;z-index:50;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(16px)}.lp .navrow{height:68px;display:flex;align-items:center;gap:26px}.lp .brand{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:830;letter-spacing:-.03em;white-space:nowrap}.lp .brand img{width:30px;height:30px}.lp .navlinks{display:flex;align-items:center;gap:5px;margin-left:auto}.lp .navlink{padding:8px 10px;border-radius:9px;color:var(--ink2);font-size:13.5px;font-weight:620}.lp .navlink:hover,.lp .navlink.active{background:var(--surface2);color:var(--accent)}.lp .navactions{display:flex;align-items:center;gap:8px}.lp .theme-btn,.lp .menu-btn{width:38px;height:38px;border:1px solid var(--line2);border-radius:10px;background:var(--surface);color:var(--ink2);cursor:pointer;display:grid;place-items:center}.lp .menu-btn{display:none}.lp .mobile-nav{display:none;border-top:1px solid var(--line);padding:10px 20px 16px;background:var(--bg)}.lp .mobile-nav.open{display:grid;gap:5px}
+.lp .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:11px;border:1px solid transparent;padding:11px 18px;font-weight:700;font-size:14px;cursor:pointer;transition:.15s ease}.lp .btn-primary{background:var(--accent);color:var(--accent-ink)}.lp .btn-primary:hover{transform:translateY(-1px);box-shadow:var(--shadow)}.lp .btn-ghost{background:var(--surface);border-color:var(--line2);color:var(--ink)}.lp .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+.lp .hero{position:relative;overflow:hidden;padding:86px 0 60px}.lp .hero:before{content:"";position:absolute;inset:0;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:34px 34px;mask-image:radial-gradient(ellipse 85% 75% at 50% 10%,#000 22%,transparent 75%)}.lp .hero-inner{position:relative;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr);gap:64px;align-items:center}.lp .hero-copy{position:relative;z-index:1}.lp .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 11px;border-radius:999px;border:1px solid var(--line2);background:var(--surface);color:var(--ink2);font-size:11.5px;font-weight:700}.lp .pill:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 20%,transparent)}.lp .h1{font-size:clamp(40px,6vw,72px);font-weight:850;margin-top:20px;text-wrap:balance}.lp .h1 .hl{color:var(--accent)}.lp .lead{font-size:clamp(16px,2vw,19px);color:var(--ink2);max-width:690px;margin-top:21px}.lp .hero-actions{display:flex;gap:11px;flex-wrap:wrap;margin-top:28px}.lp .trust{display:flex;gap:18px;flex-wrap:wrap;margin-top:32px;color:var(--muted);font-size:12px;font-weight:650}.lp .trust span{display:flex;align-items:center;gap:7px}.lp .trust span:before{content:"✓";color:var(--accent);font-weight:900}
+.lp .signal{position:relative;border:1px solid var(--line);background:linear-gradient(160deg,var(--surface),var(--surface2));border-radius:22px;padding:22px;box-shadow:var(--shadow)}.lp .signal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.lp .signal-head strong{font-size:13px}.lp .live{color:var(--green);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em}.lp .signal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.lp .signal-card{padding:15px;border-radius:13px;border:1px solid var(--line);background:var(--surface)}.lp .signal-card b{display:block;font-size:21px}.lp .signal-card span{font-size:11.5px;color:var(--muted)}.lp .signal-flow{margin-top:12px;padding:15px;border-radius:13px;background:var(--accent-weak);font-size:12px;color:var(--ink2)}.lp .signal-flow strong{color:var(--accent)}
+.lp .stats{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:17px;overflow:hidden;background:var(--line);gap:1px}.lp .stat{background:var(--surface);padding:21px}.lp .stat b{display:block;font-size:23px;letter-spacing:-.03em}.lp .stat span{display:block;margin-top:3px;font-size:12px;color:var(--muted)}
+.lp section{padding:78px 0}.lp .band{background:var(--bg2);border-block:1px solid var(--line)}.lp .section-head{max-width:720px;margin-bottom:36px}.lp .section-head.center{margin-inline:auto;text-align:center}.lp .section-head h2{font-size:clamp(29px,4vw,43px);font-weight:820;margin-top:10px;text-wrap:balance}.lp .section-head p{font-size:16px;color:var(--ink2);margin-top:14px}.lp .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.lp .card{border:1px solid var(--line);border-radius:17px;padding:23px;background:var(--surface)}.lp .card-icon{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;background:var(--accent-weak);font-size:19px;margin-bottom:15px}.lp .card h3{font-size:18px;font-weight:760}.lp .card p{font-size:13.5px;color:var(--muted);margin-top:8px}.lp .card ul{display:grid;gap:8px;margin-top:15px}.lp .card li{font-size:13px;color:var(--ink2);padding-left:16px;position:relative}.lp .card li:before{content:"";position:absolute;left:0;top:7px;width:6px;height:6px;border-radius:2px;background:var(--accent)}.lp .card-link{display:inline-flex;margin-top:18px;color:var(--accent);font-size:13px;font-weight:750}.lp .card-link:hover{text-decoration:underline}
+.lp .journey{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;counter-reset:journey}.lp .journey-step{counter-increment:journey;padding:22px;border-radius:16px;border:1px solid var(--line);background:var(--surface)}.lp .journey-step:before{content:"0" counter(journey);display:block;color:var(--accent);font-family:ui-monospace,monospace;font-size:12px;font-weight:800;margin-bottom:18px}.lp .journey-step h3{font-size:16px}.lp .journey-step p{font-size:13px;color:var(--muted);margin-top:7px}
+.lp .split{display:grid;grid-template-columns:1fr 1fr;gap:54px;align-items:start}.lp .benefits{display:grid;gap:12px}.lp .benefit{display:grid;grid-template-columns:38px 1fr;gap:13px;padding:17px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.lp .benefit .num{width:38px;height:38px;display:grid;place-items:center;border-radius:10px;background:var(--steel-weak);color:var(--steel);font-weight:800;font-size:12px}.lp .benefit h3{font-size:15px}.lp .benefit p{font-size:12.5px;color:var(--muted);margin-top:4px}.lp .callout{padding:28px;border-radius:19px;background:var(--ink);color:var(--bg)}.lp .callout h3{font-size:25px}.lp .callout p{color:color-mix(in srgb,var(--bg) 76%,transparent);margin-top:11px}.lp .callout .btn{margin-top:20px;background:var(--accent);color:var(--accent-ink)}
+.lp .tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:start}.lp .tier{border:1px solid var(--line);border-radius:20px;background:var(--surface);padding:26px;position:relative;display:flex;flex-direction:column;gap:14px}.lp .tier.featured{border-color:var(--accent);box-shadow:var(--shadow)}.lp .tier .tag{position:absolute;top:-11px;left:25px;background:var(--accent);color:var(--accent-ink);padding:4px 10px;border-radius:999px;font-size:10px;font-weight:850;letter-spacing:.1em;text-transform:uppercase}.lp .tier .who{color:var(--accent);font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.14em}.lp .tier h3{font-size:23px}.lp .tier .desc{font-size:13px;color:var(--muted);min-height:42px}.lp .price{display:flex;align-items:end;gap:6px}.lp .price b{font-size:32px;letter-spacing:-.04em}.lp .price span{font-size:12px;color:var(--muted);padding-bottom:6px}.lp .seatline{padding:9px 10px;border-radius:9px;background:var(--surface2);border:1px solid var(--line);font-size:12px;color:var(--ink2)}.lp .seatline b{color:var(--accent)}.lp .tier ul{display:grid;gap:9px}.lp .tier li{font-size:13px;color:var(--ink2);display:flex;gap:9px}.lp .tier li:before{content:"✓";color:var(--accent);font-weight:900}.lp .tier .btn{width:100%;margin-top:5px}.lp .fee-note{margin-top:24px;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--surface2);font-size:12.5px;color:var(--ink2);text-align:center}
+.lp .faq{display:grid;grid-template-columns:1fr 1fr;gap:12px}.lp details{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:3px 17px}.lp summary{cursor:pointer;padding:15px 0;font-weight:700;font-size:14px;list-style:none}.lp summary:after{content:"+";float:right;color:var(--accent);font-size:18px}.lp details[open] summary:after{content:"–"}.lp details p{padding:0 0 15px;color:var(--muted);font-size:13px}.lp .final{padding:56px 40px;border:1px solid var(--line2);border-radius:24px;text-align:center;background:radial-gradient(100% 170% at 50% 0%,color-mix(in srgb,var(--accent) 22%,var(--surface)),var(--surface) 65%)}.lp .final h2{font-size:clamp(29px,4vw,44px)}.lp .final p{max-width:590px;margin:13px auto 0;color:var(--ink2)}.lp .final .hero-actions{justify-content:center;margin-top:22px}.lp footer{padding:38px 0;border-top:1px solid var(--line);color:var(--muted);font-size:12px}.lp .foot{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}.lp .footlinks{display:flex;gap:17px;flex-wrap:wrap}.lp .footlinks a:hover{color:var(--accent)}
+@media(max-width:940px){.lp .hero-inner{grid-template-columns:1fr;gap:34px}.lp .signal{max-width:620px}.lp .cards{grid-template-columns:repeat(2,1fr)}.lp .journey{grid-template-columns:repeat(2,1fr)}.lp .split{gap:28px}.lp .navlinks{display:none}.lp .menu-btn{display:grid}.lp .navrow{gap:10px}.lp .navactions{margin-left:auto}}
+@media(max-width:700px){.lp .wrap{width:min(100% - 28px,1160px)}.lp .hero{padding:58px 0 40px}.lp .h1{font-size:clamp(36px,12vw,53px)}.lp section{padding:58px 0}.lp .stats{grid-template-columns:1fr 1fr}.lp .cards,.lp .split,.lp .tiers,.lp .faq{grid-template-columns:1fr}.lp .journey{grid-template-columns:1fr}.lp .navactions>.btn-ghost{display:none}.lp .navrow .btn{padding:9px 12px}.lp .final{padding:40px 20px}.lp .tier .desc{min-height:auto}}
+@media(max-width:420px){.lp .brand{font-size:16px}.lp .theme-btn{display:none}.lp .stats{grid-template-columns:1fr}.lp .signal-grid{grid-template-columns:1fr}}
 `;
 
-const EYE = (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" stroke="currentColor" strokeWidth="2"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
-);
-
-const CAPS = [
-  ['🦺', 'Worker PPE requests', "Browse the approved catalogue, raise a request with a photo, and track custody — who holds what and when it's due for replacement."],
-  ['✍️', 'Approvals with signature', 'Value, repeat-issue and non-standard rules force a manager co-sign. A captured signature lands on the issue record — tier-1 and tier-2.'],
-  ['📋', 'Entitlement engine', 'Role gets X per cycle. Requests auto-approve within quota or escalate over it — separation of duties enforced in the backend.'],
-  ['📦', 'Live multi-location inventory', 'On-hand, reserved, in-transit and days-of-cover per store. Receiving a purchase order writes stock straight into inventory.'],
-  ['🛒', 'B2B commerce', 'Quote to real order, priced server-side from contract pricing. Customers, spend-vs-limit tracking and PDF invoices out of the box.'],
-  ['🚚', 'Purchase orders + receipting', 'Raise a PO to a supplier, route it for manager approval and signature, print or email it, then receive it to increment stock.'],
-  ['🏷️', 'Promotions & margin control', 'Mark a product down by type — markdown, new line, upgrade, focus — and watch the cost basis and margin recalculate on the stock tables.'],
-  ['📊', 'Reports & dashboards', 'Mine stock valuation, departmental consumption vs entitlement, employee issue registers — exportable to CSV and print-ready PDF.'],
-  ['🔐', 'Tenancy, roles & MFA', 'Every site is isolated. Capabilities gate every screen and write; privileged actions demand step-up MFA. Provision users in-app.'],
-];
-
-const LENSES = [
-  ['The worker', 'Request & carry', ['Raise a PPE request in seconds', 'See entitlement left this cycle', 'Track gear in custody & replacement dates']],
-  ['The manager', 'Approve & sign', ['Queue of requests & purchase orders', 'Co-sign with a captured signature', 'Approval history & separation of duties']],
-  ['The merchant', 'Sell & restock', ['B2B orders, invoices, customer limits', 'Suppliers, purchase orders, receipting', 'Promotions & live margin control']],
-  ['The group', 'See & govern', ['Consolidated valuation & spend', 'Tenant & user provisioning', 'Audit trail, branding, policy']],
-];
+const FEATURES = {
+  operations: [
+    ['🦺', 'Request and entitlement control', 'Workers request approved PPE against role, department and replacement-cycle rules.', ['Photo-supported requests', 'Quota and exception handling', 'Custody and replacement dates']],
+    ['✍️', 'Approvals with accountability', 'Route exceptions and high-value requests to the right manager with captured signatures.', ['Tier-one and tier-two approvals', 'Separation of duties', 'Decision history']],
+    ['📦', 'Inventory and store execution', 'Give store teams a live view of stock, reservations, receipts, issues and replenishment.', ['Multi-location quantities', 'Inbound and outbound fulfilment', 'Low-stock and cover signals']],
+    ['📊', 'Operational intelligence', 'Track consumption, stock value, fulfilment and supplier performance by site.', ['Searchable live tables', 'CSV and print-ready reports', 'Role-aware dashboards']],
+    ['🔁', 'Controlled replenishment', 'Raise, approve and receive purchase orders without re-keying the stock ledger.', ['Supplier purchase orders', 'Goods receiving', 'Stock-on-hand updates']],
+    ['🛡️', 'Safe workwear custody', 'Know what was issued, to whom, under which approval, and when replacement is due.', ['Employee issue register', 'Return and replacement context', 'Auditable history']],
+  ],
+  commerce: [
+    ['🏷️', 'Catalogue and contract pricing', 'Manage PPE products, variants, customer pricing and controlled promotions.', ['Size and colour variants', 'CSV validation workflow', 'Private cost and margin views']],
+    ['🛒', 'Quotes, orders and invoices', 'Move from customer intent to a priced order and printable commercial document.', ['B2B customer records', 'Quote-to-order flow', 'PDF invoices and statements']],
+    ['💳', 'Payment journey', 'Initiate and verify hosted Paystack payments without exposing secret keys to the browser.', ['Server-created transactions', 'Payment verification', 'Reference and status tracking']],
+    ['🚚', 'Fulfilment', 'Coordinate inbound supplier receipts and outbound customer commitments from one workspace.', ['Open purchase orders', 'Outbound fulfilment queue', 'Pickup and delivery status']],
+    ['🤝', 'Supplier management', 'Compare delivery, fill-rate, quality and price performance using protected cost data.', ['Supplier register', 'Performance scorecards', 'Purchase history']],
+    ['📈', 'Protected profitability', 'Give authorised commerce managers server-calculated cost, profit and margin insights.', ['Capability protected', 'MFA step-up required', 'Excluded from buyer views']],
+  ],
+  tenant: [
+    ['🏢', 'Companies and sites', 'Model each customer company as a tenant with plants and stores scoped underneath it.', ['Multi-site hierarchy', 'Active-site selection', 'Group-level roll-ups']],
+    ['👥', 'Users, roles and invitations', 'Provision people into the least-privilege role required for their work.', ['Membership lifecycle', 'Role and capability matrix', 'Invitation workflow']],
+    ['🎨', 'White-label experience', 'Apply each tenant’s name, logo and accent while retaining the SightLive platform foundation.', ['Tenant branding', 'Branded sign-in experience', 'Feature configuration']],
+    ['🔐', 'Tenant-safe access', 'Keep company and site scope immutable after the server verifies a Supabase identity.', ['JWT verification', 'Mandatory tenant scope', 'Row-level security']],
+    ['🧾', 'Audit and governance', 'Record sensitive decisions and administrative changes for review and export.', ['MFA-protected audit reads', 'Actor and scope metadata', 'Search and CSV export']],
+    ['⚙️', 'Policy and entitlements', 'Configure PPE allowances, approval thresholds and modules for each operating context.', ['Role-based entitlements', 'Approval thresholds', 'Feature flags']],
+  ],
+};
 
 const FAQ = [
-  ['Why is Plant priced per user?', 'The platform bills on usage, so a plant with thousands of workers drives more compute, storage and traffic than a small one. The base covers up to 200 users; beyond that, tiered active-seat pricing keeps your plan predictable as you scale.'],
-  ['Can one company run several plants?', "That's the Group tier. Each plant is an isolated site with its own stock, users and approvals, rolled up into consolidated valuation and spend for the group."],
-  ['Can SightLive run in our own environment?', 'Yes. SightLive can be deployed in the cloud or in your local environment, subject to an infrastructure and security assessment.'],
-  ['Do workers need logins?', 'Workers are provisioned in-app by a tenant admin and only see the Request & custody views. Privileged roles use step-up MFA.'],
-  ['Is our data isolated?', 'Every tenant is scoped at the database with row-level security, and every screen and write is capability-gated. Group audit exports are available on Enterprise.'],
-  ['Can we import our catalogue?', 'Yes — CSV import with a downloadable template and a dry-run validation, plus per-product photo upload for the storefront and issue records.'],
-  ['What does onboarding look like?', 'Merchant and Plant self-serve. Group gets dedicated onboarding, data migration help and an SLA with a named success manager.'],
+  ['Can SightLive run in our own environment?', 'Yes. SightLive supports managed cloud or deployment in a customer-controlled local environment, subject to infrastructure and security assessment.'],
+  ['Can one company operate several plants?', 'Yes. Sites and plants sit beneath a customer tenant, with site-scoped operations and consolidated group reporting.'],
+  ['How is sensitive cost and margin data protected?', 'Profitability is calculated server-side and requires an authorised commerce-management capability plus multi-factor authentication.'],
+  ['Can we bring our existing product catalogue?', 'A CSV template and validation-first import workflow are available so teams can correct errors before committing products.'],
 ];
 
+const PRICING = [
+  { who: 'PPE supplier or store', name: 'Merchant', price: 'R990', per: '/ month', desc: 'Commerce, customers, procurement and fulfilment for a focused team.', seat: 'Includes up to 5 commerce users', items: ['B2B catalogue and contract pricing', 'Quotes, orders and invoices', 'Suppliers, purchase orders and receiving', 'Promotions and controlled margin views'] },
+  { who: 'Single plant or site', name: 'Plant', price: 'R5,900', per: '/ month', desc: 'The complete PPE control loop for one operating site.', seat: 'plant', items: ['Everything in Merchant', 'Requests, entitlements and approvals', 'Store issue desk and custody register', 'Inventory dashboards and operational reports'], featured: true },
+  { who: 'Enterprise group', name: 'Group', price: 'From R24,900', per: '/ month', desc: 'Multi-site governance, reporting and rollout support for a group.', seat: 'enterprise', items: ['Everything in Plant across sites', 'Consolidated valuation and spend', 'SSO/SAML and custom policy options', 'White-label branding, audit exports and SLA'] },
+];
+
+const setMeta = (selector, attributes) => {
+  let element = document.head.querySelector(selector);
+  if (!element) { element = document.createElement(attributes.tag || 'meta'); document.head.appendChild(element); }
+  Object.entries(attributes).forEach(([key, value]) => { if (key !== 'tag') element.setAttribute(key, value); });
+};
+
+const useMarketingSeo = (route) => {
+  useEffect(() => {
+    document.title = route.title;
+    const canonical = marketingCanonical(route.path);
+    setMeta('meta[name="description"]', { name: 'description', content: route.description });
+    setMeta('meta[name="robots"]', { name: 'robots', content: 'index,follow,max-image-preview:large' });
+    setMeta('meta[property="og:title"]', { property: 'og:title', content: route.title });
+    setMeta('meta[property="og:description"]', { property: 'og:description', content: route.description });
+    setMeta('meta[property="og:type"]', { property: 'og:type', content: 'website' });
+    setMeta('meta[property="og:url"]', { property: 'og:url', content: canonical });
+    setMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary' });
+    setMeta('link[rel="canonical"]', { tag: 'link', rel: 'canonical', href: canonical });
+    let jsonLd = document.head.querySelector('#sightlive-structured-data');
+    if (!jsonLd) { jsonLd = document.createElement('script'); jsonLd.id = 'sightlive-structured-data'; jsonLd.type = 'application/ld+json'; document.head.appendChild(jsonLd); }
+    jsonLd.textContent = JSON.stringify(marketingStructuredData(route));
+  }, [route]);
+};
+
+const MarketingLink = ({ to, className, children, onNavigate }) => {
+  const href = to === '/' ? '/' : `${to.replace(/\/$/, '')}/`;
+  return <a href={href} className={className} onClick={(event) => {
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault(); window.history.pushState({}, '', href); window.dispatchEvent(new PopStateEvent('popstate')); onNavigate?.();
+  }}>{children}</a>;
+};
+
+const FeatureGrid = ({ items }) => <div className="cards">{items.map(([icon, title, description, bullets]) => <article className="card" key={title}><div className="card-icon" aria-hidden="true">{icon}</div><h3>{title}</h3><p>{description}</p><ul>{bullets.map((item) => <li key={item}>{item}</li>)}</ul></article>)}</div>;
+
+const PageHero = ({ eyebrow, title, highlight, lead, children }) => <header className="hero"><div className="wrap hero-inner"><div className="hero-copy"><span className="pill">{eyebrow}</span><h1 className="h1">{title} <span className="hl">{highlight}</span></h1><p className="lead">{lead}</p>{children}</div><div className="signal" aria-label="SightLive platform capability summary"><div className="signal-head"><strong>One tenant-safe operating picture</strong><span className="live">● Live</span></div><div className="signal-grid"><div className="signal-card"><b>1 loop</b><span>request to replenishment</span></div><div className="signal-card"><b>3 scopes</b><span>platform · tenant · site</span></div><div className="signal-card"><b>MFA</b><span>for privileged actions</span></div><div className="signal-card"><b>Live</b><span>stock, spend and status</span></div></div><div className="signal-flow"><strong>Operations</strong> updates stock → <strong>Commerce</strong> replenishes it → <strong>Administration</strong> governs access.</div></div></div></header>;
+
+const CTA = ({ onSignIn, title = 'Bring the whole PPE lifecycle into one operating system.' }) => <section><div className="wrap"><div className="final"><span className="eyebrow">Ready for the next shift</span><h2>{title}</h2><p>Start with one team or site, then expand into multi-site control without losing tenant isolation.</p><div className="hero-actions"><button className="btn btn-primary" onClick={onSignIn}>Sign in to SightLive</button><MarketingLink className="btn btn-ghost" to="/pricing">View pricing</MarketingLink></div></div></div></section>;
+
+const HomePage = ({ onSignIn }) => <>
+  <PageHero eyebrow="PPE control · shaft to boardroom" title="Operations, commerce and governance." highlight="One live platform." lead="SightLive connects worker PPE requests, approvals, store inventory, procurement, B2B sales and tenant administration without duplicating the stock ledger."><div className="hero-actions"><button className="btn btn-primary" onClick={onSignIn}>Sign in to the platform</button><MarketingLink className="btn btn-ghost" to="/operations">Explore capabilities →</MarketingLink></div><div className="trust"><span>Multi-tenant by design</span><span>Cloud or local deployment</span><span>Role-based access with MFA</span></div></PageHero>
+  <div className="wrap"><div className="stats"><div className="stat"><b>Request → issue</b><span>Entitlements, approvals and custody</span></div><div className="stat"><b>Buy → receive</b><span>Suppliers, POs and inbound stock</span></div><div className="stat"><b>Quote → paid</b><span>B2B orders, invoices and payments</span></div><div className="stat"><b>Tenant → site</b><span>Scoped roles, branding and audit</span></div></div></div>
+  <section><div className="wrap"><div className="section-head"><span className="eyebrow">One platform, three outcomes</span><h2>Every capability has a clear business home.</h2><p>Teams see the workflow that matches their role while authorised leaders retain a governed view across sites.</p></div><div className="cards"><article className="card"><div className="card-icon">⚙️</div><h3>Operations</h3><p>Protect workers, control entitlements and keep store inventory accountable.</p><MarketingLink className="card-link" to="/operations">Explore operations →</MarketingLink></article><article className="card"><div className="card-icon">🛒</div><h3>Commerce</h3><p>Run catalogue, pricing, orders, payments, procurement and fulfilment.</p><MarketingLink className="card-link" to="/commerce">Explore commerce →</MarketingLink></article><article className="card"><div className="card-icon">🏢</div><h3>Tenant administration</h3><p>Govern companies, sites, users, roles, branding, policies and audit.</p><MarketingLink className="card-link" to="/tenant-administration">Explore administration →</MarketingLink></article></div></div></section>
+  <section className="band"><div className="wrap"><div className="section-head center"><span className="eyebrow">Connected workflow</span><h2>One stock ledger from issue to replenishment.</h2><p>An internal PPE issue and an external supplier receipt update the same scoped inventory picture.</p></div><div className="journey"><div className="journey-step"><h3>Request</h3><p>A worker requests PPE within role and replacement rules.</p></div><div className="journey-step"><h3>Approve and issue</h3><p>Exceptions are signed off and the store records custody.</p></div><div className="journey-step"><h3>Replenish</h3><p>Low stock becomes an approved supplier purchase order.</p></div><div className="journey-step"><h3>Measure</h3><p>Stock, spend and performance roll up by site and tenant.</p></div></div></div></section>
+  <CTA onSignIn={onSignIn} />
+</>;
+
+const CapabilityPage = ({ type, eyebrow, title, highlight, lead, benefits, callout, onSignIn }) => <>
+  <PageHero eyebrow={eyebrow} title={title} highlight={highlight} lead={lead}><div className="hero-actions"><button className="btn btn-primary" onClick={onSignIn}>Open the platform</button><MarketingLink className="btn btn-ghost" to="/pricing">See pricing →</MarketingLink></div></PageHero>
+  <section><div className="wrap"><div className="section-head"><span className="eyebrow">Capabilities</span><h2>Built around the work, not the spreadsheet.</h2><p>Each workflow is scoped to the right company, site and role.</p></div><FeatureGrid items={FEATURES[type]} /></div></section>
+  <section className="band"><div className="wrap split"><div><div className="section-head"><span className="eyebrow">Benefits</span><h2>{callout}</h2><p>Operational clarity comes from connecting decisions, transactions and accountability.</p></div><div className="callout"><h3>Cloud or local.</h3><p>Deploy SightLive as a managed cloud platform or into a customer-controlled environment following infrastructure and security assessment.</p><MarketingLink className="btn" to="/pricing">Compare plans</MarketingLink></div></div><div className="benefits">{benefits.map(([benefitTitle, text], index) => <div className="benefit" key={benefitTitle}><div className="num">0{index + 1}</div><div><h3>{benefitTitle}</h3><p>{text}</p></div></div>)}</div></div></section>
+  <CTA onSignIn={onSignIn} />
+</>;
+
+const PricingPage = ({ onSignIn }) => <>
+  <PageHero eyebrow="Transparent platform pricing" title="Scale from R250 to" highlight="R150 per active seat." lead="Choose a focused commerce plan, a full single-site PPE operation, or enterprise multi-site control. All prices are in South African Rand and exclude VAT."><div className="hero-actions"><button className="btn btn-primary" onClick={onSignIn}>Get started</button><MarketingLink className="btn btn-ghost" to="/tenant-administration">See tenant controls →</MarketingLink></div></PageHero>
+  <section><div className="wrap"><div className="section-head center"><span className="eyebrow">Plans</span><h2>Start where you are. Keep the same operating model as you grow.</h2></div><div className="tiers">{PRICING.map((tier) => <article className={`tier${tier.featured ? ' featured' : ''}`} key={tier.name}>{tier.featured && <span className="tag">Most popular</span>}<div className="who">{tier.who}</div><h3>{tier.name}</h3><p className="desc">{tier.desc}</p><div className="price"><b className="mono">{tier.price}</b><span>{tier.per}</span></div><div className="seatline">{tier.seat === 'plant' ? <>Includes 200 users, then <b>R250</b> / active seat / month</> : tier.seat === 'enterprise' ? <>Enterprise volume from <b>R150</b> / active seat / month</> : tier.seat}</div><ul>{tier.items.map((item) => <li key={item}>{item}</li>)}</ul><button className={tier.featured ? 'btn btn-primary' : 'btn btn-ghost'} onClick={onSignIn}>{tier.name === 'Group' ? 'Talk to sales' : `Start with ${tier.name}`}</button></article>)}</div><div className="fee-note"><strong>Important:</strong> Prices exclude VAT, setup, change request and maintenance fees. Deployment may be managed cloud or local/customer-controlled; infrastructure, migration, integration and security requirements are scoped separately.</div></div></section>
+  <section className="band"><div className="wrap"><div className="section-head"><span className="eyebrow">Practical questions</span><h2>What to know before rollout.</h2></div><div className="faq">{FAQ.map(([question, answer]) => <details key={question}><summary>{question}</summary><p>{answer}</p></details>)}</div></div></section>
+  <CTA onSignIn={onSignIn} title="Choose the SightLive footprint that fits your operation." />
+</>;
+
+const PAGE_PROPS = {
+  '/operations': { type: 'operations', eyebrow: 'Operations · protect and control', title: 'From worker request to', highlight: 'accountable issue.', lead: 'Digitise entitlements, approvals, store issuing, custody, inventory, replenishment and operational reporting across every PPE location.', callout: 'Fewer blind spots from request to replacement.', benefits: [['Give workers a simple path', 'Approved items, entitlement balance and request status stay easy to understand.'], ['Help stores move faster', 'Store teams see the queue, stock context and custody record in one place.'], ['Make approvals defensible', 'Thresholds, signatures and separation of duties preserve decision history.'], ['See risk before it becomes downtime', 'Low stock, consumption and supplier signals help teams act earlier.']] },
+  '/commerce': { type: 'commerce', eyebrow: 'Commerce · sell and replenish', title: 'From catalogue to', highlight: 'payment and fulfilment.', lead: 'Connect customer pricing, quotes, orders, hosted payments, supplier procurement and fulfilment while keeping cost and margin data protected.', callout: 'Commercial control without exposing private economics.', benefits: [['Serve contract customers', 'Customer-specific catalogue and pricing support a dependable B2B buying experience.'], ['Keep payments server-controlled', 'Paystack initiation and verification stay behind backend endpoints.'], ['Connect inbound and outbound work', 'Open purchase orders and customer fulfilment share the same operational context.'], ['Protect profitability', 'Cost and margin remain capability-protected and require MFA.']] },
+  '/tenant-administration': { type: 'tenant', eyebrow: 'Tenant administration · govern and scale', title: 'Every company and site gets', highlight: 'the right boundaries.', lead: 'Manage tenants, plants, memberships, roles, branding, entitlements, feature configuration and audit without weakening global platform ownership.', callout: 'White-label flexibility with tenant-safe control.', benefits: [['Onboard companies cleanly', 'A tenant represents the customer company; plants and stores remain subordinate sites.'], ['Apply least privilege', 'People receive only the capabilities required for their assigned work.'], ['Keep each brand recognisable', 'Tenant identity and accents carry into the customer experience.'], ['Retain platform governance', 'Global ownership remains separate from tenant-specific membership and commerce access.']] },
+};
+
 export const LandingPage = ({ onSignIn }) => {
-  const [annual, setAnnual] = useState(true);
-  const [dark, setDark] = useState(null); // null = follow system
+  const [dark, setDark] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [route, setRoute] = useState(() => resolveMarketingRoute(window.location.pathname));
+  useMarketingSeo(route);
 
-  const merchant = annual ? 'R990' : 'R1,190';
-  const plant = annual ? 'R5,900' : 'R6,900';
+  useEffect(() => {
+    const handleRoute = () => { setRoute(resolveMarketingRoute(window.location.pathname)); setMenuOpen(false); window.scrollTo({ top: 0, behavior: 'instant' }); };
+    window.addEventListener('popstate', handleRoute);
+    return () => window.removeEventListener('popstate', handleRoute);
+  }, []);
 
-  return (
-    <div className="lp" data-lp-theme={dark === null ? undefined : dark ? 'dark' : 'light'}>
-      <style>{CSS}</style>
-
-      <nav>
-        <div className="wrap navrow">
-          <div className="brand"><span className="logo" aria-hidden="true">{EYE}</span>SightLive</div>
-          <div className="navlinks">
-            <a href="#capabilities">Platform</a>
-            <a href="#lenses">Who it's for</a>
-            <a href="#flow">How it works</a>
-            <a href="#pricing">Pricing</a>
-          </div>
-          <div className="navactions">
-            <button className="icobtn" title="Toggle theme" aria-label="Toggle theme"
-              onClick={() => setDark((d) => (d === null ? !window.matchMedia('(prefers-color-scheme: dark)').matches : !d))}>
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8"/></svg>
-            </button>
-            <button className="btn btn-ghost" onClick={onSignIn}>Sign in</button>
-            <button className="btn btn-primary" onClick={onSignIn}>Get started</button>
-          </div>
-        </div>
-      </nav>
-
-      <header className="hero">
-        <div className="wrap hero-in">
-          <span className="pill"><span className="dot"></span> Live PPE stock control · shaft to boardroom</span>
-          <h1 className="h1">The PPE supply chain for<br /><span className="hl">African mining</span>, in one system.</h1>
-          <p className="lead">SightLive runs the whole loop — a worker requests safety gear, a manager co-signs, the store issues it, stock decrements, and the merchant restocks through B2B orders and purchase orders. Entitlements, approvals with signature, live inventory and group-level reporting, on one multi-tenant platform.</p>
-          <div className="herocta">
-            <button className="btn btn-primary" onClick={onSignIn}>Sign in to the platform</button>
-            <a className="btn btn-ghost" href="#pricing">See pricing →</a>
-          </div>
-          <div className="trust">
-            <span>Built for <b>coal · iron ore · platinum · uranium</b> operations</span>
-            <span><b>MFA</b> + role-based access</span>
-            <span><b>POPIA</b>-minded audit trail</span>
-          </div>
-        </div>
-      </header>
-
-      <div className="wrap">
-        <div className="stats">
-          <div className="stat"><div className="n">1 loop</div><div className="l">request → approve → issue → restock</div></div>
-          <div className="stat"><div className="n">4 roles</div><div className="l">worker · manager · merchant · owner</div></div>
-          <div className="stat"><div className="n">Live</div><div className="l">inventory + spend, per site</div></div>
-          <div className="stat"><div className="n">Multi-site</div><div className="l">group roll-up reporting</div></div>
-        </div>
-      </div>
-
-      <section id="capabilities">
-        <div className="wrap">
-          <div className="sec-head">
-            <span className="eyebrow">The platform</span>
-            <h2>Everything the store, the shaft and the buyer need — in one place.</h2>
-            <p>No spreadsheets, no WhatsApp approvals, no “who has the boots.” Each capability is live, auditable, and scoped to the right person.</p>
-          </div>
-          <div className="caps">
-            {CAPS.map(([ic, h, p]) => (
-              <div className="cap" key={h}><div className="ic">{ic}</div><h3>{h}</h3><p>{p}</p></div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="lenses" style={{ paddingTop: 0 }}>
-        <div className="wrap">
-          <div className="sec-head">
-            <span className="eyebrow">Who it's for</span>
-            <h2>One platform, four lenses.</h2>
-            <p>The same live data, shown to each person exactly as their job needs it — nothing they shouldn't see.</p>
-          </div>
-          <div className="lenses">
-            {LENSES.map(([role, h, items]) => (
-              <div className="lens" key={h}><div className="role">{role}</div><h3>{h}</h3>
-                <ul>{items.map((i) => <li key={i}>{i}</li>)}</ul>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <div className="flowband" id="flow">
-        <section>
-          <div className="wrap">
-            <div className="sec-head" style={{ marginInline: 'auto', textAlign: 'center' }}>
-              <span className="eyebrow">How it works</span>
-              <h2>Two flows, one ledger of stock.</h2>
-              <p style={{ marginInline: 'auto' }}>Internal issue and external procurement both move the same live inventory — nothing is double-keyed.</p>
-            </div>
-            <figure>
-              <svg className="flowsvg" viewBox="0 0 960 260" role="img" aria-label="Internal PPE issue flow and commerce procurement flow both updating one live stock ledger">
-                <defs>
-                  <marker id="lar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="var(--accent)"/></marker>
-                  <marker id="lars" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="var(--steel)"/></marker>
-                </defs>
-                <text x="12" y="46" fill="var(--muted)" fontSize="11" fontWeight="700" letterSpacing="1.5" fontFamily="ui-sans-serif,system-ui">INTERNAL · ISSUE</text>
-                <text x="12" y="196" fill="var(--muted)" fontSize="11" fontWeight="700" letterSpacing="1.5" fontFamily="ui-sans-serif,system-ui">COMMERCE · PROCURE</text>
-                <g fontFamily="ui-sans-serif,system-ui" fontSize="13" fontWeight="650">
-                  <g><rect x="12" y="58" width="150" height="46" rx="10" fill="var(--surface)" stroke="var(--line2)"/><text x="87" y="86" textAnchor="middle" fill="var(--ink)">Worker request</text></g>
-                  <line x1="168" y1="81" x2="212" y2="81" stroke="var(--accent)" strokeWidth="2" markerEnd="url(#lar)"/>
-                  <g><rect x="218" y="58" width="160" height="46" rx="10" fill="var(--surface)" stroke="var(--line2)"/><text x="298" y="86" textAnchor="middle" fill="var(--ink)">Manager co-sign</text></g>
-                  <line x1="384" y1="81" x2="428" y2="81" stroke="var(--accent)" strokeWidth="2" markerEnd="url(#lar)"/>
-                  <g><rect x="434" y="58" width="150" height="46" rx="10" fill="var(--surface)" stroke="var(--line2)"/><text x="509" y="86" textAnchor="middle" fill="var(--ink)">Store issues</text></g>
-                  <line x1="590" y1="81" x2="640" y2="105" stroke="var(--accent)" strokeWidth="2" markerEnd="url(#lar)"/>
-                </g>
-                <g><rect x="648" y="86" width="200" height="88" rx="14" fill="var(--accent-weak)" stroke="var(--accent)"/>
-                  <text x="748" y="123" textAnchor="middle" fill="var(--accent)" fontFamily="ui-sans-serif,system-ui" fontSize="13" fontWeight="800" letterSpacing="1">LIVE STOCK</text>
-                  <text x="748" y="145" textAnchor="middle" fill="var(--ink2)" fontFamily="ui-sans-serif,system-ui" fontSize="11.5">on-hand · reserved · cover</text></g>
-                <g fontFamily="ui-sans-serif,system-ui" fontSize="13" fontWeight="650">
-                  <g><rect x="12" y="156" width="150" height="46" rx="10" fill="var(--surface)" stroke="var(--line2)"/><text x="87" y="184" textAnchor="middle" fill="var(--ink)">Raise PO</text></g>
-                  <line x1="168" y1="179" x2="212" y2="179" stroke="var(--steel)" strokeWidth="2" markerEnd="url(#lars)"/>
-                  <g><rect x="218" y="156" width="160" height="46" rx="10" fill="var(--surface)" stroke="var(--line2)"/><text x="298" y="184" textAnchor="middle" fill="var(--ink)">Approve &amp; sign</text></g>
-                  <line x1="384" y1="179" x2="428" y2="179" stroke="var(--steel)" strokeWidth="2" markerEnd="url(#lars)"/>
-                  <g><rect x="434" y="156" width="150" height="46" rx="10" fill="var(--surface)" stroke="var(--line2)"/><text x="509" y="184" textAnchor="middle" fill="var(--ink)">Receive stock</text></g>
-                  <line x1="590" y1="179" x2="640" y2="150" stroke="var(--steel)" strokeWidth="2" markerEnd="url(#lars)"/>
-                </g>
-              </svg>
-              <figcaption>Every issue and every receipt writes the same inventory — so valuation, cover and spend are always one number.</figcaption>
-            </figure>
-          </div>
-        </section>
-      </div>
-
-      <section id="pricing">
-        <div className="wrap">
-          <div className="sec-head" style={{ marginInline: 'auto', textAlign: 'center' }}>
-            <span className="eyebrow">Pricing</span>
-            <h2>Priced for the merchant, the plant and the group.</h2>
-            <p style={{ marginInline: 'auto' }}>Start with one site, roll up to a whole group. Prices in ZAR, excl. VAT. Annual billing saves ~17%.</p>
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <div className="billtoggle" role="tablist" aria-label="Billing period">
-                <button className={annual ? 'on' : ''} onClick={() => setAnnual(true)}>Annual <span className="save">–17%</span></button>
-                <button className={annual ? '' : 'on'} onClick={() => setAnnual(false)}>Monthly</button>
-              </div>
-            </div>
-          </div>
-
-          <div className="tiers">
-            <div className="tier">
-              <div className="who">Merchant</div>
-              <h3>Merchant</h3>
-              <p className="desc">For a PPE supplier or in-house store running B2B sales and procurement.</p>
-              <div className="price"><span className="amt mono">{merchant}</span><span className="per">/ month</span>{annual && <span className="strike mono">R1,190</span>}</div>
-              <div className="seatline">Up to <b>5 users</b> · commerce only</div>
-              <ul>
-                <li><span className="chk">✓</span> B2B storefront, quotes &amp; PDF invoices</li>
-                <li><span className="chk">✓</span> Catalogue with size/colour variants</li>
-                <li><span className="chk">✓</span> Suppliers, purchase orders &amp; receipting</li>
-                <li><span className="chk">✓</span> Promotions &amp; live margin control</li>
-                <li><span className="chk">✓</span> Customers &amp; spend-limit tracking</li>
-                <li><span className="chk">✓</span> Email support</li>
-              </ul>
-              <button className="btn btn-ghost" onClick={onSignIn}>Start as a Merchant</button>
-            </div>
-
-            <div className="tier feat">
-              <span className="tag">Most popular</span>
-              <div className="who">Plant</div>
-              <h3>Plant</h3>
-              <p className="desc">For a single mine plant or site running the full PPE control loop.</p>
-              <div className="price"><span className="amt mono">{plant}</span><span className="per">/ month</span>{annual && <span className="strike mono">R6,900</span>}</div>
-              <div className="seatline">Includes <b>200 users</b>, then <b>R250</b> / active seat / month</div>
-              <ul>
-                <li><span className="chk">✓</span> <b>Everything in Merchant</b>, plus:</li>
-                <li><span className="chk">✓</span> Unlimited worker PPE requests</li>
-                <li><span className="chk">✓</span> Entitlement engine &amp; quota rules</li>
-                <li><span className="chk">✓</span> Tier-1/tier-2 approvals with signature</li>
-                <li><span className="chk">✓</span> Storekeeper issue desk &amp; custody register</li>
-                <li><span className="chk">✓</span> Live inventory, dashboards &amp; CSV/PDF reports</li>
-                <li><span className="chk">✓</span> MFA · priority support</li>
-              </ul>
-              <button className="btn btn-primary" onClick={onSignIn}>Start a Plant</button>
-            </div>
-
-            <div className="tier steel">
-              <div className="who">Enterprise · Group</div>
-              <h3>Group</h3>
-              <p className="desc">For a mining group running many plants under one roof.</p>
-              <div className="price"><span className="amt mono">From R24,900</span><span className="per">/ month</span></div>
-              <div className="seatline">Multi-site · from <b>R150</b> / active seat / month</div>
-              <ul>
-                <li><span className="chk">✓</span> <b>Everything in Plant</b>, across every site</li>
-                <li><span className="chk">✓</span> Consolidated valuation &amp; spend roll-up</li>
-                <li><span className="chk">✓</span> SSO / SAML &amp; custom entitlement policy</li>
-                <li><span className="chk">✓</span> Group audit exports &amp; branding</li>
-                <li><span className="chk">✓</span> Dedicated onboarding, SLA &amp; success manager</li>
-              </ul>
-              <button className="btn btn-primary" onClick={onSignIn}>Talk to sales</button>
-            </div>
-          </div>
-
-          <div className="addons">
-            <div className="addon"><div className="t">Extra site</div><div className="p mono">+R4,900 / mo</div><div className="d">Add a plant or store to a Plant/Group plan.</div></div>
-            <div className="addon"><div className="t">Active seats</div><div className="p mono">R250 → R150 / seat</div><div className="d">R250 per active seat beyond the 200 included, reducing to R150 at Enterprise volume.</div></div>
-            <div className="addon"><div className="t">White-label</div><div className="p mono">+R2,500 / mo</div><div className="d">Your brand, logo and domain on the portal.</div></div>
-            <div className="addon"><div className="t">Deployment</div><div className="p mono">Cloud or local</div><div className="d">Managed cloud or deployment in your local environment, scoped to your requirements.</div></div>
-          </div>
-          <p className="disc">Prices exclude VAT, setup, change request, and maintenance fees. SightLive can be deployed in the cloud or in your local environment; deployment requirements are scoped separately.</p>
-        </div>
-      </section>
-
-      <section style={{ paddingTop: 0 }}>
-        <div className="wrap">
-          <div className="sec-head"><span className="eyebrow">Questions</span><h2>The practical stuff.</h2></div>
-          <div className="faq">
-            {FAQ.map(([q, a]) => (
-              <details key={q}><summary>{q}</summary><p>{a}</p></details>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section style={{ paddingTop: 0 }}>
-        <div className="wrap">
-          <div className="final">
-            <span className="pill" style={{ marginBottom: 16 }}><span className="dot"></span> Ready when your next shift is</span>
-            <h2>Put the whole PPE loop on one system.</h2>
-            <p>From a single store to a mining group — start with one site and grow into consolidated control.</p>
-            <div className="herocta" style={{ justifyContent: 'center', marginTop: 24 }}>
-              <button className="btn btn-primary" onClick={onSignIn}>Sign in</button>
-              <a className="btn btn-ghost" href="#pricing">Choose a plan</a>
-            </div>
-          </div>
-          <p className="disc">SightLive is a multi-tenant PPE stock-management platform. Pricing shown is in South African Rand and is indicative for launch. Company sectors are shown to describe fit, not to imply endorsement.</p>
-        </div>
-      </section>
-
-      <footer>
-        <div className="wrap foot">
-          <div className="brand"><span className="logo" aria-hidden="true">{EYE}</span>SightLive</div>
-          <div>© 2026 SightLive · PPE Stock Platform</div>
-        </div>
-      </footer>
-    </div>
-  );
+  const page = route.path === '/' ? <HomePage onSignIn={onSignIn} /> : route.path === '/pricing' ? <PricingPage onSignIn={onSignIn} /> : <CapabilityPage {...PAGE_PROPS[route.path]} onSignIn={onSignIn} />;
+  return <div className="lp" data-lp-theme={dark === null ? undefined : dark ? 'dark' : 'light'}><style>{CSS}</style><nav className="marketing-nav" aria-label="Primary navigation"><div className="wrap navrow"><MarketingLink className="brand" to="/" onNavigate={() => setMenuOpen(false)}><img src="/sightlive-mark.svg" alt="" />SightLive</MarketingLink><div className="navlinks">{MARKETING_ROUTES.slice(1).map((item) => <MarketingLink key={item.path} className={`navlink${route.path === item.path ? ' active' : ''}`} to={item.path}>{item.label}</MarketingLink>)}</div><div className="navactions"><button className="theme-btn" aria-label="Toggle landing page theme" title="Toggle theme" onClick={() => setDark((value) => value === null ? !window.matchMedia('(prefers-color-scheme: dark)').matches : !value)}>◐</button><button className="btn btn-ghost" onClick={onSignIn}>Sign in</button><button className="btn btn-primary" onClick={onSignIn}>Get started</button><button className="menu-btn" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>☰</button></div></div><div className={`mobile-nav${menuOpen ? ' open' : ''}`}>{MARKETING_ROUTES.map((item) => <MarketingLink key={item.path} className={`navlink${route.path === item.path ? ' active' : ''}`} to={item.path}>{item.label}</MarketingLink>)}</div></nav><main>{page}</main><footer><div className="wrap foot"><div className="brand"><img src="/sightlive-mark.svg" alt="" />SightLive</div><div className="footlinks">{MARKETING_ROUTES.slice(1).map((item) => <MarketingLink key={item.path} to={item.path}>{item.label}</MarketingLink>)}</div><div>© 2026 SightLive · PPE Stock Platform</div></div></footer></div>;
 };

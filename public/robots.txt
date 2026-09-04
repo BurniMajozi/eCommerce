@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ecommerce-production-5631.up.railway.app/sitemap.xml
