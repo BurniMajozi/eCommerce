@@ -899,13 +899,52 @@ export const MEDUSA_WORKFLOWS = [
 ];
 
 /* Variant options (lowest-level SKU = size × colour) derived by category */
+// Size/colour options for a product. Sizes drive the worker's selection dropdown
+// when requesting PPE (EmployeePortal). Two sources, in order:
+//   1) the product's REAL variants if they encode distinct sizes (live catalogue);
+//   2) otherwise a category → size-set map matched by KEYWORD, case-insensitively.
+// Category is free-text (the product form is a datalist), so exact string matches
+// silently failed — e.g. "Safety Footwear" / "boots" / lowercase "footwear" all
+// fell through to "One size" and the size picker disappeared. Keyword matching
+// keeps shoe sizes showing regardless of how the category was typed.
+const SIZE_SETS = {
+  foot: ["5", "6", "7", "8", "9", "10", "11", "12", "13"],
+  hand: ["7", "8", "9", "10", "11", "XL"],
+  apparel: ["S", "M", "L", "XL", "2XL", "3XL"],
+  resp: ["S", "M", "L"],
+};
+
 export const getVariantOptions = (product) => {
-  const c = product.category || "";
-  if (c === "Footwear") return { sizes: ["6", "7", "8", "9", "10", "11", "12"], colors: ["Black", "Tan"] };
-  if (c === "Workwear") return { sizes: ["S", "M", "L", "XL", "2XL", "3XL"], colors: ["Navy", "Hi-vis orange", "Charcoal"] };
-  if (c === "Hand Protection") return { sizes: ["7", "8", "9", "10", "11"], colors: ["—"] };
-  if (c === "Arc Flash Protection") return { sizes: ["M", "L", "XL", "2XL"], colors: ["Navy"] };
-  return { sizes: ["One size"], colors: ["—"] };
+  // 1) Prefer real variant sizes when the catalogue provides more than one
+  //    distinct variant (i.e. not just the single product-title variant).
+  const productName = String(product?.name || product?.title || "").trim().toLowerCase();
+  const realSizes = Array.from(new Set(
+    (product?.variants ?? [])
+      .map((v) => String(v?.size ?? v?.option ?? v?.name ?? v?.title ?? "").trim())
+      .filter((s) => s && s.toLowerCase() !== productName)
+  ));
+
+  // 2) Category → sizes, matched by keyword so free-text/casing variations work.
+  const c = String(product?.category || "").toLowerCase();
+  const has = (...kw) => kw.some((k) => c.includes(k));
+  let sizes;
+  let colors = ["—"];
+  if (realSizes.length > 1) {
+    sizes = realSizes;
+  } else if (has("footwear", "foot", "boot", "shoe", "gumboot")) {
+    sizes = SIZE_SETS.foot; colors = ["Black", "Tan"];
+  } else if (has("glove", "hand")) {
+    sizes = SIZE_SETS.hand;
+  } else if (has("respirator", "respiratory", "mask")) {
+    sizes = SIZE_SETS.resp;
+  } else if (has("workwear", "overall", "coverall", "jacket", "pant", "trouser",
+                 "arc", "weld", "thermal", "shirt", "speciality", "specialty", "apparel", "hi-vis", "hi vis")) {
+    sizes = SIZE_SETS.apparel; colors = ["Navy", "Hi-vis orange", "Charcoal"];
+  } else {
+    // Head/eye/face/hearing and anything unrecognised: one adjustable size.
+    sizes = ["One size"];
+  }
+  return { sizes, colors };
 };
 
 // Build a per-variant stock split for a product (size × colour grid)
