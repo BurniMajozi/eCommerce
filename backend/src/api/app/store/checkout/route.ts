@@ -53,7 +53,11 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
       const unitNet = pct ? unit * (1 - pct / 100) : unit;
       subtotal += unit * qty;
       discount += (unit - unitNet) * qty;
-      return { sku, name: ref.name, imageUrl: ref.imageUrl, qty, unit, discountPct: pct, unitNet, lineTotal: unitNet * qty };
+      // Preserve the buyer's chosen size/colour so the store counter picks the
+      // correct variant. Kept as plain strings on the line (jsonb).
+      const size = l.size != null ? String(l.size).slice(0, 40) : null;
+      const color = l.color != null && String(l.color) !== '—' ? String(l.color).slice(0, 40) : null;
+      return { sku, name: ref.name, imageUrl: ref.imageUrl, qty, unit, discountPct: pct, unitNet, lineTotal: unitNet * qty, size, color };
     });
     const total = subtotal - discount;
     if (total <= 0) throw new ScopeError(400, 'invalid_total', 'The order total must be greater than zero.');

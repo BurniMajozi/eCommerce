@@ -83,8 +83,11 @@ const StorePickups = () => {
           <table className="table">
             <thead><tr><th>Reference</th><th>Buyer</th><th className="num">Items</th><th className="num">Total</th><th className="center">Pickup code</th><th className="center">Status</th><th className="center">Collect</th></tr></thead>
             <tbody>
-              {rows.map((o) => (
-                <tr key={o.id} style={{ opacity: o.status === 'collected' ? 0.6 : 1 }}>
+              {rows.map((o) => {
+                const lines = Array.isArray(o.lines) ? o.lines : [];
+                return (
+                <React.Fragment key={o.id}>
+                <tr style={{ opacity: o.status === 'collected' ? 0.6 : 1 }}>
                   <td><div style={{ fontWeight: 500 }}>{o.reference}</div><div className="eyebrow">{(o.paidAt || o.createdAt || '').slice(0, 10)}</div></td>
                   <td>{o.buyerName || o.buyerEmail || 'Buyer'}<div className="eyebrow">{o.company || o.buyerEmail}</div></td>
                   <td className="num">{o.lineCount}</td>
@@ -102,7 +105,26 @@ const StorePickups = () => {
                     )}
                   </td>
                 </tr>
-              ))}
+                {o.status !== 'collected' && lines.length > 0 && (
+                  <tr>
+                    <td colSpan={7} style={{ background: 'var(--surface-2)', padding: '8px 12px' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                        <span className="eyebrow" style={{ marginRight: 2, color: 'var(--text-subtle)' }}>Pick list:</span>
+                        {lines.map((l, i) => {
+                          const variant = [l.size, l.color].filter(Boolean).join(' · ');
+                          return (
+                            <span key={i} className="badge badge-neutral" style={{ fontSize: 11.5, fontWeight: 500 }}>
+                              {l.name}{variant ? <strong style={{ color: 'var(--primary)' }}>{` · ${variant}`}</strong> : ''} ×{l.qty}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
