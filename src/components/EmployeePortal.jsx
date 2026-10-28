@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { getVariantOptions } from '../data/mockData';
 import { resolveEmployeeEntitlement } from '../entitlement/entitlement';
 import { ProductThumb } from './ProductThumb';
+import { ConfirmDialog } from './ConfirmDialog';
 import {
   Search, ShieldCheck, PackageCheck, Clock, QrCode, X, Camera, AlertTriangle,
   CheckCircle2, ChevronRight, Boxes, Lock
@@ -15,12 +16,14 @@ const MANAGER_REASONS = ['Visitor stock'];
 const statusBadge = (s) => {
   if (s === 'APPROVED') return 'badge-success';
   if (s === 'REJECTED') return 'badge-danger';
+  if (s === 'CANCELLED') return 'badge-neutral';
   if (s === 'FULFILLED_DISPATCHED') return 'badge-info';
   return 'badge-warning';
 };
 
 export const EmployeePortal = () => {
-  const { products, activeEmployee, requests, createRequest, entitlementRules, triggerNotification } = useApp();
+  const { products, activeEmployee, requests, createRequest, cancelRequest, entitlementRules, triggerNotification } = useApp();
+  const [cancelTarget, setCancelTarget] = useState(null);
   // What this worker's department/role/individual entitlement allows.
   const entitlement = resolveEmployeeEntitlement(activeEmployee, entitlementRules);
   const allowedCat = (p) => entitlement.categories.has(p.category);
@@ -156,6 +159,11 @@ export const EmployeePortal = () => {
                     </div>
                     <div style={{ fontWeight: 600, fontSize: 15, marginTop: 6 }}>{req.itemName}</div>
                     <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>{req.reason} · {req.requestDate}</div>
+                    {req.status === 'PENDING_APPROVAL' && (
+                      <button className="btn btn-secondary btn-sm btn-block" style={{ marginTop: 12 }} onClick={() => setCancelTarget(req)}>
+                        <X size={15} /> Cancel request
+                      </button>
+                    )}
                     {req.status === 'APPROVED' && (
                       <button className="btn btn-primary btn-sm btn-block" style={{ marginTop: 12 }} onClick={() => setPass(req)}>
                         <QrCode size={15} /> Show pickup pass
@@ -167,6 +175,16 @@ export const EmployeePortal = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {cancelTarget && (
+        <ConfirmDialog
+          title="Cancel this request?"
+          message={`${cancelTarget.itemName} (${cancelTarget.id}) will be withdrawn and removed from the approvers' queue. You can request it again any time.`}
+          confirmLabel="Cancel request"
+          onConfirm={() => cancelRequest(cancelTarget.id)}
+          onClose={() => setCancelTarget(null)}
+        />
       )}
 
       {/* Catalogue */}

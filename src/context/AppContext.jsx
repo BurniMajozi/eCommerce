@@ -296,6 +296,22 @@ export const AppProvider = ({ children }) => {
     return req;
   };
 
+  // The requester can withdraw a request until it is approved. The row is kept
+  // (status CANCELLED) for the audit trail but leaves every approval queue.
+  const cancelRequest = (reqId) => {
+    const target = requests.find(r => r.id === reqId);
+    if (!target || target.status !== 'PENDING_APPROVAL') return false;
+    setRequests(prev => prev.map(r => r.id === reqId ? {
+      ...r,
+      status: 'CANCELLED',
+      tier1Status: 'CANCELLED',
+      tier2Status: 'CANCELLED',
+      cancelledAt: new Date().toISOString().replace('T', ' ').substring(0, 16)
+    } : r));
+    triggerNotification('Request cancelled', `Request #${reqId} for ${target.itemName} was withdrawn before approval.`, 'success');
+    return true;
+  };
+
   const approveRequest = (reqId, tierLevel, managerName = 'Mine Safety Manager') => {
     setRequests(prev => prev.map(r => {
       if (r.id === reqId) {
@@ -583,6 +599,7 @@ export const AppProvider = ({ children }) => {
       pushNotification,
       triggerNotification,
       createRequest,
+      cancelRequest,
       entitlementRules,
       addEntitlementRule,
       updateEntitlementRule,
