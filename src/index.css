@@ -2,9 +2,13 @@
 @import "./theme.css";
 
 @layer utilities {
+  /* Opacity-only: a `transform` here (even the finished `none`) makes every
+     .animate-fade-in view root a containing block, which traps any
+     position:fixed descendant (modals/overlays) so it centres on the view
+     instead of the viewport. Keep the fade, drop the slide. */
   @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: none; }
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 
   @keyframes shimmer {

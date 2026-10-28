@@ -50,7 +50,10 @@ export const AppProvider = ({ children }) => {
     if (tenantAccess.mode === 'supabase') tenantAccess.setActiveSiteId(plant?.id ?? null);
     else setDemoActivePlant(plant);
   };
-  // EMPLOYEE, MANAGER, STOREKEEPER, MERCHANT, EXECUTIVE, TENANT_ADMIN, OWNER
+  // Land on the first view the signed-in role can actually see (resolveActiveRole
+  // falls back to the first visible nav item). Escalation is a branch of the
+  // approval journey, not the default home. This is a Safety App first.
+  // Roles: EMPLOYEE, MANAGER, STOREKEEPER, MERCHANT, EXECUTIVE, TENANT_ADMIN, OWNER…
   const [activeRole, setActiveRole] = useState('EMPLOYEE');
   const [tenants, setTenants] = useState(MOCK_TENANTS);
   const [selectedTenantId, setSelectedTenantId] = useState(MOCK_TENANTS[0].id);
@@ -72,7 +75,7 @@ export const AppProvider = ({ children }) => {
 
   const [employeeAllocations, setEmployeeAllocations] = useState(() => {
     try {
-      const saved = localStorage.getItem('sightlive_employee_allocations');
+      const saved = localStorage.getItem('sightlive_employee_allocations_v2');
       return saved ? JSON.parse(saved) : MOCK_EMPLOYEE_ALLOCATIONS;
     } catch {
       return MOCK_EMPLOYEE_ALLOCATIONS;
@@ -105,7 +108,7 @@ export const AppProvider = ({ children }) => {
           allocations: [allocData.allocation]
         });
       }
-      try { localStorage.setItem('sightlive_employee_allocations', JSON.stringify(next)); } catch { /* ignore */ }
+      try { localStorage.setItem('sightlive_employee_allocations_v2', JSON.stringify(next)); } catch { /* ignore */ }
       return next;
     });
   };

@@ -4,7 +4,7 @@ import {
   HardHat, ClipboardCheck, PackageOpen, LineChart, Receipt,
   Building2, ShieldEllipsis, Tag, Boxes, ShoppingCart, BadgePercent,
   Percent, Truck, Upload, Wallet, Workflow, Radio, X, Factory, ClipboardList,
-  PanelLeftClose, PanelLeftOpen, Store, Bug, ArrowUpCircle
+  PanelLeftClose, PanelLeftOpen, Store, Bug, ArrowUpCircle, ShieldAlert, Megaphone
 } from 'lucide-react';
 import { BugReportModal } from './BugReportModal';
 
@@ -18,11 +18,19 @@ export const NAV_GROUPS = [
     items: [
       // Contractor Store is visible to store operators (issue stock) as well as
       // requesters, so a merchant with counter access sees what's being sold.
-      { id: 'STORE', label: 'Contractor Store', icon: Store, capAny: ['ppe.request.create', 'ppe.stock.issue'] },
-      { id: 'EMPLOYEE', label: 'Request PPE', icon: HardHat, cap: 'ppe.request.create' },
+      // (The Ticket board now lives on the Dashboard, below the summary.)
+      { id: 'STORE', label: 'Contractor Store', icon: Store },
+      { id: 'EMPLOYEE', label: 'Request PPE', icon: HardHat },
+      // Safety-first, sitting under Request PPE: everyone can report a hazard and
+      // see safety alerts. Always visible (no `cap`) — the safety line runs at
+      // every level.
+      { id: 'REPORT_SAFETY', label: 'Report Safety', icon: ShieldAlert },
+      { id: 'SAFETY_ALERTS', label: 'Safety Alerts', icon: Megaphone },
       { id: 'MANAGER', label: 'Approvals', icon: ClipboardCheck, cap: 'ppe.approve.tier1' },
-      // Merchant escalation view — see & escalate stuck approvals (no approve/sign).
-      { id: 'MERCHANT_APPROVALS', label: 'Escalations', icon: ArrowUpCircle, cap: 'ppe.approve.escalate' },
+      // Escalations sits BELOW Approvals — it is one branch of the approval
+      // journey, not the home screen. Kept always-visible (no `cap`) so the
+      // escalation line/process is visible at every level.
+      { id: 'MERCHANT_APPROVALS', label: 'Escalations', icon: ArrowUpCircle },
       { id: 'STOREKEEPER', label: 'Store Counter', icon: PackageOpen, cap: 'ppe.stock.issue' },
       { id: 'EXECUTIVE', label: 'Dashboard', icon: LineChart, cap: 'reports.read' }
     ]

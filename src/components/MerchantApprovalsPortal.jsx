@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { fetchPurchaseOrders, fetchOrders, updatePurchaseOrder, escalateApproval, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { PoApprovalHistory, RequestApprovalHistory } from './ManagerApprovalPortal';
+import { EscalatedItems } from './EscalatedItems';
 import { SearchExportBar, matchQuery } from './TableToolbar';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import {
@@ -20,9 +21,13 @@ export const MerchantApprovalsPortal = () => {
   const { auth, tenantAccess, requests, triggerNotification } = useApp();
   const scope = { accessToken: auth?.session?.access_token, tenantId: tenantAccess?.activeTenantId, siteId: tenantAccess?.activeSiteId };
   const live = isMedusaCatalogueEnabled && !!scope.accessToken && !!scope.tenantId;
+  // One key per tenant/site. Effects re-run (and clear old data) when it flips,
+  // so a scope change never leaves a previous tenant's rows on screen.
+  const scopeKey = live ? `${scope.tenantId}:${scope.siteId ?? '*'}` : null;
 
-  const [poItems, setPoItems] = useState([]);
-  const [replenPos, setReplenPos] = useState([]); // replenishment POs awaiting merchant approval
+  // null = still loading for the current scope (never render stale rows).
+  const [poItems, setPoItems] = useState(null);
+  const [replenPos, setReplenPos] = useState(null); // replenishment POs awaiting merchant approval
   const [decidingId, setDecidingId] = useState(null);
   const [rejecting, setRejecting] = useState(null); // replenishment PO being rejected
   const [rejectReason, setRejectReason] = useState('');
@@ -46,9 +51,10 @@ export const MerchantApprovalsPortal = () => {
 
   // Pending POs + internal (mine) B2B orders waiting on an approver's decision.
   useEffect(() => {
-    if (!live) { setPoItems([]); return undefined; }
+    if (!live) { setPoItems([]); setReplenPos([]); setLoading(false); return undefined; }
     let active = true;
-    setLoading(true);
+    // Drop the previous scope's rows immediately, then load the new scope.
+    setPoItems(null); setReplenPos(null); setLoading(true);
     (async () => {
       const [poRes, orderRes] = await Promise.all([
         fetchPurchaseOrders(scope).catch(() => ({ orders: [] })),
@@ -95,7 +101,7 @@ export const MerchantApprovalsPortal = () => {
     })();
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, scope.accessToken, scope.tenantId, scope.siteId, reloadKey]);
+  }, [live, scopeKey, reloadKey]);
 
   // Pending PPE issue requests (from app request state) awaiting a manager co-sign.
   const requestItems = (requests || [])
@@ -108,7 +114,8 @@ export const MerchantApprovalsPortal = () => {
     }));
 
   const [waitSearch, setWaitSearch] = useState('');
-  const allItems = [...poItems, ...requestItems]
+  const replenList = replenPos ?? [];
+  const allItems = [...(poItems ?? []), ...requestItems]
     .map((it) => ({ ...it, ageDays: daysSince(it.at) }))
     .sort((a, b) => (b.ageDays ?? 0) - (a.ageDays ?? 0));
   const items = allItems.filter((it) => matchQuery(it, waitSearch, ['reference', 'subject', 'kind']));
@@ -147,7 +154,7 @@ export const MerchantApprovalsPortal = () => {
     try {
       await updatePurchaseOrder(po.id, { action: 'approve', approverName: me }, scope);
       triggerNotification('Replenishment approved', `${po.supplier} · ${rands(po.total, po.currency)} approved — ready to send to the supplier.`, 'success');
-      setReplenPos((prev) => prev.filter((x) => x.id !== po.id));
+      setReplenPos((prev) => (prev ?? []).filter((x) => x.id !== po.id));
     } catch (e) { triggerNotification('Approval failed', e?.message || 'Could not approve the order.', 'danger'); }
     finally { setDecidingId(null); }
   };
@@ -162,7 +169,7 @@ export const MerchantApprovalsPortal = () => {
     } catch (e) { triggerNotification('Reject failed', e?.message || 'Could not reject the order.', 'danger'); }
     finally { setDecidingId(null); }
   };
-  const replenTotal = replenPos.reduce((a, p) => a + Number(p.total || 0), 0);
+  const replenTotal = replenList.reduce((a, p) => a + Number(p.total || 0), 0);
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 22, paddingBottom: 24 }}>
@@ -172,27 +179,27 @@ export const MerchantApprovalsPortal = () => {
           <p>Approve auto-raised <strong>replenishment</strong> orders here. For other stuck approvals you can flag &amp; nudge the responsible approver (approving PPE/manual POs stays with the mine manager).</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {replenPos.length > 0 && <span className="badge badge-warning">{replenPos.length} replenishment</span>}
+          {replenList.length > 0 && <span className="badge badge-warning">{replenList.length} replenishment</span>}
           <span className={`badge ${stuckCount ? 'badge-danger' : 'badge-neutral'}`}>{stuckCount} stuck &ge; {STUCK_DAYS}d</span>
           <span className="badge badge-primary">{items.length} waiting</span>
         </div>
       </div>
 
       {/* Replenishment orders the merchant approves directly */}
-      {replenPos.length > 0 && (
+      {replenList.length > 0 && (
         <div className="card">
           <div className="card-hd">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <RefreshCcw size={17} style={{ color: 'var(--primary)' }} />
               <h3>Replenishment orders to approve</h3>
-              <span className="badge badge-warning">{replenPos.length} · {rands(replenTotal, replenPos[0]?.currency)}</span>
+              <span className="badge badge-warning">{replenList.length} · {rands(replenTotal, replenList[0]?.currency)}</span>
             </div>
           </div>
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>Reference</th><th>Supplier</th><th className="num">Lines</th><th className="num">Total</th><th className="center">Decision</th></tr></thead>
               <tbody>
-                {replenPos.map((po) => (
+                {replenList.map((po) => (
                   <tr key={po.id}>
                     <td style={{ fontWeight: 500 }}>{po.reference}</td>
                     <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Factory size={13} style={{ color: 'var(--text-subtle)' }} />{po.supplier}</span></td>
@@ -257,6 +264,9 @@ export const MerchantApprovalsPortal = () => {
           </div>
         )}
       </div>
+
+      {/* Where escalated approvals move to — the approver/Tier 2 manager sees these */}
+      <EscalatedItems subtitle="Every approval you flag lands here and is sent to the responsible approver (and the Tier 2 manager). It stays until they approve or reject it." />
 
       {/* Approval history — reused from the manager portal */}
       <div className="page-head" style={{ marginBottom: 0, marginTop: 6 }}>

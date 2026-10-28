@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { fetchPurchaseOrders, updatePurchaseOrder, fetchOrders, updateOrder, fetchPromotions, updatePromotion, isMedusaCatalogueEnabled } from '../catalogue/catalogueClient';
 import { SignaturePad } from './SignaturePad';
+import { EscalatedItems } from './EscalatedItems';
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import {
   Bell, ShieldCheck, AlertTriangle, Check, X, Eye, ArrowRight, ClipboardList, ClipboardCheck, PenLine, Loader2, Factory, BadgePercent, Search, Download, HardHat
@@ -543,6 +544,10 @@ export const ManagerApprovalPortal = () => {
       )}
 
       <PoApprovals />
+
+      {/* Escalated to you — approvals the merchant/others flagged for your action */}
+      <EscalatedItems title="Escalated to you" subtitle="Stuck approvals flagged by the merchant or others for your decision. Approve or reject the underlying PO / request above to clear them." />
+
       <PromoSubmissions />
 
       {/* ── History (below): what has already been decided ── */}

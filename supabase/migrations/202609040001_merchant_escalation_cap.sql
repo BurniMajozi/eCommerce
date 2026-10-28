@@ -7,10 +7,12 @@ on conflict (key) do update set
   description = excluded.description,
   requires_mfa = excluded.requires_mfa;
 
--- Grant it to the merchant role so the escalation Approvals view appears.
+-- Grant it to EVERY role — escalation is now a universal action (any member can
+-- flag a stuck approval to the responsible approver; approving still stays with
+-- ppe.approve.*). The Escalations view is every role's default landing screen.
 insert into public.role_capabilities (role_id, capability_id)
 select r.id, c.id
 from public.roles r
-join public.capabilities c on c.key = 'ppe.approve.escalate'
-where r.key = 'merchant'
+cross join public.capabilities c
+where c.key = 'ppe.approve.escalate'
 on conflict do nothing;

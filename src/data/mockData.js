@@ -599,191 +599,74 @@ export const MOCK_DEPARTMENT_CONSUMPTION = [
 ];
 export const MOCK_CREW_CONSUMPTION = MOCK_DEPARTMENT_CONSUMPTION;
 
-// Employee stock allocation history & live register (John Sibanda as prime sample)
+// Employee stock allocation history & live register. Kept in step with
+// MOCK_EMPLOYEES (same role, department and holdings) so the Request PPE custody
+// card, the Store Counter and this report all tell one story. Dates are relative
+// to today so the default "last 30 days" view always has movement in it.
+const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+const monthsAfter = (iso, m) => { const d = new Date(iso); d.setMonth(d.getMonth() + m); return d.toISOString().slice(0, 10); };
+const PLANT_ALPHA = "Kumba Iron Ore - Plant Alpha";
+const STORE_2 = "S. Dlamini (Store 2)";
+let _alc = 10600;
+const alloc = (emp, item, issueDate, { qty = 1, lifeMonths = 12, condition = "Good", approvalRef = "Auto-approved", serial } = {}) => {
+  const n = _alc--;
+  const [first, ...rest] = emp.employeeName.split(' ');
+  return {
+    id: `ALC-${n}`,
+    sku: item.sku,
+    name: item.name,
+    category: item.category,
+    qty,
+    unitPrice: item.price,
+    totalValue: +(item.price * qty).toFixed(2),
+    issueDate,
+    issuedBy: STORE_2,
+    serialNumber: serial || `${item.sku.split('-')[0]}-${emp.employeeId.replace('EM-', '')}-${String(n).slice(-2)}`,
+    status: "Active (In Use)",
+    condition,
+    nextEligibleDate: monthsAfter(issueDate, lifeMonths),
+    signedBy: `${first[0]}. ${rest.join(' ') || first}`,
+    approvalRef
+  };
+};
+const ITEM = {
+  boots: { sku: "DF-CHELSEA-BLK", name: "DROMEX CHELSEA BLACK BOOT", category: "Footwear", price: 1080.00 },
+  hat: { sku: "DH-HH-DB", name: "Dromex Hard Hat DARK BLUE (Lamination Blue)", category: "Head Protection", price: 120.00 },
+  vest: { sku: "SA10-LIME", name: "LIME Reflective Vest, ZIP, ID POUCH", category: "Workwear", price: 70.00 },
+  gloves: { sku: "NITRIFLEX-PC", name: "NITRIFLEX Black Sanitized PALM Nitrile Coated Gloves", category: "Hand Protection", price: 28.00 },
+  muff: { sku: "CEM", name: "Classic Muff, SNR 30, Blue", category: "Hearing Protection", price: 125.00 },
+  arcJacket: { sku: "DW-ARC40-WJ", name: "DROMEX ARC 40 CAL WINTER JACKETS", category: "Arc Flash Protection", price: 2900.00 },
+  arcBoot: { sku: "DF-FLASH", name: "DROMEX FLASHTREAD ARC BOOT", category: "Footwear", price: 1560.00 },
+  goggle: { sku: "DV-11", name: "DIRECT MESH VENT Goggle (1,F)", category: "Eye & Face", price: 17.00 },
+  freestyle: { sku: "DF-UBLK", name: "DROMEX FREESTYLE BOOT, BLACK", category: "Footwear", price: 790.00 }
+};
+const person = (employeeId, employeeName, department, role, quotaUtilization) => ({ employeeId, employeeName, department, role, plant: PLANT_ALPHA, quotaUtilization });
+const withAllocs = (emp, build) => ({ ...emp, allocations: build(emp) });
+
 export const MOCK_EMPLOYEE_ALLOCATIONS = [
-  {
-    employeeId: "EM-8492",
-    employeeName: "John Sibanda",
-    department: "Engineering & Maintenance",
-    role: "Boilermaker / Welder",
-    plant: "Kumba Iron Ore - Plant Alpha",
-    quotaUtilization: 94,
-    allocations: [
-      {
-        id: "ALC-10491",
-        sku: "DW-ARC40-WJ",
-        name: "DROMEX ARC 40 CAL WINTER JACKETS",
-        category: "Arc Flash Protection",
-        qty: 1,
-        unitPrice: 2900.00,
-        totalValue: 2900.00,
-        issueDate: "2026-08-10",
-        issuedBy: "S. Dlamini (Store 2)",
-        serialNumber: "ARC-8492-01",
-        status: "Active (In Use)",
-        condition: "Good",
-        nextEligibleDate: "2027-08-10",
-        signedBy: "J. Sibanda",
-        approvalRef: "APV-8492-01 (Tier 2 Approved)"
-      },
-      {
-        id: "ALC-10442",
-        sku: "ACE ONE 60×90",
-        name: "ACE Leather Welders Apron 60×90cm",
-        category: "Welding Protection",
-        qty: 1,
-        unitPrice: 103.00,
-        totalValue: 103.00,
-        issueDate: "2026-08-04",
-        issuedBy: "S. Dlamini (Store 2)",
-        serialNumber: "WLD-6090-84",
-        status: "Active (In Use)",
-        condition: "Fair",
-        nextEligibleDate: "2026-11-04",
-        signedBy: "J. Sibanda",
-        approvalRef: "Auto-approved"
-      },
-      {
-        id: "ALC-10398",
-        sku: "DV-11",
-        name: "DIRECT MESH VENT Goggle (1,F)",
-        category: "Eye & Face",
-        qty: 2,
-        unitPrice: 17.00,
-        totalValue: 34.00,
-        issueDate: "2026-07-22",
-        issuedBy: "S. Dlamini (Store 2)",
-        serialNumber: "EYE-DV11-02",
-        status: "Active (In Use)",
-        condition: "Good",
-        nextEligibleDate: "2026-09-22",
-        signedBy: "J. Sibanda",
-        approvalRef: "Auto-approved"
-      },
-      {
-        id: "ALC-10355",
-        sku: "CEM",
-        name: "Classic Muff, SNR 30, Blue",
-        category: "Hearing Protection",
-        qty: 1,
-        unitPrice: 125.00,
-        totalValue: 125.00,
-        issueDate: "2026-07-15",
-        issuedBy: "S. Dlamini (Store 2)",
-        serialNumber: "HR-CEM-15",
-        status: "Active (In Use)",
-        condition: "Good",
-        nextEligibleDate: "2027-01-15",
-        signedBy: "J. Sibanda",
-        approvalRef: "Auto-approved"
-      },
-      {
-        id: "ALC-10290",
-        sku: "DW-6535XX-P",
-        name: "DROMEX ULTRATEC HI-VIZ POLY VISCOSE PANTS",
-        category: "Speciality Workwear",
-        qty: 2,
-        unitPrice: 385.00,
-        totalValue: 770.00,
-        issueDate: "2026-06-20",
-        issuedBy: "S. Dlamini (Store 2)",
-        serialNumber: "WRK-6535-09",
-        status: "Active (In Use)",
-        condition: "Good",
-        nextEligibleDate: "2026-12-20",
-        signedBy: "J. Sibanda",
-        approvalRef: "Auto-approved"
-      },
-      {
-        id: "ALC-10112",
-        sku: "DF-UBLK",
-        name: "DROMEX FREESTYLE BOOT, BLACK",
-        category: "Footwear",
-        qty: 1,
-        unitPrice: 790.00,
-        totalValue: 790.00,
-        issueDate: "2026-05-18",
-        issuedBy: "S. Dlamini (Store 2)",
-        serialNumber: "FTW-UBLK-84",
-        status: "Active (In Use)",
-        condition: "Good",
-        nextEligibleDate: "2026-11-18",
-        signedBy: "J. Sibanda",
-        approvalRef: "APV-8492-00 (Tier 1 Approved)"
-      }
-    ]
-  },
-  {
-    employeeId: "EM-7781",
-    employeeName: "P. Khumalo",
-    department: "Underground Operations",
-    role: "Drill Rig Operator",
-    plant: "Kumba Iron Ore - Plant Alpha",
-    quotaUtilization: 112,
-    allocations: [
-      {
-        id: "ALC-10480",
-        sku: "DF-UBLK",
-        name: "DROMEX FREESTYLE BOOT, BLACK",
-        category: "Footwear",
-        qty: 1,
-        unitPrice: 790.00,
-        totalValue: 790.00,
-        issueDate: "2026-08-08",
-        issuedBy: "S. Dlamini (Store 2)",
-        serialNumber: "FTW-UBLK-77",
-        status: "Active (In Use)",
-        condition: "Good",
-        nextEligibleDate: "2027-02-08",
-        signedBy: "P. Khumalo",
-        approvalRef: "APV-7781-01"
-      },
-      {
-        id: "ALC-10310",
-        sku: "DV-11",
-        name: "DIRECT MESH VENT Goggle (1,F)",
-        category: "Eye & Face",
-        qty: 2,
-        unitPrice: 17.00,
-        totalValue: 34.00,
-        issueDate: "2026-07-02",
-        issuedBy: "S. Dlamini (Store 2)",
-        serialNumber: "EYE-DV11-77",
-        status: "Active (In Use)",
-        condition: "Fair",
-        nextEligibleDate: "2026-09-02",
-        signedBy: "P. Khumalo",
-        approvalRef: "Auto-approved"
-      }
-    ]
-  },
-  {
-    employeeId: "EM-9104",
-    employeeName: "Kagiso Molefe",
-    department: "Processing Plant",
-    role: "Chemical Operator",
-    plant: "Kumba Iron Ore - Plant Alpha",
-    quotaUtilization: 78,
-    allocations: [
-      {
-        id: "ALC-10450",
-        sku: "CEM",
-        name: "Classic Muff, SNR 30, Blue",
-        category: "Hearing Protection",
-        qty: 1,
-        unitPrice: 125.00,
-        totalValue: 125.00,
-        issueDate: "2026-08-01",
-        issuedBy: "S. Dlamini (Store 2)",
-        serialNumber: "HR-CEM-91",
-        status: "Active (In Use)",
-        condition: "Good",
-        nextEligibleDate: "2027-02-01",
-        signedBy: "K. Molefe",
-        approvalRef: "Auto-approved"
-      }
-    ]
-  }
+  // Underground Driller, Shaft 3 Extraction — mirrors his custody on Request PPE
+  // (boots, hard hat, vest) plus this month's glove draws (2 of 4 left) and a muff.
+  withAllocs(person("EM-8492", "John Sibanda", "Shaft 3 Extraction", "Underground Driller", 94), (e) => [
+    alloc(e, ITEM.gloves, daysAgo(5), { lifeMonths: 1 }),
+    alloc(e, ITEM.gloves, daysAgo(12), { lifeMonths: 1 }),
+    alloc(e, ITEM.muff, daysAgo(20), { lifeMonths: 12 }),
+    alloc(e, ITEM.vest, "2026-06-01", { lifeMonths: 3, condition: "Needs Replacement" }),
+    alloc(e, ITEM.boots, "2026-05-18", { lifeMonths: 6, condition: "Fair (70% wear)", approvalRef: "APV-8492-00 (Tier 1 Approved)" }),
+    alloc(e, ITEM.hat, "2025-08-10", { lifeMonths: 24 })
+  ]),
+  // Electrical Maintenance Tech, High-Voltage Substation — arc-flash kit.
+  withAllocs(person("EM-1042", "Siyabonga Ndlovu", "High-Voltage Substation", "Electrical Maintenance Tech", 88), (e) => [
+    alloc(e, ITEM.gloves, daysAgo(9), { lifeMonths: 1 }),
+    alloc(e, ITEM.arcBoot, "2026-01-15", { lifeMonths: 12, approvalRef: "APV-1042-01 (Tier 2 Approved)" }),
+    alloc(e, ITEM.arcJacket, "2025-11-01", { lifeMonths: 12, approvalRef: "APV-1042-00 (Tier 2 Approved)" })
+  ]),
+  withAllocs(person("EM-7781", "P. Khumalo", "Underground Operations", "Drill Rig Operator", 112), (e) => [
+    alloc(e, ITEM.freestyle, daysAgo(14), { lifeMonths: 6, approvalRef: "APV-7781-01" }),
+    alloc(e, ITEM.goggle, daysAgo(27), { qty: 2, lifeMonths: 6, condition: "Fair" })
+  ]),
+  withAllocs(person("EM-9104", "Kagiso Molefe", "Processing Plant", "Chemical Operator", 78), (e) => [
+    alloc(e, ITEM.muff, daysAgo(22), { lifeMonths: 12 })
+  ])
 ];
 
 // Tenant-Admin users & roles register (Level-2 scope, one plant)
@@ -793,7 +676,7 @@ export const MOCK_TENANT_USERS = [
   { id: "ST-1180", name: "S. Dlamini", role: "Storeman", dept: "Store 2", status: "active" },
   { id: "MG-0450", name: "M. van Wyk", role: "Manager · Tenant Admin", dept: "Plant Operations", status: "active" },
   { id: "SP-2199", name: "L. Botha", role: "Supervisor", dept: "Crew A", status: "active" },
-  { id: "EM-7781", name: "P. Khumalo", role: "Worker", dept: "Shaft 1", status: "suspended" }
+  { id: "EM-7781", name: "P. Khumalo", role: "Worker", dept: "Underground Operations", status: "suspended" }
 ];
 
 // Entitlement rules the Tenant Admin maintains (role → item class → qty → cycle)

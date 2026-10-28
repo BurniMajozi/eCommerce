@@ -20,7 +20,15 @@ export const LoginGate = ({ children }) => {
   const [stage, setStage] = useState(null);       // null | 'challenge' | 'offer' | 'enroll'
   const [checked, setChecked] = useState(false);
   const [skipped, setSkipped] = useState(false);
-  const [showLogin, setShowLogin] = useState(false); // false = show marketing landing first
+  // false = show marketing landing first. A `?login=1` (or `?store=1`) link — e.g.
+  // a "Shop PPE Online" button on a tenant's own site — skips straight to sign-in
+  // so an external CTA lands a buyer on the actual sign-in step, not the marketing page.
+  const [showLogin, setShowLogin] = useState(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      return q.has('login') || q.has('store') || q.has('signin');
+    } catch { return false; }
+  });
   const [loginStep, setLoginStep] = useState('email'); // 'email' | 'code' | 'pwFallback'
   const [factorId, setFactorId] = useState(null);
   const [qr, setQr] = useState(null);

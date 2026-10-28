@@ -135,6 +135,8 @@ async function scopedJson(path, { accessToken, tenantId, siteId = null, signal, 
       invalidateCache('/app/catalogue/profit');
       invalidateCache('/app/reports/summary');
     }
+    if (path.includes('/tickets') || path.includes('/safety/')) invalidateCache('/app/tickets');
+    if (path.includes('/notifications')) invalidateCache('/app/notifications');
     if (path.includes('/promotions')) invalidateCache('/app/commerce/promotions');
     if (path.includes('/members')) invalidateCache('/app/members');
     if (path.includes('/products')) {
@@ -152,6 +154,32 @@ export const fetchAudit = (scope) => scopedJson('/app/audit', scope);
 export const fetchReportExport = (scope) => scopedJson('/app/reports/export', scope);
 // Merchant escalation: flag a stuck approval (and optionally email the approver).
 export const escalateApproval = (body, scope) => scopedJson('/app/approvals/escalate', { ...scope, method: 'POST', body });
+// The queue of approvals that have been escalated to the approver (audit trail).
+export const fetchEscalations = (scope) => scopedJson('/app/approvals/escalations', scope);
+
+// Safety App ticket layer — every request/PO/invoice/escalation/incident is a
+// ticket with a common key, category, flow status, escalation line and notes.
+export const fetchTickets = (scope, params = {}) => {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== '')).toString();
+  return scopedJson(`/app/tickets${qs ? `?${qs}` : ''}`, scope);
+};
+export const fetchTicket = (id, scope) => scopedJson(`/app/tickets/${id}`, scope);
+export const createTicket = (body, scope) => scopedJson('/app/tickets', { ...scope, method: 'POST', body });
+export const updateTicket = (id, body, scope) => scopedJson(`/app/tickets/${id}`, { ...scope, method: 'PATCH', body });
+export const fetchTicketNotes = (id, scope) => scopedJson(`/app/tickets/${id}/notes`, scope);
+export const createTicketNote = (id, body, scope) => scopedJson(`/app/tickets/${id}/notes`, { ...scope, method: 'POST', body });
+export const updateTicketNote = (id, noteId, body, scope) => scopedJson(`/app/tickets/${id}/notes/${noteId}`, { ...scope, method: 'PATCH', body });
+export const deleteTicketNote = (id, noteId, scope) => scopedJson(`/app/tickets/${id}/notes/${noteId}`, { ...scope, method: 'DELETE' });
+// Safety: a manager broadcasts an alert to staff + affected departments/plants.
+export const sendSafetyAlert = (body, scope) => scopedJson('/app/safety/alerts', { ...scope, method: 'POST', body });
+
+// Notifications (fan-out, per-recipient) — the topbar bell. Always fresh (no cache).
+export const fetchNotifications = (scope, params = {}) => {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== '')).toString();
+  return scopedJson(`/app/notifications${qs ? `?${qs}` : ''}`, { ...scope, forceRefresh: true });
+};
+export const markNotificationRead = (id, scope, read = true) => scopedJson(`/app/notifications/${id}`, { ...scope, method: 'PATCH', body: { read } });
+export const markAllNotificationsRead = (scope) => scopedJson('/app/notifications/read-all', { ...scope, method: 'POST', body: {} });
 export const fetchCommerceConfig = (scope) => scopedJson('/app/commerce/config', scope);
 
 // Platform Owner panel — service-role reads/writes (no browser RLS needed).

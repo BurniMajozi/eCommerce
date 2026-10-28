@@ -5,9 +5,11 @@ import { buildCatalogueContract } from '../../../../catalogue/contract';
 import { readCatalogueData, CatalogueConfigurationError } from '../../../../catalogue/read';
 import { assertAnyCapability, ScopeError } from '../../../../security/tenant-scope';
 import type { TenantScopedRequest } from '../../../middlewares/tenant-scope';
+import { ESCALATE_CAPS } from '../../approvals/caps';
 
 // Anyone provisioned in the tenant (contractors are workers) may buy from the store.
-const BUY_CAPS = ['ppe.request.create', 'commerce.read', 'commerce.manage', 'platform.manage'];
+// Every provisioned member may shop the store (same set as tickets/notifications).
+const BUY_CAPS = ESCALATE_CAPS;
 const pg = (req: TenantScopedRequest) => req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as any;
 const today = () => new Date().toISOString().slice(0, 10);
 const pickupCode = () => 'PU-' + Math.random().toString(36).slice(2, 6).toUpperCase() + Math.floor(100 + Math.random() * 900);

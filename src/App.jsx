@@ -7,6 +7,7 @@ import { SkeletonPage } from './components/SkeletonLoader';
 import { MfaStepUp } from './components/MfaStepUp';
 import { resolveAccessState } from './tenant/accessState';
 import { resolveActiveRole } from './navigation/activeRole';
+import { NotificationBell } from './components/NotificationBell';
 import { Menu, ChevronDown, Sun, Moon, CheckCircle2, AlertTriangle, Info, XCircle, LogOut } from 'lucide-react';
 
 const EmployeePortal = lazy(() => import('./components/EmployeePortal').then(m => ({ default: m.EmployeePortal })));
@@ -19,6 +20,8 @@ const TenantAdminPortal = lazy(() => import('./components/TenantAdminPortal').th
 const PlatformOwnerPortal = lazy(() => import('./components/PlatformOwnerPortal').then(m => ({ default: m.PlatformOwnerPortal })));
 const MedusaAdminPortal = lazy(() => import('./components/MedusaAdminPortal').then(m => ({ default: m.MedusaAdminPortal })));
 const MerchantApprovalsPortal = lazy(() => import('./components/MerchantApprovalsPortal').then(m => ({ default: m.MerchantApprovalsPortal })));
+const ReportSafetyPortal = lazy(() => import('./components/SafetyPortal').then(m => ({ default: m.ReportSafetyPortal })));
+const SafetyAlertsPortal = lazy(() => import('./components/SafetyPortal').then(m => ({ default: m.SafetyAlertsPortal })));
 
 const MED_VIEW = {
   MED_PRODUCTS: 'products', MED_INVENTORY: 'inventory', MED_ORDERS: 'orders', MED_PROMOS: 'promos',
@@ -81,6 +84,8 @@ const AppContent = () => {
   const render = () => {
     if (MED_VIEW[displayedRole]) return <MedusaAdminPortal view={MED_VIEW[displayedRole]} />;
     switch (displayedRole) {
+      case 'REPORT_SAFETY': return <ReportSafetyPortal />;
+      case 'SAFETY_ALERTS': return <SafetyAlertsPortal />;
       case 'STORE': return <ContractorStorePortal />;
       case 'EMPLOYEE': return <EmployeePortal />;
       case 'MANAGER': return <ManagerApprovalPortal />;
@@ -117,6 +122,7 @@ const AppContent = () => {
                 <ChevronDown size={16} style={{ position: 'absolute', right: 9, pointerEvents: 'none', color: 'var(--text-muted)' }} />
               </div>
             )}
+            <NotificationBell />
             <button className="icon-btn" onClick={toggleTheme} aria-label="Toggle theme" title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>

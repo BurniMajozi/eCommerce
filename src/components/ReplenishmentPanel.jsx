@@ -30,16 +30,21 @@ export const ReplenishmentPanel = ({ products = [], suppliers = [], scope, trigg
   // Self-driven daily consumption computed on the server from real outflow
   // history (store pickups + B2B orders) over a trailing window.
   const [consumption, setConsumption] = useState({ bySku: {}, windowDays: 90, loaded: false });
+  const expectingLive = isMedusaCatalogueEnabled && !!scope?.accessToken && !!scope?.tenantId;
+  const scopeKey = expectingLive ? `${scope.tenantId}:${scope.siteId ?? '*'}` : null;
 
   useEffect(() => {
-    if (!isMedusaCatalogueEnabled || !scope?.accessToken || !scope?.tenantId) return undefined;
+    if (!expectingLive) return undefined;
     let active = true;
+    // Drop the previous scope's consumption immediately so stale suggestions
+    // never flash while the new tenant/site's outflow history loads.
+    setConsumption({ bySku: {}, windowDays: 90, loaded: false });
     fetchConsumption(scope, 90)
       .then((r) => { if (active) setConsumption({ bySku: r.bySku ?? {}, windowDays: r.windowDays ?? 90, loaded: true }); })
       .catch(() => { if (active) setConsumption((c) => ({ ...c, loaded: true })); });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope?.accessToken, scope?.tenantId, scope?.siteId]);
+  }, [expectingLive, scopeKey]);
 
   const supplierById = useMemo(() => { const m = new Map(); for (const s of suppliers) m.set(s.id, s); return m; }, [suppliers]);
 
@@ -103,6 +108,7 @@ export const ReplenishmentPanel = ({ products = [], suppliers = [], scope, trigg
   };
 
   const critCount = suggestions.filter((s) => s.critical).length;
+  const analysing = expectingLive && !consumption.loaded;
 
   return (
     <div className="card">
@@ -110,13 +116,15 @@ export const ReplenishmentPanel = ({ products = [], suppliers = [], scope, trigg
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <RefreshCcw size={17} style={{ color: 'var(--primary)' }} />
           <h3>Replenishment</h3>
-          {suggestions.length > 0
-            ? <span className={`badge ${critCount ? 'badge-danger' : 'badge-warning'}`}>{suggestions.length} to reorder{critCount ? ` · ${critCount} critical` : ''}</span>
-            : <span className="badge badge-success">All above reorder point</span>}
+          {analysing
+            ? <span className="badge badge-neutral"><Loader2 size={12} className="spin" /> Analysing…</span>
+            : suggestions.length > 0
+              ? <span className={`badge ${critCount ? 'badge-danger' : 'badge-warning'}`}>{suggestions.length} to reorder{critCount ? ` · ${critCount} critical` : ''}</span>
+              : <span className="badge badge-success">All above reorder point</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button className="btn btn-ghost btn-sm" onClick={() => setTune((t) => !t)}><Sliders size={14} /> Tune</button>
-          {suggestions.length > 0 && live && canCreate && (
+          {!analysing && suggestions.length > 0 && live && canCreate && (
             <button className="btn btn-primary btn-sm" onClick={generate} disabled={busy || !groups.length}>
               {busy ? <><Loader2 size={14} className="spin" /> Sending…</> : <><PackagePlus size={14} /> Send {groups.length} to merchant approval</>}
             </button>
@@ -140,7 +148,11 @@ export const ReplenishmentPanel = ({ products = [], suppliers = [], scope, trigg
         </div>
       )}
 
-      {suggestions.length === 0 ? (
+      {analysing ? (
+        <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Loader2 size={15} className="spin" /> Analysing the last 90 days of outflow…
+        </div>
+      ) : suggestions.length === 0 ? (
         <div className="card-bd muted" style={{ padding: 20, fontSize: 13.5 }}>
           {consumption.loaded && Object.keys(consumption.bySku).length === 0
             ? <>No outflow in the last {consumption.windowDays} days yet — as store pickups and B2B orders accrue, SKUs with falling cover will appear here automatically.</>

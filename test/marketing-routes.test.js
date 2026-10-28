@@ -16,8 +16,10 @@ test('every marketing page has unique SEO metadata and a canonical URL', () => {
 });
 
 test('unknown and trailing-slash paths resolve safely', () => {
-  assert.equal(resolveMarketingRoute('/operations/').path, '/operations');
+  assert.equal(resolveMarketingRoute('/product/').path, '/product');
   assert.equal(resolveMarketingRoute('/not-a-page').path, '/');
+  // Retired capability URLs fold into the Product page.
+  for (const old of ['/operations', '/commerce', '/tenant-administration']) assert.equal(resolveMarketingRoute(old).path, '/product');
 });
 
 test('pricing structured data reflects the published seat range', () => {
@@ -27,11 +29,11 @@ test('pricing structured data reflects the published seat range', () => {
   assert.equal(pricing.offers.priceCurrency, 'ZAR');
 });
 
-test('capability pages use distinct hero visuals and a bento layout', () => {
-  for (const type of ['operations', 'commerce', 'tenant']) {
+test('marketing pages use distinct hero visuals and a bento layout', () => {
+  for (const type of ['home', 'product', 'usecases']) {
     assert.match(landingPageSource, new RegExp(`type === '${type}'`));
   }
-  assert.match(landingPageSource, /<BentoGrid items=\{FEATURES\[type\]\}/);
+  assert.match(landingPageSource, /<BentoGrid items=\{FEATURES\.product\}/);
   assert.match(landingPageSource, /<PricingVisual \/>/);
 });
 
@@ -43,20 +45,19 @@ test('marketing pages expose a configurable demo booking CTA', () => {
 test('marketing copy leads with the full PPE stock problem and solution', () => {
   assert.doesNotMatch(landingPageSource, /One tenant-safe operating picture/);
   for (const capability of [
-    'Digital PPE store',
-    'Physical store integration',
-    'Approvals and escalations',
-    'OTP-controlled handover',
-    'Fraud and anomaly flags',
-    'Reverse logistics',
-    'Supplier performance',
-    'Eligibility by department',
-    'POPIA-aligned controls',
+    'Physical store',
+    'Safety reports',
+    'Safety alerts',
+    'Auto-replenishment',
+    'Escalations',
+    'Returns and reverse logistics',
+    'Suppliers with scorecards',
+    'POPIA',
   ]) assert.match(landingPageSource, new RegExp(capability));
 });
 
 test('subscription plans explain their included operating benefits', () => {
   assert.match(landingPageSource, /Employee and contractor request stores/);
-  assert.match(landingPageSource, /Supplier performance across the group/);
+  assert.match(landingPageSource, /Safety training and competency records/);
   assert.match(landingPageSource, /Stock receipt and quality exceptions/);
 });

@@ -251,8 +251,8 @@ export const StorekeeperPortal = () => {
     return found || {
       id: selectedEmpId,
       name: 'John Sibanda',
-      department: 'Engineering & Maintenance',
-      role: 'Boilermaker / Welder',
+      department: 'Shaft 3 Extraction',
+      role: 'Underground Driller',
       plant: 'Kumba Iron Ore - Plant Alpha',
     };
   }, [isCustomStaff, selectedEmpId, staffId, staffName, staffDept, staffRole, staffPlant, employees]);

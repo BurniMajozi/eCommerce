@@ -4,6 +4,7 @@ import { fetchReports, fetchReportExport, isMedusaCatalogueEnabled } from '../ca
 import { downloadCsv, dateStamp } from '../utils/exportCsv';
 import { MOCK_DEPARTMENT_CONSUMPTION, CAGELI_PRODUCTS } from '../data/mockData';
 import { LiveReportBuilder } from './LiveReportBuilder';
+import { TicketsPortal } from './TicketsPortal';
 import { AuditLogCard } from './AuditLogCard';
 import { SearchExportBar, matchQuery } from './TableToolbar';
 import { triggerPrint } from '../utils/printDoc';
@@ -238,6 +239,10 @@ export const InventoryAnalyticsPortal = () => {
           </div>
         </div>
       </div>
+
+      {/* Safety ticket board — the unified ticket layer lives on the dashboard,
+          below the summary (moved off the top nav). */}
+      <TicketsPortal embedded />
 
       {/* Full tenant reports — stock allocation, valuation, reorder, spend, orders
           (CSV + Print/PDF per report), so a merchant can report PPE to the mine. */}

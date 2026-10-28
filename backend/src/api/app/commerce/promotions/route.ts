@@ -2,6 +2,7 @@ import type { MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { randomUUID } from 'crypto';
 import { assertCapability, assertAnyCapability, ScopeError } from '../../../../security/tenant-scope';
+import { ESCALATE_CAPS } from '../../approvals/caps';
 import type { TenantScopedRequest } from '../../../middlewares/tenant-scope';
 import { readCatalogueData } from '../../../../catalogue/read';
 import { getServiceClient } from '../../../../security/supabase-scope-resolver';
@@ -74,7 +75,7 @@ export async function GET(req: TenantScopedRequest, res: MedusaResponse): Promis
   const scope = req.tenantScope;
   try {
     if (!scope) throw new ScopeError(401, 'scope_missing', 'Tenant scope was not resolved.');
-    assertAnyCapability(scope, ['commerce.read', 'commerce.manage', ...MANAGER_CAPS]);
+    assertAnyCapability(scope, ESCALATE_CAPS); // promos are shown to every shopper
     const rows = await pg(req)('product_promotions').where({ tenant_id: scope.tenantId }).orderBy('created_at', 'desc');
     res.json({ source: 'medusa', promotions: rows.map(toApi) });
   } catch (error) {

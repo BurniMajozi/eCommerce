@@ -4,26 +4,20 @@ export const MARKETING_ROUTES = [
   {
     path: '/',
     label: 'Home',
-    title: 'PPE Stock Management from Purchase to Allocation | SightLive',
-    description: 'Manage PPE purchasing, receiving, employee and contractor requests, approvals, store handover, dispatch, returns and allocation audit in SightLive.',
+    title: 'PPE & Safety Operating System — Purchase to Person | SightLive',
+    description: 'SightLive runs the whole PPE loop and turns every hazard, request, order and escalation into a tracked ticket — safety reports, alerts, approvals, stores and audit in one platform.',
   },
   {
-    path: '/operations',
-    label: 'Operations',
-    title: 'PPE Operations & Inventory Management | SightLive',
-    description: 'Connect digital and physical PPE stores with employee and contractor requests, approvals, OTP handover, returns, SKU lifetime and allocation audit.',
+    path: '/product',
+    label: 'Product',
+    title: 'The PPE & Safety Platform — Tickets, Reports, Alerts | SightLive',
+    description: 'Every PPE and safety event is a ticket with a common key: report hazards with a photo, broadcast safety alerts, run requests, approvals, escalations, stores, purchasing and audit.',
   },
   {
-    path: '/commerce',
-    label: 'Commerce',
-    title: 'PPE Commerce, Procurement & Fulfilment | SightLive',
-    description: 'See the PPE purchasing pipeline, supplier performance, stock receipts, quality exceptions, customer orders, payments and dispatch in SightLive.',
-  },
-  {
-    path: '/tenant-administration',
-    label: 'Tenant administration',
-    title: 'PPE Eligibility, Roles and Allocation Governance | SightLive',
-    description: 'Manage companies, sites, employee and contractor access, department PPE eligibility, approvals, branding and POPIA-aligned audit controls.',
+    path: '/use-cases',
+    label: 'Use cases',
+    title: 'For Every Role — Worker to Owner | SightLive',
+    description: 'One platform for the whole operation: workers report and request, safety managers acknowledge and alert, storekeepers issue, buyers purchase, admins govern multi-site access.',
   },
   {
     path: '/pricing',
@@ -33,9 +27,13 @@ export const MARKETING_ROUTES = [
   },
 ];
 
+// Old capability paths now fold into the Product page (keeps inbound links alive).
+const ALIASES = { '/operations': '/product', '/commerce': '/product', '/tenant-administration': '/product' };
+
 export const resolveMarketingRoute = (pathname = '/') => {
   const normalized = pathname === '/' ? '/' : `/${pathname.split('/').filter(Boolean).join('/')}`;
-  return MARKETING_ROUTES.find((route) => route.path === normalized) || MARKETING_ROUTES[0];
+  const target = ALIASES[normalized] || normalized;
+  return MARKETING_ROUTES.find((route) => route.path === target) || MARKETING_ROUTES[0];
 };
 
 export const marketingCanonical = (path) => `${SITE_URL}${path === '/' ? '/' : `${path}/`}`;

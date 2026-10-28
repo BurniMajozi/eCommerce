@@ -1,13 +1,27 @@
 import type { MedusaResponse } from '@medusajs/framework/http';
-import { assertCapability, ScopeError } from '../../../../security/tenant-scope';
+import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { assertAnyCapability, ScopeError } from '../../../../security/tenant-scope';
+import { notifyManagers } from '../../notifications/emit';
 import type { TenantScopedRequest } from '../../../middlewares/tenant-scope';
 import { getServiceClient } from '../../../../security/supabase-scope-resolver';
 import { sendEmail, isEmailEnabled } from '../../../../lib/agentmail';
 import { approvalEscalationEmail } from '../../../../lib/email-templates';
+import { ESCALATE_CAPS } from '../caps';
 
 // Roles that can actually decide an approval — the escalation recipients.
 const APPROVER_ROLES = new Set(['supervisor', 'manager', 'tenant_admin', 'executive']);
 const isEmail = (v: unknown): v is string => typeof v === 'string' && /.+@.+\..+/.test(v.trim());
+
+// Best-effort: resolve the escalating user's own email for the record so the
+// approver/manager can see who raised the flag. Never fails the escalation.
+async function resolveActorEmail(db: any, userId: string | null): Promise<string | null> {
+  if (!userId) return null;
+  try {
+    const { data } = await db.auth.admin.getUserById(userId);
+    const email = data?.user?.email;
+    return isEmail(email) ? String(email).trim() : null;
+  } catch { return null; }
+}
 
 // Resolve deliverable email addresses of the tenant's approvers (service-role).
 async function resolveApproverEmails(db: any, tenantId: string): Promise<string[]> {
@@ -41,7 +55,10 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
   const scope = req.tenantScope;
   try {
     if (!scope) throw new ScopeError(401, 'scope_missing', 'Tenant scope was not resolved.');
-    assertCapability(scope, 'ppe.approve.escalate');
+    // Any provisioned tenant member may flag a stuck approval — escalation only
+    // nudges the responsible approver, it never approves or signs. (Approving
+    // stays gated on ppe.approve.* elsewhere.)
+    assertAnyCapability(scope, ESCALATE_CAPS);
 
     const b = (req.body ?? {}) as { kind?: string; reference?: string; subject?: string; note?: string; ageDays?: number; email?: boolean };
     const kind = b.kind === 'request' ? 'request' : 'po';
@@ -52,8 +69,10 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
     const ageDays = Number.isFinite(b.ageDays) ? Math.max(0, Math.round(Number(b.ageDays))) : null;
 
     const db = getServiceClient();
+    const escalatedByEmail = await resolveActorEmail(db, scope.userId ?? null);
 
-    // 1) Durable record of the escalation (visible in the tenant audit trail).
+    // 1) Durable record of the escalation (visible in the tenant audit trail and
+    //    the "Escalated to the approver" queue that managers/Tier 2 see).
     const audit = await db.from('audit_events').insert({
       tenant_id: scope.tenantId,
       site_id: scope.siteId ?? null,
@@ -63,9 +82,21 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
       target_type: kind === 'request' ? 'ppe_request' : 'purchase_order',
       target_id: reference,
       source: 'merchant',
-      metadata: { subject: subject || reference, note, ageDays },
+      metadata: { subject: subject || reference, note, ageDays, kind, escalatedBy: escalatedByEmail },
     });
     if (audit.error) throw new Error(audit.error.message);
+
+    // Fan-out an in-app notification to the managers/approvers (the bell).
+    try {
+      const knex = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as any;
+      await notifyManagers(knex, {
+        tenantId: scope.tenantId, siteId: scope.siteId ?? null,
+        type: 'escalation', title: `Escalated: ${subject || reference}`,
+        body: `${reference} was escalated to the approver${note ? ` — ${note}` : ''}.`,
+        severity: 'warning', linkRole: 'MERCHANT_APPROVALS', linkId: reference,
+        createdBy: scope.userId ?? null, excludeUserId: scope.userId ?? null, metadata: { reference },
+      });
+    } catch { /* notifications are best-effort */ }
 
     // 2) Optional email to the approver(s).
     let emailed = false;
@@ -78,7 +109,7 @@ export async function POST(req: TenantScopedRequest, res: MedusaResponse): Promi
       const to = await resolveApproverEmails(db, scope.tenantId);
       recipients = to.length;
       if (to.length) {
-        const escalatedBy = (scope as any).userEmail || (scope as any).email || 'A merchant';
+        const escalatedBy = escalatedByEmail || 'A colleague';
         const content = approvalEscalationEmail({
           kind, reference, subject: subject || reference, note, ageDays,
           escalatedBy, loginUrl: process.env.APP_PUBLIC_URL || null,
